@@ -1,0 +1,7 @@
+application/logs/*
+
+# Dumps de BD: contienen datos reales de trabajadores
+docs/db/init/*.sql
+# ...salvo el DDL propio del proyecto, que sí se versiona
+!docs/db/init/00-definer-user.sql
+!docs/db/init/02-ci_sessions.sql

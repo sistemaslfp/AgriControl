@@ -1,0 +1,10 @@
+RewriteEngine On
+RewriteRule ^app/api/personal/?$ api/personal.php
+RewriteRule ^app/api/personal/([0-9]+)?$ api/app.php?id=$1
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule .* index.php/$0 [PT,L]
+
+
+

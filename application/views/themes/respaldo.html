@@ -1,0 +1,74 @@
+<div id="content">
+
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            <h3>Bellita</h3>
+        </div>
+
+
+        <ul class="list-unstyled components">
+            <p>Menú de navegación</p>
+            <li class="active">
+                <a href="#pagosSubmenu" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+						Reportes
+					</a>
+                <ul class="collapse list-unstyled" id="pagosSubmenu">
+                    <li>
+                        <a href="<?php echo site_url('PM/reportePagos'); ?>">Reporte de pagos</a>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+
+        <li>
+            <a href="#pageSubmenu" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle">Configuraci&oacute;n</a>
+            <ul class="collapse list-unstyled" id="pageSubmenu">
+                <li>
+                    <a href="<?php echo site_url('Personal'); ?>">Personal</a>
+                </li>
+                <li>
+                    <a href="<?php echo site_url('Subtarea'); ?>">Subtareas</a>
+                </li>
+                <li>
+                    <a href="<?php echo site_url('Finca'); ?>">Fincas</a>
+                </li>
+                <li>
+                    <a href="<?php echo site_url('Lote'); ?>">Lotes</a>
+                </li>
+                <li>
+                    <a href="<?php echo site_url('Modulo'); ?>">M&oacute;dulos</a>
+                </li>
+            </ul>
+    </nav>
+
+</div>
+
+<div class="container">
+    <?php if($this->load->get_section('text_header') != '') { ?>
+    <h1>
+        <?php echo $this->load->get_section('text_header');?>
+    </h1>
+    <h1>sdfasd</h1>
+    <?php }?>
+    <div class="row">
+
+
+        <?php echo $output;?>
+        <?php echo $this->load->get_section('sidebar'); ?>
+
+
+    </div>
+    <hr/>
+
+    <footer>
+        <div class="row">
+            <div class="span6 b10">
+                Inorizonti
+            </div>
+        </div>
+    </footer>
+
+</div>
+<!-- /container -->

@@ -1,0 +1,47 @@
+# Entorno de desarrollo local de lagricontrol.
+# Reconstruye el stack original: el servicio de BD se llama `mysql_dev_container`
+# a propósito, para que application/config/database.php funcione SIN editarlo.
+services:
+
+  web:
+    build: ./docker/php
+    container_name: lagricontrol_web
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      # Leída por application/config/development/config.php.
+      # Si esta variable no existe, el base_url del repo queda intacto.
+      APP_BASE_URL: "http://localhost:8080/"
+    depends_on:
+      mysql_dev_container:
+        condition: service_healthy
+
+  mysql_dev_container:
+    # MariaDB 10.4, NO MySQL: el servidor real reporta 5.5.5-10.4.18-MariaDB.
+    # Usar MySQL 8 aquí rompe el import del dump y cambia el motor bajo el que
+    # desarrollas respecto de producción.
+    image: mariadb:10.4
+    container_name: mysql_dev_container
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_spanish2_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password   # debe coincidir con database.php
+      # Sin MYSQL_DATABASE a propósito: 01-schema.sql trae su propio
+      # CREATE DATABASE con la collation correcta (utf8mb4_spanish2_ci).
+    ports:
+      - "3307:3306"                        # 3307 para no chocar con un MySQL local
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Todo .sql aquí se ejecuta SOLO en la primera creación del volumen
+      - ./docs/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql_data:

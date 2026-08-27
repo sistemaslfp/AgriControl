@@ -1,0 +1,10 @@
+.edit_button {
+    margin: 2px !important;
+    color: #ffffff;
+}
+
+.bg-light {
+    background-color: rgba(17, 170, 170, 0.2) !important;
+    border: 1px solid rgba(17, 170, 170, 1) !important;
+}
+

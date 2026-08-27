@@ -1,0 +1,7 @@
+.edit_button.btn.btn-xs.btn-info.btn-sm.hidden-xs {
+    background: coral;
+  }
+
+  .edit_button.btn.btn-xs.btn-info.btn-sm {
+    background-color: green;
+  }
