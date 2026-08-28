@@ -5,3 +5,16 @@ docs/db/init/*.sql
 # ...salvo el DDL propio del proyecto, que sí se versiona
 !docs/db/init/00-definer-user.sql
 !docs/db/init/02-ci_sessions.sql
+
+_to_delete/*
+_to_delete
+
+
+##claves
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+server/.env
