@@ -16,20 +16,21 @@
 --     < docs/db/migrations/2026-08-28-01-catalogos-v4.sql
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE z_finca
+ALTER TABLE lfp_prodapp.z_finca
   ADD COLUMN IF NOT EXISTS estado VARCHAR(1) NOT NULL DEFAULT '1';
 
-ALTER TABLE z_ulabor
+ALTER TABLE lfp_prodapp.z_ulabor
   ADD COLUMN IF NOT EXISTS estado VARCHAR(1) NOT NULL DEFAULT '1';
 
-ALTER TABLE z_lote
+ALTER TABLE lfp_prodapp.z_lote
   ADD COLUMN IF NOT EXISTS tiene_modulos TINYINT(1) NOT NULL DEFAULT 0 AFTER finca_id;
 
 -- Recalcula tiene_modulos para TODOS los lotes (1 y 0), no sólo los que
 -- tienen módulos: así una re-ejecución tras desactivar módulos también
 -- deja el valor correcto.
-UPDATE z_lote l
+UPDATE lfp_prodapp.z_lote l
    SET l.tiene_modulos = CASE
-         WHEN EXISTS (SELECT 1 FROM z_modulo m
+         WHEN EXISTS (SELECT 1 FROM lfp_prodapp.z_modulo m
                        WHERE m.lote_id = l.id AND m.estado = '1')
          THEN 1 ELSE 0 END;
+   where l.id>0;
