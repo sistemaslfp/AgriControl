@@ -1,0 +1,38 @@
+{
+  "name": "lagricontrol-app-v4",
+  "version": "4.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development"
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/common": "22.1.4",
+    "@angular/compiler": "22.1.4",
+    "@angular/core": "22.1.4",
+    "@angular/forms": "22.1.4",
+    "@angular/platform-browser": "22.1.4",
+    "@angular/router": "22.1.4",
+    "@capacitor-community/sqlite": "8.1.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/network": "8.0.1",
+    "@ionic/angular": "9.0.1",
+    "ionicons": "8.1.0",
+    "jeep-sqlite": "2.8.0",
+    "rxjs": "7.8.2",
+    "sql.js": "1.12.0",
+    "tslib": "2.8.1"
+  },
+  "devDependencies": {
+    "@angular/build": "22.1.6",
+    "@angular/cli": "22.1.6",
+    "@angular/compiler-cli": "22.1.4",
+    "@capacitor/cli": "8.5.0",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3"
+  },
+  "description": "LAgricontrol V4 - app de campo offline-first (LIFPRODECSA)"
+}

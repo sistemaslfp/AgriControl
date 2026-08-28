@@ -1,0 +1,7 @@
+{
+  "name": "lagricontrol-app-v4",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}

@@ -1,0 +1,142 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Configuración</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <!-- ================= Servidor ================= -->
+  <h2 class="titulo-seccion">Servidor</h2>
+  <ion-list inset="true">
+    <ion-item>
+      <ion-input
+        label="URL base de la API"
+        labelPlacement="stacked"
+        placeholder="https://servidor.com/v4"
+        inputmode="url"
+        autocapitalize="off"
+        [(ngModel)]="url"
+      ></ion-input>
+    </ion-item>
+    <ion-item lines="none">
+      <ion-note>
+        URL completa, incluyendo <code>/v4</code>. En producción siempre
+        <strong>https</strong>.
+      </ion-note>
+    </ion-item>
+  </ion-list>
+
+  <div class="fila-botones">
+    <ion-button fill="outline" (click)="probarConexion()" [disabled]="probando()">
+      @if (probando()) {
+        <ion-spinner name="crescent" class="spinner-boton"></ion-spinner>
+      } @else {
+        Probar conexión
+      }
+    </ion-button>
+  </div>
+
+  @if (resultadoPrueba(); as prueba) {
+    @if (prueba.ok) {
+      <div class="resultado ok">
+        <ion-icon name="checkmark-circle-outline"></ion-icon>
+        <div>
+          Servidor respondió.<br />
+          Hora del servidor: <strong>{{ prueba.serverTime }}</strong><br />
+          Desfase con este equipo: <strong>{{ prueba.offsetSeconds }} s</strong>
+        </div>
+      </div>
+    } @else {
+      <div class="resultado error">
+        <ion-icon name="close-circle-outline"></ion-icon>
+        <div>Sin conexión: {{ prueba.error }}</div>
+      </div>
+    }
+  }
+
+  <!-- ================= Dispositivo ================= -->
+  <h2 class="titulo-seccion">Dispositivo</h2>
+  <ion-list inset="true">
+    <ion-item>
+      <ion-input
+        label="Alias del dispositivo"
+        labelPlacement="stacked"
+        placeholder="TABLET-BELLITA-02"
+        autocapitalize="characters"
+        [(ngModel)]="alias"
+      ></ion-input>
+    </ion-item>
+    <ion-item lines="none">
+      <ion-note>
+        Identifica los registros de este equipo en el sistema web. No es una
+        credencial.
+      </ion-note>
+    </ion-item>
+  </ion-list>
+
+  @if (clock.syncedAt(); as sincronizado) {
+    <p class="nota-reloj">
+      Reloj sincronizado por última vez: {{ sincronizado | date: 'dd/MM/yyyy HH:mm' }}
+      (desfase {{ clock.offsetSeconds() ?? 0 }} s)
+    </p>
+  } @else {
+    <p class="nota-reloj advertencia">
+      Este equipo nunca sincronizó la hora con el servidor: sus registros
+      viajarán marcados como no verificables hasta la primera conexión.
+    </p>
+  }
+
+  <div class="fila-botones">
+    <ion-button expand="block" (click)="guardar()">Guardar</ion-button>
+  </div>
+
+  <!-- ================= Limpieza ================= -->
+  <h2 class="titulo-seccion">Limpieza de datos locales</h2>
+
+  <div class="conteos">
+    <span>Pendientes: <strong>{{ sync.conteo().pendientes + sync.conteo().enviando }}</strong></span>
+    <span>Enviados: <strong>{{ sync.conteo().enviados }}</strong></span>
+    <span>Rechazados: <strong>{{ sync.conteo().rechazados }}</strong></span>
+  </div>
+
+  @if (limpiezaBloqueada()) {
+    <div class="resultado error">
+      <ion-icon name="close-circle-outline"></ion-icon>
+      <div>
+        Limpieza bloqueada: hay
+        <strong>{{ sync.conteo().pendientes + sync.conteo().enviando }}</strong>
+        registro(s) sin sincronizar. Ningún borrado puede tocar registros que
+        todavía no llegaron al servidor.
+      </div>
+    </div>
+  } @else {
+    <ion-list inset="true">
+      <ion-item>
+        <ion-input
+          label='Escribí "ELIMINAR" para confirmar'
+          labelPlacement="stacked"
+          autocapitalize="characters"
+          [(ngModel)]="confirmacionEscrita"
+        ></ion-input>
+      </ion-item>
+    </ion-list>
+    <div class="fila-botones">
+      <ion-button
+        color="danger"
+        fill="outline"
+        (click)="limpiar()"
+        [disabled]="limpiando()"
+      >
+        <ion-icon slot="start" name="trash-outline"></ion-icon>
+        Eliminar enviados y rechazados
+      </ion-button>
+    </div>
+    <p class="nota-reloj">
+      Solo borra registros ya confirmados por el servidor o rechazados. Los
+      catálogos no se tocan.
+    </p>
+  }
+</ion-content>

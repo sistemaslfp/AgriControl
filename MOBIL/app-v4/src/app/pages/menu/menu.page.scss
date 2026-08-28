@@ -1,0 +1,92 @@
+.icono-red {
+  font-size: 22px;
+  margin-inline-end: 4px;
+  color: var(--ion-color-primary-contrast);
+
+  &.offline {
+    color: var(--ion-color-warning);
+  }
+}
+
+.barra-sync {
+  --min-height: 34px;
+
+  .estado-sync {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    padding-inline: 12px;
+    color: var(--ion-color-medium);
+  }
+
+  .spinner-chico {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.aviso-catalogos {
+  background: var(--ion-color-warning-tint, #ffd54f);
+  color: #4e342e;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.grilla-menu {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.celda {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 108px;
+  border-radius: 12px;
+  border: 1px solid var(--ion-color-step-150, #d7d8da);
+  background: var(--ion-background-color, #fff);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ion-text-color);
+
+  ion-icon {
+    font-size: 34px;
+    color: var(--ion-color-primary);
+  }
+
+  ion-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+
+  .spinner-celda {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 18px;
+    height: 18px;
+  }
+
+  &.deshabilitada {
+    opacity: 0.45;
+  }
+
+  &:active {
+    background: var(--ion-color-light);
+  }
+}
+
+.pie-version {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ion-color-medium);
+  padding: 4px 0;
+}

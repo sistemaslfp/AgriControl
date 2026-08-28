@@ -1,0 +1,87 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-title>LAgricontrol</ion-title>
+    <ion-buttons slot="end">
+      <!-- Estado de red: dato que el supervisor necesita antes de irse del campo -->
+      <ion-icon
+        [name]="sync.online() ? 'cloud-outline' : 'cloud-offline-outline'"
+        [class.offline]="!sync.online()"
+        class="icono-red"
+        aria-label="Estado de red"
+      ></ion-icon>
+      <ion-button routerLink="/configuracion" aria-label="Configuración">
+        <ion-icon slot="icon-only" name="settings-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+
+  <!-- Barra de estado de sincronización -->
+  <ion-toolbar class="barra-sync">
+    <div class="estado-sync">
+      @if (sync.enviando()) {
+        <ion-spinner name="dots" class="spinner-chico"></ion-spinner>
+        <span>Sincronizando…</span>
+      } @else if (totalSinSincronizar() > 0) {
+        <span>
+          <strong>{{ totalSinSincronizar() }}</strong>
+          registro(s) sin sincronizar
+          @if (sync.proximoReintentoMs(); as prox) {
+            · reintento {{ prox | date: 'HH:mm:ss' }}
+          }
+        </span>
+        <ion-button size="small" fill="clear" (click)="sincronizarAhora()">
+          Sincronizar ahora
+        </ion-button>
+      } @else {
+        <span>
+          Cola al día
+          @if (config.lastSyncOkAt(); as ultima) {
+            · última sync {{ ultima | date: 'dd/MM HH:mm' }}
+          }
+        </span>
+      }
+    </div>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (!catalogos.disponibles()) {
+    <div class="aviso-catalogos">
+      Sin catálogos descargados los módulos de captura quedan bloqueados.
+      Tocá <strong>Actualizar Maestros</strong> con conexión al servidor.
+    </div>
+  }
+
+  <div class="grilla-menu">
+    @for (celda of celdas; track celda.titulo) {
+      <button
+        class="celda"
+        [class.deshabilitada]="!celda.habilitada"
+        (click)="onCelda(celda)"
+      >
+        <ion-icon [name]="celda.icono"></ion-icon>
+        <span>{{ celda.titulo }}</span>
+        @if (celda.accion === 'pendientes' && totalSinSincronizar() > 0) {
+          <ion-badge color="danger">{{ totalSinSincronizar() }}</ion-badge>
+        }
+        @if (celda.accion === 'enviados' && sync.conteo().enviados > 0) {
+          <ion-badge color="medium">{{ sync.conteo().enviados }}</ion-badge>
+        }
+        @if (celda.accion === 'maestros' && catalogos.actualizando()) {
+          <ion-spinner name="crescent" class="spinner-celda"></ion-spinner>
+        }
+      </button>
+    }
+  </div>
+</ion-content>
+
+<ion-footer>
+  <ion-toolbar>
+    <div class="pie-version">
+      LAgricontrol v{{ version }}
+      @if (config.deviceAlias(); as alias) {
+        · {{ alias }}
+      }
+    </div>
+  </ion-toolbar>
+</ion-footer>

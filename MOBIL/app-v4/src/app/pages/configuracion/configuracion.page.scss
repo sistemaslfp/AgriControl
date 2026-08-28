@@ -1,0 +1,62 @@
+.titulo-seccion {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 20px 4px 8px;
+  color: var(--ion-color-medium-shade);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fila-botones {
+  margin: 12px 4px;
+}
+
+.spinner-boton {
+  width: 18px;
+  height: 18px;
+}
+
+.resultado {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 8px 4px;
+  font-size: 0.9rem;
+
+  ion-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  &.ok {
+    background: rgba(46, 125, 50, 0.12);
+    color: var(--ion-color-primary-shade);
+  }
+
+  &.error {
+    background: rgba(198, 40, 40, 0.1);
+    color: #b71c1c;
+  }
+}
+
+.nota-reloj {
+  font-size: 0.85rem;
+  color: var(--ion-color-medium);
+  margin: 6px 8px;
+
+  &.advertencia {
+    color: var(--ion-color-warning-shade, #b8860b);
+  }
+}
+
+.conteos {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 8px;
+  font-size: 0.9rem;
+  color: var(--ion-color-medium-shade);
+}
