@@ -561,6 +561,11 @@ $config['allowed_cors_headers'] = [
   'Content-Type',
   'Accept',
   'Access-Control-Request-Method',
+  // Alias del dispositivo para la API V4 (MOBIL/01-sincronizacion.md).
+  // Sin esto el preflight del navegador rechaza cualquier request de la app
+  // nueva. Es aditivo: solo amplia lo que un navegador PUEDE enviar, asi que
+  // no altera en nada el comportamiento de V1/V2/V3 ni del APK v2.0.5.
+  'X-Device-Alias',
 ];
 
 /*
