@@ -25,7 +25,9 @@ export interface BootstrapResponse {
 export interface CatalogosResponse {
   version: string;
   fincas: { id: number; nombre: string; ha: number }[];
-  lotes: { id: number; lote: string; finca_id: number; ha: number; tiene_modulos: number }[];
+  // tiene_modulos viaja como booleano de verdad: V4.php castea los tipos
+  // porque mysqli devuelve todo como string y el "0" string es truthy en JS.
+  lotes: { id: number; lote: string; finca_id: number; ha: number; tiene_modulos: boolean }[];
   modulos: { id: number; modulo: string; lote_id: number; ha: number }[];
   cultivos: { id: number; nombre: string }[];
   tareas: { id: number; nombre: string; cultivos_id: number }[];

@@ -39,6 +39,54 @@ class V4 extends RestController
         $this->v4cfg = $this->config->item('v4');
     }
 
+    /**
+     * mysqli devuelve TODAS las columnas como string. El contrato de
+     * /v4/catalogos (02-bd-y-api.md §7) declara números y booleanos, y la app
+     * depende de eso: en JavaScript el string "0" es *truthy*, así que un
+     * `tiene_modulos` que viaje como "0" marca el lote como si SÍ tuviera
+     * módulos. Falla en silencio, no rompe nada visible.
+     *
+     * Los NULL se dejan como NULL (un `rol` vacío no debe volverse 0).
+     */
+    private function castRows(array $rows, array $tipos)
+    {
+        foreach ($rows as $r) {
+            foreach ($tipos as $campo => $tipo) {
+                if (!isset($r->$campo)) {
+                    continue;
+                }
+                if ($tipo === 'int') {
+                    $r->$campo = (int) $r->$campo;
+                } elseif ($tipo === 'float') {
+                    $r->$campo = (float) $r->$campo;
+                } elseif ($tipo === 'bool') {
+                    $r->$campo = (bool) (int) $r->$campo;
+                }
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * Carga la base la primera vez que se la necesita y la devuelve.
+     *
+     * A propósito NO se carga en el constructor. `$autoload['libraries']`
+     * está vacío en este proyecto (los modelos de V3 hacen su propio
+     * `load->database()`), así que sin esto `$this->db` no existe y todo
+     * método que la use muere con "Undefined property: V4::$db".
+     *
+     * Cargarla perezosamente además deja GET /v4/hora funcionando aunque
+     * MySQL esté caído: es lo que permite que "Probar conexión" distinga
+     * "no llego al servidor" de "el servidor responde pero la base no".
+     */
+    private function requireDb()
+    {
+        if (!isset($this->db)) {
+            $this->load->database();
+        }
+        return $this->db;
+    }
+
     // -----------------------------------------------------------------
     // GET /v4/hora — hora del servidor, base del clock_offset de la app
     // -----------------------------------------------------------------
@@ -83,32 +131,37 @@ class V4 extends RestController
         // usan '1', pero z_tarea y z_subtarea usan 'A'. Con estado='1' parejo
         // la respuesta traería CERO tareas y subtareas. Por eso el filtro es
         // estado IN ('1','A'). z_personal se filtra por eregistro='A' como V3.
-        $db = $this->db;
+        $db = $this->requireDb();
 
         $fincas = $db->select('id, nombre, ha')
             ->where_in('estado', array('1', 'A'))
             ->order_by('nombre')
             ->get('z_finca')->result();
+        $fincas = $this->castRows($fincas, array('id' => 'int', 'ha' => 'int'));
 
         $lotes = $db->select('id, lote, finca_id, ha, tiene_modulos')
             ->where_in('estado', array('1', 'A'))
             ->order_by('finca_id, lote')
             ->get('z_lote')->result();
+        $lotes = $this->castRows($lotes, array('id' => 'int', 'finca_id' => 'int', 'ha' => 'float', 'tiene_modulos' => 'bool'));
 
         $modulos = $db->select('id, modulo, lote_id, ha')
             ->where_in('estado', array('1', 'A'))
             ->order_by('lote_id, modulo')
             ->get('z_modulo')->result();
+        $modulos = $this->castRows($modulos, array('id' => 'int', 'lote_id' => 'int', 'ha' => 'float'));
 
         $cultivos = $db->select('id, nombre')
             ->where_in('estado', array('1', 'A'))
             ->order_by('nombre')
             ->get('z_cultivo')->result();
+        $cultivos = $this->castRows($cultivos, array('id' => 'int'));
 
         $tareas = $db->select('id, nombre, cultivos_id')
             ->where_in('estado', array('1', 'A'))
             ->order_by('nombre')
             ->get('z_tarea')->result();
+        $tareas = $this->castRows($tareas, array('id' => 'int', 'cultivos_id' => 'int'));
 
         // Alias: el contrato V4 usa `codigo` y `nombre`; las columnas reales
         // son codigo_subtarea / nombre_subtarea.
@@ -116,11 +169,13 @@ class V4 extends RestController
             ->where_in('estado', array('1', 'A'))
             ->order_by('nombre_subtarea')
             ->get('z_subtarea')->result();
+        $subtareas = $this->castRows($subtareas, array('id' => 'int', 'tarea_id' => 'int', 'unidad_labor_id' => 'int', 'tipo_pago_id' => 'int'));
 
         $ulabores = $db->select('id, ulabor_nombre AS nombre')
             ->where_in('estado', array('1', 'A'))
             ->order_by('ulabor_nombre')
             ->get('z_ulabor')->result();
+        $ulabores = $this->castRows($ulabores, array('id' => 'int'));
 
         // Personal: se filtra por eregistro = 'A', igual que V3
         // (Personal_model::get_all). z_personal.estado existe pero es NULLable
@@ -129,6 +184,7 @@ class V4 extends RestController
             ->where('eregistro', 'A')
             ->order_by('nombre')
             ->get('z_personal')->result();
+        $personal = $this->castRows($personal, array('id' => 'int', 'id_finca' => 'int', 'rol' => 'int'));
 
         $this->response(array(
             'version'   => $this->catalogos_version(),
@@ -184,7 +240,7 @@ class V4 extends RestController
      */
     private function catalogos_version()
     {
-        $rows = $this->db->query(
+        $rows = $this->requireDb()->query(
             'CHECKSUM TABLE z_finca, z_lote, z_modulo, z_cultivo, z_tarea, z_subtarea, z_ulabor, z_personal'
         )->result_array();
         return md5(json_encode($rows));
@@ -196,7 +252,7 @@ class V4 extends RestController
      */
     private function get_cosecha_subtarea_ids()
     {
-        $rows = $this->db->select('s.id')
+        $rows = $this->requireDb()->select('s.id')
             ->from('z_subtarea s')
             ->join('z_tarea t', 't.id = s.tarea_id')
             ->where_in('s.estado', array('1', 'A'))
