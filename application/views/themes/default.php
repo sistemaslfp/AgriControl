@@ -397,7 +397,7 @@
 			<footer>
 				<div class="row">
 					<div class="span6 b10">
-						Bisstox
+						Life Food Products
 					</div>
 				</div>
 			</footer>

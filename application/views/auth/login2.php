@@ -44,7 +44,7 @@
 		<div class="clear"></div>
 		<div class="copyright">
 			<h2>&copy; 2021 LIFPRODECSA. All rights reserved | Design by
-				<a href="https://bisstox.com" target="_blank">Bisstox</a>
+				Life Food Products
 			</h2>
 		</div>
 		<!-- //copyright -->

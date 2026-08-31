@@ -38,7 +38,7 @@
             	</div>
             	<?php echo form_submit('submit', 'Ingresar', $opts3);?>
             	<div id="infoMessage"><?php echo $message;?></div>
-            	<p><a href="https://www.bisstox.com" target="_blank">Desarrollado por Bisstox.</a></p>
+            	<p>Desarrollado por Life Food Products.</p>
             <?php echo form_close();?>
         </div>
     </div>

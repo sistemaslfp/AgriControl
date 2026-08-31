@@ -236,7 +236,7 @@
       <footer>
         <div class="clearfix"></div>
         <div class="pull-right">
-          <a href="http://www.Bisstox.com" target="_blank">Bisstox</a>
+          Life Food Products
         </div>
         <div class="clearfix"></div>
       </footer>
