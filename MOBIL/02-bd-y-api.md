@@ -461,17 +461,170 @@ volver a correr el script no duplique nada).
 
 ### Qué se migra
 
-**[DECIDIR]** — tres opciones, en orden de esfuerzo:
+**DECIDIDO (2026-08-28, Kevin).** Ninguna de las tres opciones originales: se
+migra **una ventana de antecedente de un mes — desde `2026-08-01`**. No es una
+migración del histórico, es el colchón mínimo para que el reporte de pago y las
+consultas del arranque tengan con qué comparar. Todo lo anterior al 2026-08-01
+se queda en `z_*` y se consulta ahí.
 
-1. **Nada.** Las tablas nuevas arrancan vacías; el histórico vive en `z_*` y se
-   consulta ahí. Los reportes que cruzan períodos usan `UNION`.
-2. **Sólo el año en curso.** Suficiente para los reportes de pago y de
-   temporada. El resto queda archivado en `z_*`.
-3. **Todo el histórico.** Más caro, más riesgo, y el histórico anterior a 2025
-   está sucio de una forma que ya no se puede auditar (AM sin timestamp).
+**La fusión o migración completa de `z_*` → `reg_*`/`pc_*` queda diferida** sin
+fecha. No se vuelve a tocar hasta que Kevin la mencione de nuevo.
 
-Recomendado **(2)**. El corte por fecha hace el script revisable, y el histórico
-profundo rara vez se consulta desde la app.
+Reglas de la ventana:
+
+- **AM / PM / Cosecha / Riego:** todo lo de `fecha >= '2026-08-01'`, con las
+  reglas de deduplicación de arriba y auditoría en `mig_descarte`.
+- **Postcosecha: sólo partidas CERRADAS.** Ninguna partida en proceso se migra.
+  La app nueva arranca sin partidas abiertas.
+- **Excepción de fecha en postcosecha:** una partida cerrada de agosto puede
+  estar enlazada a cosechas de julio. Esas cosechas **se migran igual**, fuera
+  de la ventana — sin ellas `pc_proceso_cosecha` no tiene a qué apuntar y
+  `peso_lote` no cuadra. Entran marcadas `origen = 'migracion'`.
+- `pc_lot_code_seq` **se siembra** con el mayor consecutivo ya usado en 2026,
+  no arranca en 1.
+
+Consecuencia asumida: durante el arranque conviven dos fuentes de verdad y los
+reportes que cruzan el 2026-08-01 necesitan `UNION` (§5 bis).
+
+### La ventana de agosto, medida (2026-08-31)
+
+Corrido sobre una copia real de la base, no sobre el papel:
+
+| tabla | filas desde 2026-08-01 |
+|---|---|
+| `z_tabla_am` | 590 |
+| `z_tabla_pm` | 598 |
+| `z_cosecha_cacao` | 60 |
+| `z_riego` | 279 |
+
+**La ventana está limpia de huérfanos: CERO.** Ni un `trabajador`,
+`responsable`, `lote`, `subtarea` ni `cultivo` de agosto que no exista en su
+catálogo, ni en AM ni en PM. Los ~9.000 rotos son todos de 2021–2024. Las 26 FK
+no van a rechazar nada.
+
+**Pero los duplicados siguen vivos en 2026.** Migrando PM de agosto con la regla
+de los 60 s: **598 filas → 495 conservadas, 103 descartadas (17 %)**. El caso
+peor son 14 filas idénticas del mismo trabajador y subtarea creadas en 4
+segundos. Ningún grupo con `cantidad`/horas distintas fue colapsado (verificado:
+0 grupos con variantes > 1 tocados) — no se pierde ningún tramo. Pero la suma de
+`cantidad` baja de **87.772,2 a 79.298,4**.
+
+**Resuelto con datos, sin necesidad de decidir:** `vw_reporte_pago` — la vista
+que alimenta el pago — es un `SELECT DISTINCT`, así que las 103 filas
+duplicadas **nunca llegaron a la nómina**. La vista devuelve 495 filas y
+79.298,40, idéntico a la base migrada. Deduplicar no cambia ni un centavo de lo
+ya pagado. Es la confirmación más fuerte de que la regla de los 60 s coincide
+con lo que el negocio ya trataba como una sola fila.
+
+**Dos trampas de formato descubiertas al migrar:**
+
+- `z_tabla_am.hora` es inconsistente: **340 de 590 filas de agosto** vienen como
+  `7:31` (sin cero a la izquierda, sin segundos) y el resto como `15:26:02`. El
+  migrador tiene que normalizar antes de armar el `DATETIME` de
+  `reg_am.fecha_proceso`.
+- `z_tabla_am.modulos` y `z_tabla_pm.modulo` **sí son CSV** — 85 y 60 filas de
+  agosto con coma, hasta 4 módulos por fila. (Lo que no es CSV es
+  `z_riego.modulo`: cero comas en 9.778 filas. Son casos distintos, no
+  confundirlos.) Las 736 partes de PM y las 777 de AM **resuelven todas** contra
+  `z_modulo.id` — que va de 1 a 85 con huecos, 43 módulos.
+
+### Postcosecha al corte: se migran las 4, abiertas incluidas
+
+Medido: 98 partidas abiertas históricamente, 89 cerradas. Quedan **22 sin
+cerrar — pero 20 llevan entre 324 y 744 días abiertas**: están abandonadas, no
+en proceso. Realmente en curso al 2026-08-27 hay **dos**: los lotes 466 y 462.
+
+Duración real de una partida cerrada: **8,2 días de promedio**, máximo 48.
+
+**Decidido (2026-08-31).** La v2.0.5 no va a convivir con la app nueva, y la web
+**sólo permite VER postcosecha, no registrar**. Una partida que quedara en `z_*`
+no la podría cerrar nadie. Así que se migran **las 4 partidas de la ventana,
+cerradas y en curso** — no "sólo las cerradas". Son 4 filas.
+
+Bonus: `vw_harvest_pending_lots` y cualquier pantalla de "en proceso" están
+mostrando hoy 22 partidas fantasma. Vale la pena cerrarlas o marcarlas antes del
+corte, decida lo que decida el pendiente #10.
+
+### El migrador — escrito y verificado
+
+`docs/db/migrations/2026-08-31-05-migracion-agosto.sql`. Corrido tres veces
+seguidas sobre la copia real: la segunda y la tercera no insertan nada.
+Cero rechazos de FK, cero filas tocadas en las `z_*`.
+
+| origen (>= 2026-08-01) | destino |
+|---|---|
+| `z_tabla_am` 590 | `reg_am` 367 cabeceras, 529 personas, 505 módulos, 61 descartes |
+| `z_tabla_pm` 598 | `reg_pm` 495, 629 módulos, 103 descartes |
+| `z_cosecha_cacao` 60 | `reg_cosecha` 60, 292 sacos |
+| `z_riego` 279 | `reg_riego` 279 |
+| `z_postharvest_*` 4 partidas | `pc_proceso` 4, 25 enlaces, 13 etapas, 2 calidades, 4 fotos |
+
+529 + 61 = 590 y 495 + 103 = 598: todo lo que entró está o migrado o auditado.
+La suma de `total_peso` de cosecha da 20.526,60 en los dos lados, y el
+`peso_lote` de las 4 partidas es la suma exacta de su cosecha enlazada.
+
+Tres cosas que salieron al escribirlo y no estaban en ningún documento:
+
+1. **`z_riego.hora` vale `'0'` en las 9.778 filas.** Columna muerta, como
+   `codigo_tarea` y `codigo_subtarea`. No hay hora del día en el origen: se usa
+   la de `created_at` cuando cae el mismo día (35 de 279) y 00:00 en el resto.
+2. **14 de las 60 filas de cosecha de agosto traen `finca = 0`.** La columna
+   tiene `DEFAULT 0` y la app vieja no siempre la manda. Se deriva de
+   `z_lote.finca_id`, que sí la tiene, y queda constancia en `mig_descarte`.
+3. **MariaDB no soporta `LATERAL`.** El despivote de `saco1..saco15` va con una
+   tabla de números y `CASE`, no con un derivado lateral.
+
+### Bis — vistas UNION para los reportes de la web — VERIFICADO
+
+Kevin confirmó que las pantallas de la web siguen en uso, y decidió (2026-08-31)
+**convivencia con diferenciador**: las dos mitades se leen unidas, cada fila
+marcada con su origen, hasta una fusión futura sin fecha.
+
+Probado el 2026-08-31 sobre una **copia real de la base** (MariaDB 10.11,
+108.149 filas en `z_tabla_pm`, la ventana de agosto migrada a `reg_pm`).
+SQL listo en `docs/db/migrations/2026-08-31-03-vistas-union.sql`.
+
+**Funciona.** `vw_reporte_pm` repuntada a la vista de unión devuelve v3 y v4
+juntas, con nombres, tarifas y totales resueltos. Costo: `COUNT(*)` del reporte
+completo pasa de **1.418 ms a 1.734 ms** (+22 %); las consultas filtradas por
+mes no se degradan (74–212 ms). El sobrecosto lo paga la pantalla que lista
+todo sin filtro, que ya tardaba 1,4 s por el `DISTINCT` sobre ocho joins.
+
+**El diseño que hace barato el cambio:** la vista expone **los mismos nombres de
+columna que `z_tabla_pm`**, más `fuente`. Adaptar un reporte existente es
+cambiar `z_tabla_pm` por `vw_pm_compat` — una palabra, el resto de la consulta
+intacta.
+
+Tres cosas que fallan si se hacen de la forma obvia:
+
+1. **La colación.** Corrección de lo que decía este documento: un `UNION` por sí
+   solo **no** lanza *Illegal mix of collations* — MariaDB resuelve la colación
+   del resultado. Lo que sí falla es escribir `z.columna COLLATE
+   utf8mb4_spanish_ci` sobre una columna `utf8mb3`: **ERROR 1253**. Hay que
+   `CONVERT(z.columna USING utf8mb4)` primero. Y ojo: sin `CONVERT`, las
+   columnas de texto de la vista **heredan la colación vieja**
+   (`utf8mb3_spanish2_ci`), que es lo que después rompe un `JOIN`.
+2. **El doble conteo.** Sin `WHERE z.fecha < <corte>` en el lado viejo, agosto
+   sale **dos veces**: está migrado en `reg_pm` y sigue en `z_tabla_pm`.
+   Son 598 filas de nómina contadas doble.
+3. **Sólo lectura.** Toda vista con `UNION` es no actualizable: `UPDATE` da
+   **ERROR 1288** y `information_schema.views.is_updatable = NO`. Grocery CRUD
+   puede **listar** desde la vista; insertar, editar y borrar siguen contra la
+   tabla base. No hace falta clave sintética de texto: basta con desplazar los
+   `id` nuevos (`r.id + 1000000`; los viejos llegan a ~121.000), y así la PK
+   sigue siendo entera.
+
+### El trabajo real: 20 vistas, no una
+
+Medido sobre el esquema: **20 vistas existentes dependen de las tablas
+transaccionales `z_*`** — 8 de PM, 2 de AM, 2 de cosecha y 7 de postcosecha.
+La lista completa está en el `.sql`. Cada una necesita el mismo cambio de una
+palabra el día que su tabla entre en la ventana migrada.
+
+Además, `tbl_pm_payment_daily_adjustment.pm_id` tiene **FK a `z_tabla_pm(id)`**:
+un ajuste de pago no puede apuntar a una fila de `reg_pm`. Hoy esa tabla está
+**vacía**, así que no bloquea el corte — pero si el módulo de ajustes se activa,
+esa FK hay que repuntarla antes.
 
 ---
 
