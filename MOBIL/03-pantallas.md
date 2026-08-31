@@ -96,6 +96,14 @@ Comentarios, botón `SIGUIENTE +`.
 
 ---
 
+### Regla dura del AM (2026-08-31, Kevin)
+
+**No se puede guardar un AM sin al menos una persona asociada.** El botón de
+guardar queda deshabilitado y se explica por qué; no se deja guardar para que
+lo rechace el servidor tres horas después, cuando el supervisor ya se fue del
+lote. El servidor también lo rechaza (`personal_ids vacio`), pero esa es la
+segunda barrera, no la primera.
+
 ## PM — "Reporte PM"
 
 Página 1 `Encabezado`: Fecha Proceso, Hacienda, Responsable, Trabajador.

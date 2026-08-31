@@ -733,6 +733,84 @@ Respuesta (ver `01-sincronizacion.md` para la definición del ACK):
 
 `tipo` ∈ `am | pm | cosecha | riego | pc_lote | pc_etapa | pc_calidad`.
 
+### Estado: `am` y `pm` IMPLEMENTADOS y probados (2026-08-31)
+
+`V4::sync_post()` ya no devuelve 501. Probado con `curl` contra CodeIgniter
+levantado sobre la copia real de la base (receta en la memoria del proyecto).
+
+**La regla que hace todo lo demás simple: un guid que NO aparece en `results`
+se queda PENDIENTE en el teléfono y se reintenta.** Eso se usa a propósito en
+tres casos:
+
+1. **Tipos todavía no implementados** (`cosecha`, `riego`, `pc_*`): se omiten en
+   silencio. El día que existan, la cola los reenvía sola. Nadie tiene que
+   tocar el teléfono.
+2. **Errores de base.** Un fallo al guardar NUNCA es `rejected`: reenviar sí lo
+   arregla.
+3. **`guid` ilegible**: sin guid no hay a qué acusar recibo.
+
+`rejected` queda reservado a lo que reenviar no arregla, y por eso no se
+reintenta nunca: payload inválido, catálogo inexistente o inactivo, e I1.
+
+Validaciones que la FK sola no puede hacer y el endpoint sí:
+
+- El **lote tiene que pertenecer a la finca** declarada.
+- El **módulo tiene que pertenecer al lote** declarado.
+- El personal se valida por `eregistro = 'A'`, los catálogos por
+  `estado IN ('1','A')` — los mismos filtros que `/v4/catalogos`.
+- Un AM sin `personal_ids` se rechaza: una programación sin gente no es un
+  registro. **[CONFIRMAR con Kevin]** si alguna vez es legítimo.
+
+Tope de lote: 200 registros (413 si se pasa). Body ilegible: 400. Todo lo demás
+responde 200 con su `results`.
+
+### Dos cosas que sólo aparecieron al correrlo
+
+**1. `pm_year` se calcula con `'o'` (año ISO), no con `'Y'` (año calendario).**
+V3, V2 y `PM.php` usan `$date->format('Y')` junto a `format('W')`, y esa pareja
+es incorrecta en el cambio de año. Ya pasó: **181 filas del 29, 30 y 31 de
+diciembre de 2025 quedaron guardadas como `(2025, semana 1)`**, mezcladas en el
+reporte de pago con la primera semana de enero de 2025 — 116 filas de enero por
+86,00 conviviendo con 181 de diciembre por 7.757,15. Con `'o'` esas filas caen
+en `(2026, 1)`, que es lo correcto. Vuelve a pasar en **diciembre de 2029**.
+V4 no copia el bug; V3 lo sigue teniendo.
+
+**2. Desde PHP 8.1 mysqli LANZA excepciones en vez de devolver `FALSE`,** y
+CI3 no lo sabe: su chequeo de `db_debug` nunca llega a correr, la excepción
+sube hasta `RestController` y la respuesta se convierte en una página de error
+que se lleva el lote entero. El Docker de desarrollo es **PHP 7.4** (devuelve
+`FALSE`), así que el problema es invisible ahí y aparece en cuanto producción
+sea 8.1+. `sync_post` sostiene los dos caminos: chequea `=== FALSE` **y**
+captura `Throwable`. Verificado en el contenedor con PHP 8.4 — el registro
+fallido se omite de `results` y el resto del lote se guarda igual.
+
+Relacionado: `db_debug` viene `TRUE` fuera de producción, así que una violación
+de FK imprime una página de error y mata el request. `sync_post` lo apaga
+mientras dura el lote y lo restaura al terminar.
+
+### Lo que se probó, contra la base real
+
+| caso | resultado |
+|---|---|
+| AM válido con 3 personas y 2 módulos | `created` + hijos escritos |
+| El mismo guid otra vez | `duplicate`, no inserta nada |
+| PM válido | `created`, `pm_week` calculada por el servidor |
+| Lote que no es de la finca declarada | `rejected` |
+| Módulo que no es del lote declarado | `rejected` |
+| Personal con `eregistro = 'I'` | `rejected` |
+| `fecha_proceso` en el futuro (I1) | `rejected` |
+| `hora_cierre` < `hora_inicio` | `rejected` |
+| AM sin personas | `rejected` |
+| `tipo: cosecha` y guid ilegible | omitidos → siguen PENDIENTES |
+| Lote mixto: uno malo y uno bueno | el bueno entra |
+| Registro de hace 20 días | `created` + flag `retroactivo_excedido` |
+| AM a las 22:00 | `created` + flag `fuera_de_ventana_horaria` |
+| `created_at_device` adelantado | `created` + flag `reloj_adelantado` |
+| Fallo del INSERT hijo | rollback: la cabecera NO queda, y el guid se puede reenviar |
+| Body ilegible / lote de 201 | 400 / 413 |
+
+Tras los rechazos: **cero cabeceras fantasma y cero hijos huérfanos**.
+
 Reglas del servidor, sin excepción:
 
 - `pm_year` / `pm_week` se calculan desde `fecha_proceso`. Nunca los manda el cliente.
