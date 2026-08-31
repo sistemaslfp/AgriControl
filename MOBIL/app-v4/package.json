@@ -1,6 +1,7 @@
 {
   "name": "lagricontrol-app-v4",
-  "version": "4.0.0",
+  "version": "0.1.1",
+  "author": "Life Food Products",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
