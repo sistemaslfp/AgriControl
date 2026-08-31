@@ -54,7 +54,6 @@ Capacitor, `io.ionic.starter`, sin repositorio disponible).
 | 1 | Las cinco ventanas de retroactividad (AM/PM 3 d, Cosecha 7 d, Riego 7 d, Postcosecha 30 d) | 01 §Integridad de fechas |
 | 2 | ¿Se permite borrar un registro PENDIENTE nunca enviado? | 01 §Máquina de estados |
 | 4 | ¿`lot_code` sin componente de finca es correcto? | 02 §3 |
-| 5 | ¿Producción corre en Docker o en hosting PHP-CGI? Decide si `public/php.ini` se borra | 02 §8 |
 | 6 | Vocabulario: ¿"Finca" o "Hacienda"? ¿"Responsable" o "Supervisor"? | 03 §Corrección transversal 2 |
 | 7 | ¿Qué hace el botón `ADICIONAL` en Cosecha? | 03 §Cosecha |
 | 8 | ¿Qué hace "Restricción de Finca" en Configuración? | 03 §Configuración |
@@ -87,6 +86,29 @@ decidir nada: `vw_reporte_pago` es `SELECT DISTINCT`, así que las 103 filas
 duplicadas **nunca llegaron al pago**. El reporte devuelve 495 filas y
 79.298,40 — exactamente lo mismo que la base migrada. La deduplicación no
 cambia ni un centavo de lo ya pagado. Cerrado.
+
+**#5 — PHP de produccion (2026-08-31, Kevin).** Se trabaja en **PHP 8.1**.
+`docker/php/Dockerfile` pasa de `php:7.4-apache` a `php:8.1-apache`. El
+comentario que decia que Grocery CRUD y CI 3.1.11 rompen en PHP 8 **se probo y
+es falso**: bajo PHP 8.4 arrancan CI 3.1.11, ion_auth y Grocery CRUD 1.6.1
+(listado, alta y edicion) sin fatales. Falta validar el guardado real, los
+campos de archivo, el login POST y `Operations/PM` — lista en el Dockerfile.
+Y ojo con `public/php.ini`: si produccion es PHP-CGI, borrarlo baja el limite
+de subida a 2 MB y rompe las fotos.
+
+**#Limpieza (2026-08-31, Kevin, DIFERIDO).** V3 no se arregla: los endpoints
+quedan tal cual. Lo unico que se hara a futuro, por confirmar, es **eliminar
+las filas repetidas que genero la app movil**. No incluye el bug de
+`pm_year`/`pm_week` de V3, que sigue vivo y vuelve a morder en diciembre 2029.
+
+**#AM sin personal (2026-08-31, Kevin).** Confirmado: es una validacion, no una
+suposicion. El servidor rechaza un AM sin `personal_ids`, y **la app tiene que
+bloquear el avance** de la pantalla AM si no hay al menos una persona asociada.
+
+**Paso 3 — servidor (2026-08-31).** `POST /v4/sync` implementado para `am` y
+`pm` y probado con curl contra la base real. Detalle y tabla de pruebas en
+`02-bd-y-api.md` §7. Falta la mitad de pantallas (AM/PM en la app) y los tipos
+`cosecha`, `riego` y `pc_*`, que hoy se omiten de `results` a propósito.
 
 **Alcance (2026-08-31, Kevin).** Las **dos fincas** (Bellita y Pacaritambo)
 pasan a v4, porque la web va a usar v4. El corte por fecha global es correcto;
