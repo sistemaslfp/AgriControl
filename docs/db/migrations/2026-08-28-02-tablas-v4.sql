@@ -240,20 +240,52 @@ CREATE TABLE IF NOT EXISTS reg_riego (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- =========================================================================
--- POSTCOSECHA — una pc_etapa en lugar de cinco tablas casi idénticas
+-- POSTCOSECHA
+--
+-- Nombres revisados el 2026-08-28 tras analizar el flujo real. "Lote" en este
+-- sistema significa DOS cosas distintas: una parcela de terreno (z_lote,
+-- maestra, 14 filas) y una partida de cacao en proceso. Se llamaba pc_lote y
+-- se confundía con la primera. La partida es `pc_proceso`: una corrida del
+-- proceso de postcosecha, con sus etapas. `lot_code` sigue siendo la etiqueta
+-- que ve la gente.
+--
+-- FLUJO REAL, medido sobre z_postharvest_* el 2026-08-28:
+--   1. La cosecha del día entra en N registros de cosecha.
+--   2. Se agrupa POR FECHA y se suma el peso -> "lotes pendientes".
+--   3. El supervisor elige 1..N fechas, pesa, y arranca una partida.
+--      De 83 partidas históricas: 75 consumieron 1 fecha, 4 dos, 2 tres,
+--      1 cuatro y 1 cinco. Las fechas NO son necesariamente consecutivas.
+--   4. La partida pasa por 5 etapas y acumula calidad y fotos.
+--
+-- HUECO QUE ESTO CIERRA: hoy NADA registra qué cosechas entraron en qué
+-- partida. z_postharvest_weight.lot_number (456..461) y
+-- z_postharvest_lotsharvest.id (92..99) no se cruzan en una sola fila; el
+-- vínculo sólo se puede inferir por cercanía de created_at. Eso es
+-- pc_proceso_cosecha.
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS pc_lote (
+CREATE TABLE IF NOT EXISTS pc_proceso (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   guid                CHAR(36)     NOT NULL,
   lot_code            CHAR(7)      NOT NULL,   -- dddnnaa, lo asigna el servidor
-  fecha_cosecha       DATE         NOT NULL,   -- de acá salen ddd y aa
-  fecha_inicio        DATETIME     NOT NULL,
-  supervisor_id       INT          NOT NULL,
+  -- La fecha que NOMBRA la partida: de acá salen ddd y aa del lot_code.
+  -- La elige el servidor (la menor de las cosechas enlazadas), no el usuario.
+  -- Con partidas multi-fecha hay que elegir una, y esa elección queda escrita.
+  fecha_cosecha       DATE         NOT NULL,
+  fecha_inicio        DATETIME     NOT NULL,   -- cuándo arrancó el proceso (el pesaje)
+  supervisor_id       INT          NOT NULL,   -- el de postcosecha, distinto del de cosecha
+  -- CALCULADO Y CONGELADO POR EL SERVIDOR: suma del peso de las cosechas
+  -- enlazadas en pc_proceso_cosecha, al momento de crear la partida. El
+  -- teléfono NO lo manda. Verificado: en el histórico, 76 de 94 partidas
+  -- tienen un peso idéntico a la suma de la cosecha de su fecha.
+  -- Se congela a propósito: una cosecha que llegue tarde para una fecha ya
+  -- consumida no debe cambiar el peso de una partida cerrada.
   peso_lote           DECIMAL(9,3) NOT NULL,
+  -- Medición propia, NO derivable: 0 de 94 coinciden con suma alguna de
+  -- cosecha, y van de 10,65 a 283,29 lb.
   peso_mallas         DECIMAL(9,3) NOT NULL,
   peso_baba           DECIMAL(9,3) AS (peso_lote - peso_mallas) STORED,
-  peso_final          DECIMAL(9,3) NULL,
+  peso_final          DECIMAL(9,3) NULL,       -- resultado, al cerrar el proceso
   comentario          VARCHAR(255) NULL,
   device_alias        VARCHAR(50)  NULL,
   created_at_device   DATETIME     NULL,
@@ -262,24 +294,31 @@ CREATE TABLE IF NOT EXISTS pc_lote (
   origen              VARCHAR(10)  NOT NULL DEFAULT 'app',
   UNIQUE KEY uq_pc_guid (guid),
   UNIQUE KEY uq_pc_code (lot_code),
+  KEY idx_pc_fecha (fecha_cosecha),
   CONSTRAINT fk_pc_supervisor FOREIGN KEY (supervisor_id) REFERENCES z_personal(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
--- Qué cosechas entraron en el lote (hoy la pantalla es una multiselección).
-CREATE TABLE IF NOT EXISTS pc_lote_cosecha (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  pc_lote_id INT NOT NULL,
-  cosecha_id INT NOT NULL,
-  UNIQUE KEY uq_pc_cosecha (pc_lote_id, cosecha_id),
-  CONSTRAINT fk_pcc_lote    FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE,
-  CONSTRAINT fk_pcc_cosecha FOREIGN KEY (cosecha_id) REFERENCES reg_cosecha(id)
+-- Qué cosechas entraron en la partida. Apunta al REGISTRO de cosecha, no a la
+-- fecha: así una cosecha que llega tarde para una fecha ya consumida se
+-- distingue en vez de confundirse con las que sí entraron.
+CREATE TABLE IF NOT EXISTS pc_proceso_cosecha (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  pc_proceso_id INT NOT NULL,
+  cosecha_id    INT NOT NULL,
+  UNIQUE KEY uq_pc_cosecha (pc_proceso_id, cosecha_id),
+  -- Una cosecha no puede entrar en dos partidas.
+  UNIQUE KEY uq_cosecha_una_sola_vez (cosecha_id),
+  CONSTRAINT fk_pcc_proceso FOREIGN KEY (pc_proceso_id) REFERENCES pc_proceso(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pcc_cosecha FOREIGN KEY (cosecha_id)    REFERENCES reg_cosecha(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
--- Una fila por etapa. Agregar una etapa deja de ser un CREATE TABLE.
+-- Una fila por etapa, en lugar de las cinco tablas casi idénticas de hoy
+-- (_predrying, _fermentation, _sundrying, _machinedrying, _result). Agregar
+-- una etapa deja de ser un CREATE TABLE.
 CREATE TABLE IF NOT EXISTS pc_etapa (
   id                 INT AUTO_INCREMENT PRIMARY KEY,
   guid               CHAR(36)     NOT NULL,
-  pc_lote_id         INT          NOT NULL,
+  pc_proceso_id      INT          NOT NULL,
   etapa              VARCHAR(20)  NOT NULL,  -- presecado|fermentado|secado_sol|secado_maq|resultado
   orden              TINYINT      NOT NULL,
   inicio             DATETIME     NOT NULL,
@@ -287,42 +326,84 @@ CREATE TABLE IF NOT EXISTS pc_etapa (
   comentario         VARCHAR(255) NULL,
   received_at_server DATETIME     NOT NULL,
   UNIQUE KEY uq_etapa_guid (guid),
-  UNIQUE KEY uq_etapa (pc_lote_id, etapa),
-  CONSTRAINT fk_etapa_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
+  UNIQUE KEY uq_etapa (pc_proceso_id, etapa),
+  CONSTRAINT fk_etapa_proceso FOREIGN KEY (pc_proceso_id) REFERENCES pc_proceso(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
--- Los porcentajes de fermentación NO se guardan: se calculan desde buena/ligera/violeta.
-CREATE TABLE IF NOT EXISTS pc_calidad (
+-- =========================================================================
+-- CALIDAD — DOS tablas, no una
+--
+-- 02-bd-y-api.md proponía una sola pc_calidad con buena/ligera/violeta para
+-- "fermentado | secado_sol". Al mirar los datos, eso perdía información:
+-- z_postharvest_fermentationquality y z_postharvest_dryingquality NO miden lo
+-- mismo. La primera es el corte de grano (buena/ligera/violeta); la segunda es
+-- humedad, índice de grano y granos vacíos, y aplica a los DOS secados
+-- (49 filas de Secado Máquina, 17 de Secado Sol). Colapsarlas habría dejado
+-- 66 mediciones reales sin dónde guardarse.
+--
+-- Colapsar las cinco tablas de ETAPA sí era correcto: eran casi idénticas.
+-- Colapsar éstas no, porque son formas distintas.
+-- =========================================================================
+
+-- Corte de grano al final del fermentado. Los PORCENTAJES no se guardan: se
+-- calculan desde los tres conteos. En el histórico los tres son siempre
+-- enteros (0 no enteros en 57 filas) y no pasan de 12.
+CREATE TABLE IF NOT EXISTS pc_calidad_fermentacion (
   id                 INT AUTO_INCREMENT PRIMARY KEY,
-  guid               CHAR(36)    NOT NULL,
-  pc_lote_id         INT         NOT NULL,
-  etapa              VARCHAR(20) NOT NULL,   -- fermentado | secado_sol
-  buena              SMALLINT    NOT NULL DEFAULT 0,
-  ligera             SMALLINT    NOT NULL DEFAULT 0,
-  violeta            SMALLINT    NOT NULL DEFAULT 0,
-  received_at_server DATETIME    NOT NULL,
-  UNIQUE KEY uq_cal_guid (guid),
-  UNIQUE KEY uq_calidad (pc_lote_id, etapa),
-  CONSTRAINT fk_cal_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
+  guid               CHAR(36) NOT NULL,
+  pc_proceso_id      INT      NOT NULL,
+  fecha_muestra      DATETIME NOT NULL,
+  buena              SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  ligera             SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  violeta            SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  received_at_server DATETIME NOT NULL,
+  UNIQUE KEY uq_calferm_guid (guid),
+  UNIQUE KEY uq_calferm_proceso (pc_proceso_id),   -- una sola por partida
+  CONSTRAINT fk_calferm_proceso FOREIGN KEY (pc_proceso_id) REFERENCES pc_proceso(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
+-- Humedad e índice de grano, una por cada secado. Rangos reales: humedad
+-- 5,93–28,07 %; hasta 423 granos de muestra; índice hasta 130,5 g; vacíos
+-- hasta 4,7 %. El promedio es exactamente el de las tres lecturas en las 66
+-- filas del histórico, así que se calcula, no se guarda a mano.
+CREATE TABLE IF NOT EXISTS pc_calidad_secado (
+  id                 INT AUTO_INCREMENT PRIMARY KEY,
+  guid               CHAR(36)     NOT NULL,
+  pc_proceso_id      INT          NOT NULL,
+  etapa              VARCHAR(20)  NOT NULL,   -- secado_sol | secado_maq
+  fecha_muestra      DATETIME     NOT NULL,
+  humedad_1          DECIMAL(6,3) NOT NULL,
+  humedad_2          DECIMAL(6,3) NOT NULL,
+  humedad_3          DECIMAL(6,3) NOT NULL,
+  humedad_promedio   DECIMAL(6,3) AS ((humedad_1 + humedad_2 + humedad_3) / 3) STORED,
+  granos_muestra     SMALLINT UNSIGNED NULL,
+  indice_grano_g     DECIMAL(7,3) NULL,
+  granos_vacios_pct  DECIMAL(6,3) NULL,
+  received_at_server DATETIME     NOT NULL,
+  UNIQUE KEY uq_calsec_guid (guid),
+  UNIQUE KEY uq_calsec_etapa (pc_proceso_id, etapa),
+  CONSTRAINT fk_calsec_proceso FOREIGN KEY (pc_proceso_id) REFERENCES pc_proceso(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+
+-- Hoy hay fotos en tres etapas: Secado Máquina (144), Fermentado (52) y
+-- Secado Sol (51). Acá la etapa va como slug, no como texto de pantalla.
 CREATE TABLE IF NOT EXISTS pc_foto (
   id                 INT AUTO_INCREMENT PRIMARY KEY,
   guid               CHAR(36)     NOT NULL,
-  pc_lote_id         INT          NOT NULL,
+  pc_proceso_id      INT          NOT NULL,
   etapa              VARCHAR(20)  NOT NULL,
   archivo            VARCHAR(150) NOT NULL,
   orden              TINYINT      NOT NULL,
   received_at_server DATETIME     NOT NULL,
   UNIQUE KEY uq_foto_guid (guid),
-  KEY idx_foto_lote (pc_lote_id, etapa, orden),
-  CONSTRAINT fk_foto_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
+  KEY idx_foto_proceso (pc_proceso_id, etapa, orden),
+  CONSTRAINT fk_foto_proceso FOREIGN KEY (pc_proceso_id) REFERENCES pc_proceso(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
--- Secuencia del lot_code dddnnaa. Dos límites aceptados: 99 lotes por fecha de
--- cosecha (el 100 falla con error claro, nunca envuelve a 00) y el código no
--- lleva finca (pendiente #4 de 00-plan.md, sin confirmar).
-CREATE TABLE IF NOT EXISTS pc_lote_seq (
+-- Secuencia del lot_code dddnnaa. Dos límites aceptados: 99 partidas por fecha
+-- de cosecha (la 100 falla con error claro, nunca envuelve a 00) y el código
+-- no lleva finca (pendiente #4 de 00-plan.md, sin confirmar).
+CREATE TABLE IF NOT EXISTS pc_lot_code_seq (
   julian_day SMALLINT NOT NULL,
   year_2d    TINYINT  NOT NULL,
   last_seq   TINYINT  NOT NULL DEFAULT 0,
