@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   IonBadge,
   IonButton,
@@ -31,6 +31,7 @@ import {
 
 import { APP_VERSION } from '../../core/version';
 import { AppConfigService } from '../../core/config/app-config.service';
+import { BootstrapService } from '../../core/bootstrap/bootstrap.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 
@@ -39,6 +40,8 @@ interface CeldaMenu {
   icono: string;
   accion: 'modulo' | 'maestros' | 'pendientes' | 'enviados';
   habilitada: boolean;
+  /** Ruta del módulo. Solo la tienen los ya implementados. */
+  ruta?: string;
 }
 
 @Component({
@@ -67,12 +70,14 @@ export class MenuPage implements OnInit {
   readonly sync = inject(SyncQueueService);
   readonly catalogos = inject(CatalogService);
   readonly config = inject(AppConfigService);
+  private readonly bootstrap = inject(BootstrapService);
   private readonly toast = inject(ToastController);
+  private readonly router = inject(Router);
 
   /** Sin celdas vacías de relleno: solo las ocho reales (corrección 03-pantallas). */
   readonly celdas: CeldaMenu[] = [
-    { titulo: 'AM', icono: 'sunny-outline', accion: 'modulo', habilitada: false },
-    { titulo: 'PM', icono: 'moon-outline', accion: 'modulo', habilitada: false },
+    { titulo: 'AM', icono: 'sunny-outline', accion: 'modulo', habilitada: true, ruta: '/am' },
+    { titulo: 'PM', icono: 'moon-outline', accion: 'modulo', habilitada: true, ruta: '/pm' },
     { titulo: 'Cosecha', icono: 'leaf-outline', accion: 'modulo', habilitada: false },
     { titulo: 'Riego', icono: 'rainy-outline', accion: 'modulo', habilitada: false },
     { titulo: 'Poscosecha', icono: 'time-outline', accion: 'modulo', habilitada: false },
@@ -103,6 +108,7 @@ export class MenuPage implements OnInit {
 
   async ngOnInit(): Promise<void> {
     await this.config.cargar();
+    await this.bootstrap.cargar();
     await this.catalogos.verificarDisponibles();
     await this.sync.refrescarConteo();
   }
@@ -117,11 +123,17 @@ export class MenuPage implements OnInit {
         await this.aviso('Esta pantalla llega en el paso 4 del plan.');
         break;
       case 'modulo':
-        await this.aviso(
-          this.catalogos.disponibles()
-            ? 'Este módulo llega en un paso posterior del plan.'
-            : 'Primero descargá los catálogos con "Actualizar Maestros".',
-        );
+        // Sin catálogos no hay nada que elegir: los selectores saldrían
+        // vacíos y el registro se rechazaría en el servidor.
+        if (!this.catalogos.disponibles()) {
+          await this.aviso('Primero descargá los catálogos con "Actualizar Maestros".');
+          return;
+        }
+        if (!celda.ruta) {
+          await this.aviso('Este módulo llega en un paso posterior del plan.');
+          return;
+        }
+        await this.router.navigateByUrl(celda.ruta);
         break;
     }
   }
@@ -132,6 +144,14 @@ export class MenuPage implements OnInit {
       return;
     }
     try {
+      // Las ventanas horarias y de retroactividad viajan por /v4/bootstrap y
+      // se refrescan acá mismo: si falla, no tumba la actualización de
+      // catálogos (la app sigue con los últimos valores guardados).
+      try {
+        await this.bootstrap.actualizar();
+      } catch {
+        /* se conservan los valores anteriores */
+      }
       const r = await this.catalogos.actualizar();
       const t = r.totales;
       await this.aviso(

@@ -23,8 +23,14 @@ export class DatabaseService {
   private db: SQLiteDBConnection | null = null;
   private abriendo: Promise<SQLiteDBConnection> | null = null;
 
-  /** Esquema v1. Todo IF NOT EXISTS: correrlo dos veces es inocuo. */
-  private static readonly SCHEMA_V1: string[] = [
+  /**
+   * Esquema local. TODO es IF NOT EXISTS y se ejecuta en cada apertura, asi
+   * que agregar tablas NUEVAS no necesita la maquinaria de upgrade del plugin
+   * ni subir DB_VERSION: la app vieja que ya tenia la base simplemente las
+   * crea al abrir. DB_VERSION solo se movera cuando haya que MODIFICAR o
+   * migrar datos de una tabla existente, que es lo que IF NOT EXISTS no hace.
+   */
+  private static readonly SCHEMA: string[] = [
     `CREATE TABLE IF NOT EXISTS app_kv (
        clave TEXT PRIMARY KEY,
        valor TEXT NOT NULL
@@ -79,6 +85,39 @@ export class DatabaseService {
        id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, id_finca INTEGER,
        rol INTEGER, rol_app TEXT
      );`,
+
+    // ---------------------------------------------------------------
+    // Espejo local de lo capturado (paso 3). NO reemplaza a sync_queue:
+    // el payload sigue viviendo ahi. Estas dos tablas existen solo para
+    // poder responder rapido "esta persona ya tiene un AM abierto en
+    // ESTE telefono?" sin parsear JSON en SQL.
+    //
+    // Alcance honesto de la regla: cubre lo capturado en este equipo.
+    // Un AM cargado desde otra tablet es invisible aca. La validacion
+    // real exige reg_pm.am_id y una consulta al servidor; es un paso
+    // aparte, decidido por Kevin el 2026-08-31.
+    // ---------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS am_persona_local (
+       guid          TEXT    NOT NULL,
+       personal_id   INTEGER NOT NULL,
+       fecha         TEXT    NOT NULL,   -- YYYY-MM-DD de fecha_proceso
+       lote_id       INTEGER NOT NULL,
+       subtarea_id   INTEGER NOT NULL,
+       created_at    TEXT    NOT NULL,
+       PRIMARY KEY (guid, personal_id)
+     );`,
+    `CREATE INDEX IF NOT EXISTS idx_am_persona_abierto
+       ON am_persona_local (personal_id, fecha);`,
+    `CREATE TABLE IF NOT EXISTS pm_cierre_local (
+       guid          TEXT    PRIMARY KEY,
+       trabajador_id INTEGER NOT NULL,
+       fecha         TEXT    NOT NULL,
+       lote_id       INTEGER NOT NULL,
+       subtarea_id   INTEGER NOT NULL,
+       created_at    TEXT    NOT NULL
+     );`,
+    `CREATE INDEX IF NOT EXISTS idx_pm_cierre
+       ON pm_cierre_local (trabajador_id, fecha, lote_id, subtarea_id);`,
   ];
 
   /** Abre (una sola vez) la conexión y aplica el esquema. */
@@ -113,7 +152,7 @@ export class DatabaseService {
           );
 
     await db.open();
-    for (const sql of DatabaseService.SCHEMA_V1) {
+    for (const sql of DatabaseService.SCHEMA) {
       await db.execute(sql, false);
     }
     await this.persistirSiWeb(db);

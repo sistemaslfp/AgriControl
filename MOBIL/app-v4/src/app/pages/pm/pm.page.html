@@ -1,0 +1,285 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Reporte PM</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="cargarLista()" aria-label="Actualizar lista">
+        <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content
+  class="ion-padding"
+  appSwipePasos
+  (swipeSiguiente)="siguiente()"
+  (swipeAnterior)="anterior()"
+>
+  @if (sinHoraVerificada()) {
+    <div class="banner aviso">
+      Este equipo nunca sincronizó la hora con el servidor. Se puede capturar,
+      pero los registros viajan marcados como no verificables.
+    </div>
+  }
+
+  <!-- ============ Paso 0: encabezado + tareas de la mañana ============ -->
+  @if (paso() === 0) {
+    <ion-list inset="true">
+      <ion-item>
+        <ion-label>Fecha de proceso</ion-label>
+        <ion-datetime-button slot="end" datetime="fechaPm"></ion-datetime-button>
+      </ion-item>
+      <ion-item>
+        <ion-label>Hora de cierre</ion-label>
+        <ion-datetime-button slot="end" datetime="horaPm"></ion-datetime-button>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirFinca()">
+        <ion-label>
+          Finca
+          <p>{{ finca()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirResponsable()">
+        <ion-icon slot="start" name="person-outline"></ion-icon>
+        <ion-label>
+          Responsable que cierra
+          <p>{{ responsable()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="fechaPm"
+          presentation="date"
+          locale="es-EC"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fecha()"
+          [min]="limites().min"
+          [max]="limites().max"
+          (ionChange)="setFecha($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="horaPm"
+          presentation="time"
+          locale="es-EC"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fecha() + 'T' + horaCierre() + ':00'"
+          (ionChange)="setHoraCierre($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+
+    <div class="cabecera-tarea">
+      <h2 class="titulo-seccion">Tareas de la mañana sin cerrar</h2>
+      @if (cargandoLista()) {
+        <ion-spinner name="crescent" class="spinner-boton"></ion-spinner>
+      }
+    </div>
+
+    @if (errorLista(); as err) {
+      <div class="banner aviso">
+        <ion-icon name="cloud-offline-outline"></ion-icon>
+        {{ err }}
+      </div>
+    }
+
+    @if (!cargandoLista() && disponibles().length === 0) {
+      <div class="banner info">
+        No hay tareas AM sin cerrar para el {{ fecha() }}.
+        @if (!listaDesdeServidor()) {
+          Solo se está viendo lo cargado en este equipo: con conexión pueden
+          aparecer tareas de otras tablets.
+        }
+      </div>
+    } @else {
+      <ion-list inset="true">
+        @for (a of disponibles(); track clave(a)) {
+          <ion-item>
+            <ion-checkbox
+              [checked]="estaElegida(a)"
+              (ionChange)="alternar(a)"
+              labelPlacement="end"
+              justify="start"
+            >
+              <ion-label>
+                <strong>{{ a.trabajador }}</strong>
+                <p>{{ a.lote }} · {{ a.subtarea }}</p>
+                @if (a.origen === 'local') {
+                  <p class="pendiente">Cargada en este equipo, todavía sin enviar</p>
+                }
+              </ion-label>
+            </ion-checkbox>
+          </ion-item>
+        }
+      </ion-list>
+    }
+
+    <div class="banner info">
+      El PM no crea tareas: cierra las que se programaron en el AM. Lote,
+      subtarea y unidad vienen de ahí, así que acá solo se carga el avance.
+    </div>
+
+    @if (problemasEncabezado().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasEncabezado(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+  }
+
+  <!-- ==================== Avance por tarea ==================== -->
+  @if (paso() > 0 && paso() < indiceRevision()) {
+    @let i = indiceCierre();
+    @let c = elegidas()[i];
+
+    <h2 class="titulo-seccion">{{ c.asignacion.trabajador }}</h2>
+
+    <ion-list inset="true">
+      <ion-item lines="none">
+        <ion-label>
+          <p>Tarea de la mañana</p>
+          <strong>{{ c.asignacion.lote }} · {{ c.asignacion.subtarea }}</strong>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          [label]="
+            c.asignacion.unidadLabor
+              ? 'Avance en ' + c.asignacion.unidadLabor
+              : 'Avance'
+          "
+          labelPlacement="stacked"
+          type="number"
+          inputmode="decimal"
+          placeholder="0"
+          [value]="c.cantidad"
+          (ionInput)="setCampo(i, 'cantidad', $any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="Comentarios"
+          labelPlacement="stacked"
+          placeholder="Opcional"
+          [value]="c.comentario"
+          (ionInput)="setCampo(i, 'comentario', $any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-note>
+          Cierra a las {{ horaCierre() }}, la hora del encabezado. La hora de
+          inicio sale de la tarea AM.
+        </ion-note>
+      </ion-item>
+    </ion-list>
+
+    @if (problemasCierre(i).length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasCierre(i); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+  }
+
+  <!-- ==================== Revisión ==================== -->
+  @if (paso() === indiceRevision()) {
+    <h2 class="titulo-seccion">Revisar y enviar</h2>
+
+    <ion-list inset="true">
+      <ion-item lines="none">
+        <ion-label>
+          <p>Fecha y hora de cierre</p>
+          <strong>{{ fecha() }} · {{ horaCierre() }}</strong>
+        </ion-label>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-label>
+          <p>Finca / Responsable que cierra</p>
+          <strong>{{ finca()?.nombre ?? '—' }} · {{ responsable()?.nombre ?? '—' }}</strong>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    @for (c of elegidas(); track clave(c.asignacion)) {
+      <ion-list inset="true">
+        <ion-item button="true" detail="true" (click)="irA($index + 1)">
+          <ion-label>
+            <strong>{{ c.asignacion.trabajador }}</strong>
+            <p>{{ c.asignacion.lote }} · {{ c.asignacion.subtarea }}</p>
+            <p>{{ c.cantidad || '0' }} {{ c.asignacion.unidadLabor ?? '' }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+    }
+
+    <div class="banner info">
+      Cada cierre viaja como un registro propio. Si la tarea AM todavía no
+      llegó al servidor, su PM espera en la cola y se reintenta solo: no se
+      pierde nada.
+    </div>
+
+    @if (problemas().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemas(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <div class="fila-botones">
+      <ion-button expand="block" [disabled]="!puedeGuardar()" (click)="guardar()">
+        <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
+        Cerrar {{ elegidas().length }} tarea(s)
+      </ion-button>
+    </div>
+  }
+</ion-content>
+
+<ion-footer>
+  <app-barra-pasos
+    [indice]="paso()"
+    [total]="totalPasos()"
+    [etiqueta]="etiquetaPaso()"
+    (anterior)="anterior()"
+    (siguiente)="siguiente()"
+  ></app-barra-pasos>
+</ion-footer>
+
+<ion-modal
+  class="selector-flotante"
+  [isOpen]="selectorAbierto()"
+  (ionModalDidDismiss)="cerrarSelector()"
+>
+  <ng-template>
+    <app-selector
+      [titulo]="selectorTitulo()"
+      [opciones]="selectorOpciones()"
+      [seleccion]="selectorSeleccion()"
+      [vacioTexto]="selectorVacio()"
+      [conBuscador]="selectorBuscador()"
+      (confirmar)="onSeleccion($event)"
+      (cerrar)="cerrarSelector()"
+    ></app-selector>
+  </ng-template>
+</ion-modal>

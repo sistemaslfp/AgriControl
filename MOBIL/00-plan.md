@@ -54,12 +54,16 @@ Capacitor, `io.ionic.starter`, sin repositorio disponible).
 | 1 | Las cinco ventanas de retroactividad (AM/PM 3 d, Cosecha 7 d, Riego 7 d, Postcosecha 30 d) | 01 §Integridad de fechas |
 | 2 | ¿Se permite borrar un registro PENDIENTE nunca enviado? | 01 §Máquina de estados |
 | 4 | ¿`lot_code` sin componente de finca es correcto? | 02 §3 |
-| 6 | Vocabulario: ¿"Finca" o "Hacienda"? ¿"Responsable" o "Supervisor"? | 03 §Corrección transversal 2 |
 | 7 | ¿Qué hace el botón `ADICIONAL` en Cosecha? | 03 §Cosecha |
 | 8 | ¿Qué hace "Restricción de Finca" en Configuración? | 03 §Configuración |
 | 9 | Capturas de pantalla del módulo Riego | 03 §Riego |
 
 ### Decidido
+
+**#6 — Vocabulario (2026-08-31, Kevin). CERRADO.** **"Finca"** y
+**"Responsable"** en toda la app. Se eligieron por coincidir con la base
+(`z_finca`, `finca_id`, `responsable_id`), para no traducir entre pantalla,
+BD y reporte. "Hacienda" y "Supervisor" no se usan más.
 
 **#3 — Qué se migra (2026-08-28, Kevin).** Ventana de antecedente de **un mes:
 desde `2026-08-01`**. En postcosecha, **sólo partidas cerradas**. La fusión
@@ -104,6 +108,76 @@ las filas repetidas que genero la app movil**. No incluye el bug de
 **#AM sin personal (2026-08-31, Kevin).** Confirmado: es una validacion, no una
 suposicion. El servidor rechaza un AM sin `personal_ids`, y **la app tiene que
 bloquear el avance** de la pantalla AM si no hay al menos una persona asociada.
+
+**Paso 3 bis — PM reescrito (2026-09-01, Kevin). El PM CIERRA un AM.**
+"NO se pueden crear PM, un PM solo es el reflejo de un AM." La pantalla PM
+dejó de capturar tareas: lista las asignaciones AM abiertas de la fecha
+(`GET /v4/am_abiertos` + el espejo local, para las que aún no llegaron al
+servidor) y solo carga el **avance** y quién cerró.
+
+- DDL: `reg_pm.am_personal_id`, UNIQUE — una asignación se cierra una vez.
+  `docs/db/migrations/2026-09-01-01-pm-cierra-am.sql`.
+- **Se descartó fundir el PM dentro de `reg_am_personal`**, que era la otra
+  opción: la cola del teléfono es solo-inserción e idempotente por guid, y
+  "rellenar los campos que le faltan al AM" es un UPDATE de una fila que puede
+  no existir todavía en el servidor. Con la columna, el PM sigue siendo un
+  INSERT y si el AM no llegó el guid se omite de `results` y la cola reintenta
+  sola. Además no toca la migración de agosto ni el reporte de pago.
+- **Se acepta perder un caso**: en agosto 16 de 598 PM (2,7%) fueron de gente
+  sin AM cargado esa mañana. Ahora hay que crear el AM primero.
+- Probado con `curl` contra la base real ya migrada: 8 casos, cero filas
+  fantasma. Tabla en `02-bd-y-api.md` §7.
+
+**Selectores (2026-09-01, Kevin).** Ventana flotante que cierra tocando fuera,
+buscador solo con más de 10 opciones, selección múltiple que aplica en vivo,
+**Responsable filtrado por `rol = 8`** (verificado: son 6 y son exactamente los
+6 responsables de los AM de agosto), cascada **Cultivo → Tarea → Subtarea**, y
+**los códigos de tarea/subtarea no se muestran** (control interno).
+
+**Vocabulario de pantalla (2026-09-01).** "Retroactivo" es jerga de estos
+documentos. En la app el interruptor dice **"Estoy cargando un día anterior"**.
+
+**Paso 3 — app (2026-08-31). Pantallas AM y PM HECHAS.** `MOBIL/app-v4/`,
+rutas `/am` y `/pm`, habilitadas desde el menú. Verificado con una suite e2e
+nueva contra el mock: `e2e/am-pm.spec.mjs`, **33 comprobaciones, todas en
+verde**, incluyendo el payload campo por campo contra lo que exige
+`sync_am`/`sync_pm`. Decisiones tomadas con Kevin ese día:
+
+- **El trabajador del PM va en la TAREA, no en el encabezado.** `reg_pm`
+  tiene `trabajador_id` a nivel de fila, así que el servidor nunca exigió lo
+  contrario; un solo PM cubre la cuadrilla entera en vez de un formulario por
+  persona.
+- **La tarea AM nueva precarga solo cultivo y lote.** El personal se elige de
+  cero cada vez.
+- **Una tarea = un guid = una fila.** El ACK es por registro, así que un AM de
+  tres tareas puede terminar con dos `created` y una `rejected`. La pantalla
+  de revisión lo dice; no promete atomicidad.
+
+**#AM abierto (2026-08-31, Kevin). Alcance acotado con datos.** *(La parte
+que faltaba — el cierre AM→PM real — quedó resuelta el 2026-09-01, ver arriba.)* La regla es
+"una persona no puede tener dos tareas AM a la vez; la anterior se cierra con
+un PM". Lo que se implementó y por qué:
+
+| nivel | comportamiento | por qué |
+|---|---|---|
+| dentro del formulario | **bloqueo duro** | es siempre un error de captura y se sabe sin consultar nada |
+| entre formularios, mismo equipo | **aviso que exige confirmar** | ver la medición de abajo |
+| entre equipos | **no se cubre** | offline no hay a quién preguntar |
+
+La medición, sobre la ventana de agosto (590 filas de `z_tabla_am`): hay 63
+pares (fecha, persona) con más de un AM el mismo día, pero **61 de los extras
+son reintentos exactos** — misma hora, mismo lote, misma subtarea: es el
+pendiente #Limpieza, no doble asignación. **Solo 9 son reasignaciones
+legítimas**, y en ellas el PM que cerraba la anterior llegó recién a las 16:00.
+Un bloqueo duro entre formularios habría impedido esas 9 capturas en el campo.
+
+**Hallazgo que esto destapó:** `z_tabla_am` YA tiene una columna `tiene_pm`, y
+hay un `Am_model::close_am()` con endpoints en V1, V2, V3 y API/V3. **Las
+113.410 filas están en `'0'`: nunca se cerró ninguna.** Además `close_am()`
+filtra por `date('Y-m-d')` del servidor, así que un PM retroactivo no cerraría
+nada aunque se llamara. El mecanismo de V3 existe y está muerto. **`reg_am` de
+V4 no tiene esa columna y `reg_pm` no tiene vínculo al AM**, así que hoy
+"cerrarse en PM" no es expresable en el modelo nuevo.
 
 **Paso 3 — servidor (2026-08-31).** `POST /v4/sync` implementado para `am` y
 `pm` y probado con curl contra la base real. Detalle y tabla de pruebas en

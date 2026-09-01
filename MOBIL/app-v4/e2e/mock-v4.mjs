@@ -13,6 +13,15 @@ import http from 'node:http';
 let modo = 'ok';   // ok | html200 | rechaza | 501 | parcial | catalogo_dup
 let contador = 1000;
 let lotes = [];
+// Estado que hace que el mock se parezca al servidor de verdad: los AM que ya
+// recibio, y las asignaciones que un PM ya cerro. Sin esto no se puede probar
+// ni /v4/am_abiertos ni la regla de "el PM espera si su AM no llego".
+let amRecibidos = new Map();   // am_guid -> {payload, personas:[ids]}
+let cerradas = new Set();      // `${am_guid}|${personal_id}`
+
+// Espejo minimo de los catalogos, para poder resolver nombres en am_abiertos.
+const NOMBRES = { 214: 'ALAVA TOMALA ERICKA', 301: 'BRIONES MERO JUAN', 26: 'HOLGUIN LUIS ALBERTO' };
+const SUBTAREAS = { 88: 'COSECHA CACAO', 90: 'PODA DE FORMACION' };
 
 const server = http.createServer((req, res) => {
   const cors = {
@@ -25,9 +34,43 @@ const server = http.createServer((req, res) => {
 
   if (req.url === '/mock/modo' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c));
-    return req.on('end', () => { modo = JSON.parse(b).modo; lotes = []; json(200, { modo }); });
+    return req.on('end', () => {
+      modo = JSON.parse(b).modo; lotes = [];
+      amRecibidos = new Map(); cerradas = new Set();
+      json(200, { modo });
+    });
   }
   if (req.url === '/mock/lotes') return json(200, lotes);
+
+  // GET /v4/am_abiertos?fecha=&finca_id=
+  // Una fila por (tarea AM, persona) que todavia no cerro nadie.
+  if (req.url.startsWith('/v4/am_abiertos')) {
+    const u = new URL(req.url, 'http://x');
+    const fecha = u.searchParams.get('fecha');
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return json(400, { error: 'Falta el parametro fecha (YYYY-MM-DD)' });
+    }
+    const asignaciones = [];
+    let n = 1;
+    for (const [guid, am] of amRecibidos) {
+      if (!String(am.payload.fecha_proceso).startsWith(fecha)) continue;
+      for (const pid of am.payload.personal_ids ?? []) {
+        if (cerradas.has(`${guid}|${pid}`)) continue;
+        asignaciones.push({
+          am_personal_id: n++, am_guid: guid, am_id: am.id,
+          fecha_proceso: am.payload.fecha_proceso,
+          finca_id: am.payload.finca_id, responsable_id: am.payload.responsable_id,
+          cultivo_id: am.payload.cultivo_id, lote_id: am.payload.lote_id,
+          subtarea_id: am.payload.subtarea_id,
+          personal_id: pid, trabajador: NOMBRES[pid] ?? `#${pid}`,
+          lote: String(am.payload.lote_id), cultivo: 'CACAO',
+          subtarea: SUBTAREAS[am.payload.subtarea_id] ?? 'Subtarea',
+          unidad_labor_id: 4, unidad_labor: 'Libra',
+        });
+      }
+    }
+    return json(200, { server_time: new Date().toISOString(), fecha, asignaciones });
+  }
 
   if (req.url === '/v4/hora') return json(200, {
     server_time: new Date().toISOString(),
@@ -55,28 +98,60 @@ const server = http.createServer((req, res) => {
   if (req.url === '/v4/catalogos') return json(200, {
     version: 'mock-1',
     fincas: [{ id: 1, nombre: 'Bellita', ha: 250 }],
-    lotes: [{ id: 1, lote: '1', finca_id: 1, ha: 12.5, tiene_modulos: true }],
+    lotes: [{ id: 1, lote: '1', finca_id: 1, ha: 12.5, tiene_modulos: true },
+            { id: 5, lote: '5', finca_id: 1, ha: 8.0, tiene_modulos: false }],
     modulos: [{ id: 2, modulo: '02', lote_id: 1, ha: 3.2 }],
     cultivos: [{ id: 1, nombre: 'CACAO' }],
-    tareas: [{ id: 3, nombre: 'COSECHA', cultivos_id: 1 }],
-    subtareas: [{ id: 88, codigo: 'C-01', nombre: 'COSECHA CACAO', tarea_id: 3, unidad_labor_id: 4, tipo_pago_id: 1 }],
+    tareas: [{ id: 3, nombre: 'COSECHA', cultivos_id: 1 },
+             { id: 4, nombre: 'MANTENIMIENTO', cultivos_id: 1 }],
+    subtareas: [{ id: 88, codigo: 'C-01', nombre: 'COSECHA CACAO', tarea_id: 3, unidad_labor_id: 4, tipo_pago_id: 1 },
+                { id: 90, codigo: 'M-07', nombre: 'PODA DE FORMACION', tarea_id: 4, unidad_labor_id: 4, tipo_pago_id: 1 }],
     ulabores: [{ id: 4, nombre: 'Libra' }],
-    personal: [{ id: 214, nombre: 'ALAVA TOMALA ERICKA', id_finca: 1, rol: 2, rol_app: '1' }] });
+    // rol 8 = responsable de campo. Es el filtro del selector de Responsable:
+    // HOLGUIN tiene que aparecer ahi y los dos operarios NO.
+    personal: [{ id: 214, nombre: 'ALAVA TOMALA ERICKA', id_finca: 1, rol: 13, rol_app: '1' },
+               { id: 301, nombre: 'BRIONES MERO JUAN', id_finca: 1, rol: 13, rol_app: '1' },
+               { id: 26, nombre: 'HOLGUIN LUIS ALBERTO', id_finca: 1, rol: 8, rol_app: '2' }] });
 
   if (req.url === '/v4/sync' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c));
     return req.on('end', () => {
       const { records } = JSON.parse(b);
       lotes.push({ n: records.length, guids: records.map((r) => r.guid),
-                   fechas: records.map((r) => r.created_at_device) });
+                   fechas: records.map((r) => r.created_at_device),
+                   // Los registros completos: las pruebas de AM/PM verifican
+                   // el payload exacto contra lo que espera sync_am/sync_pm.
+                   records });
       if (modo === '501') return json(501, { error: 'no implementado' });
       if (modo === 'html200') {
         res.writeHead(200, { ...cors, 'Content-Type': 'text/html' });
         return res.end('<html><body>portal cautivo del wifi</body></html>');
       }
-      let rs = records.map((r, i) => (modo === 'rechaza' && i === 0)
-        ? { guid: r.guid, status: 'rejected', reason: 'subtarea 88 inactiva' }
-        : { guid: r.guid, status: 'created', id: ++contador });
+      let rs = [];
+      for (const [i, r] of records.entries()) {
+        if (modo === 'rechaza' && i === 0) {
+          rs.push({ guid: r.guid, status: 'rejected', reason: 'subtarea 88 inactiva' });
+          continue;
+        }
+        if (r.tipo === 'pm') {
+          // Un PM cierra un AM. Si el AM todavia no llego, el guid se OMITE de
+          // results: el telefono lo deja PENDIENTE y lo reintenta. Es la misma
+          // regla del servidor de verdad.
+          const am = r.payload?.am_guid ? amRecibidos.get(r.payload.am_guid) : null;
+          if (!am) continue;
+          const k = `${r.payload.am_guid}|${r.payload.trabajador_id}`;
+          if (cerradas.has(k)) {
+            rs.push({ guid: r.guid, status: 'rejected', reason: 'esa asignacion AM ya fue cerrada' });
+            continue;
+          }
+          cerradas.add(k);
+          rs.push({ guid: r.guid, status: 'created', id: ++contador });
+          continue;
+        }
+        const id = ++contador;
+        if (r.tipo === 'am') amRecibidos.set(r.guid, { id, payload: r.payload ?? {} });
+        rs.push({ guid: r.guid, status: 'created', id });
+      }
       if (modo === 'parcial') rs = rs.slice(0, Math.floor(rs.length / 2));
       json(200, { server_time: new Date().toISOString(), results: rs });
     });

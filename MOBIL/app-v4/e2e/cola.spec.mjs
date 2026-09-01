@@ -13,7 +13,12 @@ const lotes = () => fetch(`${MOCK}/mock/lotes`).then((r) => r.json());
 let fallos = 0;
 const ok = (n, c, d = '') => { if (!c) fallos++; console.log(`${c ? 'PASS' : 'FAIL'} ${n}${d ? ' — ' + d : ''}`); };
 
-const browser = await chromium.launch({ args: ['--no-sandbox'] });
+// PW_CHROMIUM permite apuntar a un Chromium ya instalado (contenedor de CI,
+// entornos sin descarga de navegadores). Vacío = el que trae Playwright.
+const browser = await chromium.launch({
+  args: ['--no-sandbox'],
+  ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
+});
 const p = await browser.newPage();
 const errs = [];
 p.on('pageerror', (e) => errs.push(e.message));
@@ -75,7 +80,11 @@ await limpiar(); await p.waitForTimeout(800);
 
 // ---------- 3. respuesta parcial ----------
 // El servidor contesta sólo la mitad de los guids del lote.
-await modo('501'); await encolar(10, 'pm'); await p.waitForTimeout(1200);
+// 'riego' y no 'pm': lo que se prueba aca es la mecanica del ACK, que es
+// independiente del tipo. Desde que el PM cierra una tarea AM, un 'pm' sin
+// `am_guid` se omite de `results` a proposito -- y eso taparia lo que esta
+// prueba quiere ver.
+await modo('501'); await encolar(10, 'riego'); await p.waitForTimeout(1200);
 await modo('parcial'); await flush(); await p.waitForTimeout(4000);
 c = await conteo(); L = await lotes();
 ok('10 salió como un único lote de 10', L.length >= 1 && L[0].n === 10, 'lotes: ' + L.map((x) => x.n).join(','));

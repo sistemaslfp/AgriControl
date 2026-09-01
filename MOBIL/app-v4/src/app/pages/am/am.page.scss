@@ -1,0 +1,60 @@
+.titulo-seccion {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 16px 4px 8px;
+  color: var(--ion-color-medium-shade);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cabecera-tarea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fila-botones {
+  margin: 14px 4px 4px;
+}
+
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 4px;
+  font-size: 0.88rem;
+  line-height: 1.35;
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  &.aviso {
+    background: rgba(255, 171, 0, 0.14);
+    color: #8a5a00;
+  }
+
+  &.alerta {
+    background: rgba(198, 40, 40, 0.1);
+    color: #b71c1c;
+  }
+
+  &.info {
+    background: var(--ion-color-step-100, #f2f2f2);
+    color: var(--ion-color-medium-shade);
+  }
+}
+
+.persona {
+  font-size: 0.9rem;
+}
+
+.pendiente {
+  color: var(--ion-color-warning-shade, #b8860b);
+  font-size: 0.78rem;
+}
+
+.spinner-boton {
+  width: 18px;
+  height: 18px;
+}

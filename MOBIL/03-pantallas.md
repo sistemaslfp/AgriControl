@@ -28,9 +28,10 @@ junto al indicador de paso.
 
 La misma cosa se llama de tres maneras: **"Finca"** (AM, Cosecha),
 **"Hacienda"** (PM, listas de pendientes/enviados) y `z_finca` en la BD.
-Elegir una y usarla en toda la app. Igual con "Responsable" (AM) vs
-"Supervisor" (Cosecha, Postcosecha) vs `responsable_id`/`supervisor`.
-**[DECIDIR]** los dos términos.
+**DECIDIDO (2026-08-31, Kevin): "Finca" y "Responsable"**, en toda la app.
+Se eligieron por coincidir con la base (`z_finca`, `finca_id`,
+`responsable_id`): así la pantalla, la columna y el reporte dicen lo mismo.
+"Hacienda" y "Supervisor" quedan fuera.
 
 ### Corrección transversal 3 — fecha y hora
 
@@ -82,15 +83,39 @@ Acordeón: `Horario de Ingreso`, `Restricción de Finca`, `Cosecha de Cacao`,
 ## AM — "Reporte AM"
 
 Página 1 `Encabezado`: Fecha Proceso (fecha + hora), Finca, Responsable.
-Página 2..N `Tarea N`: Cultivo, Lote, Subtarea, Módulo, Personal (múltiple),
-Comentarios, botón `SIGUIENTE +`.
+Página 2..N `Tarea N`: Cultivo, **Tarea**, Lote, Subtarea, Módulo,
+Personal (múltiple), Comentarios, botón `SIGUIENTE +`.
+Página final: `Revisar y enviar`.
 
-- El selector de Responsable/Personal es un **action sheet** con la lista
-  completa y `Cancelar`. Con ~1.100 personas, esto necesita **buscador** y
-  filtro por finca. Es la queja más previsible del usuario.
+**La cascada es Cultivo → Tarea → Subtarea** (2026-09-01). La subtarea queda
+apagada hasta que haya tarea, y entonces muestra solo las de esa tarea: sin ese
+corte, un cultivo vuelca decenas de subtareas sueltas en una sola lista.
+**Los códigos de tarea y subtarea no se muestran**: son control interno.
+
+- El selector de Responsable/Personal era un **action sheet** con la lista
+  completa y `Cancelar`. Con ~1.100 personas eso necesitaba buscador y filtro.
+  **Resuelto (2026-09-01)** con un selector único para toda la app:
+
+  - **Ventana flotante centrada**, no pantalla completa, que **se cierra
+    tocando fuera** y además tiene botón `Listo`.
+  - **El buscador aparece solo si hace falta** (más de 10 opciones). Con seis
+    responsables es estorbo; con 1.100 personas es imprescindible. Busca sin
+    tildes y por palabras sueltas: "ALAVA ERICKA" encuentra "ALAVA TOMALA
+    ERICKA PATRICIA".
+  - **En selección múltiple cada toque aplica ya**, así que cerrar tocando
+    fuera nunca pierde lo elegido.
+  - **El Responsable se filtra por `z_personal.rol = 8`** (responsable de
+    campo). Verificado contra los datos: hay 6 personas activas con ese rol y
+    son exactamente las 6 que figuran como `responsable_id` en los 590 AM de
+    agosto, sin una excepción.
 - `Módulo` sólo se pide si `lote.tiene_modulos = true` (ver `02-bd-y-api.md` §3).
-- Un AM con N personas genera N filas en `z_tabla_am`. Ver la nota de `guid` por
-  fila en `02-bd-y-api.md` §7.
+- **OJO, esta nota describía V3 y ya no aplica.** En `z_tabla_am` un AM con N
+  personas eran N filas. En V4 **las personas son tabla hija** (`reg_am_personal`),
+  así que una tarea con N personas es **una** fila de `reg_am`. Lo que sí
+  genera varias filas son varias TAREAS: **una tarea = un guid = una fila**.
+  Consecuencia que la pantalla tiene que decir y dice: el ACK es por registro,
+  así que un AM de tres tareas puede terminar con dos `created` y una
+  `rejected`. La revisión no promete atomicidad, porque el servidor no la da.
 - Falta un resumen antes de guardar: hoy se guarda a ciegas. Agregar página
   final "Revisar y enviar" con el conteo de tareas y de personal.
 
@@ -100,30 +125,91 @@ Comentarios, botón `SIGUIENTE +`.
 
 **No se puede guardar un AM sin al menos una persona asociada.** El botón de
 guardar queda deshabilitado y se explica por qué; no se deja guardar para que
-lo rechace el servidor tres horas después, cuando el supervisor ya se fue del
+lo rechace el servidor tres horas después, cuando el responsable ya se fue del
 lote. El servidor también lo rechaza (`personal_ids vacio`), pero esa es la
 segunda barrera, no la primera.
 
-## PM — "Reporte PM"
+### Una persona, una tarea AM a la vez (2026-08-31, Kevin)
 
-Página 1 `Encabezado`: Fecha Proceso, Hacienda, Responsable, Trabajador.
-Página 2..N `Tarea N`: Fecha Cierre, Cultivo, Lote, Subtarea, Módulo,
-Unidad de Labor, Avance, Comentarios, `SIGUIENTE +`.
+La regla: una persona no puede estar en dos tareas AM al mismo tiempo; la
+anterior tiene que cerrarse con un PM antes de reasignarla.
 
-- **`Unidad de Labor` aparece deshabilitada y gris.** Se deriva de
-  `z_subtarea.unidad_labor_id`: al elegir la subtarea, la unidad queda fijada.
-  Debe mostrarse como **texto de apoyo junto al campo Avance** ("Avance: 3.5
-  QUINTAL"), no como un selector muerto.
-- `Avance 0` sin unidad a la vista es el error de captura más fácil de cometer.
-- `Fecha Cierre` está en la página de tarea y `Fecha Proceso` en el encabezado,
-  con el mismo valor por defecto. Hoy el servidor guarda `hora_inicio` desde
-  `time` y `hora_cierre` desde `closeTime`; la pantalla no deja fijar la hora de
-  inicio. Con el selector de fecha/hora, ambas quedan editables.
-- El trabajador se elige en el **encabezado**, así que un PM = un trabajador con
-  N tareas. Eso choca con la clave natural si dos tareas comparten subtarea
-  (ver la advertencia de `02-bd-y-api.md` §4).
+Lo que la app hace hoy, y hasta dónde llega de verdad:
 
----
+1. **Dentro del mismo formulario: bloqueo duro.** La misma persona en dos
+   tareas del mismo AM es siempre un error, y se sabe sin consultar nada.
+2. **Entre formularios, en el mismo equipo: aviso que exige confirmar.** Se
+   muestra el AM anterior (lote, subtarea, hora) y el responsable decide.
+3. **Entre equipos: no se cubre.** Un AM cargado en otra tablet es invisible, y
+   offline no hay a quién preguntarle.
+
+Por qué el nivel 2 es aviso y no bloqueo, con datos y no con opinión: en la
+ventana de agosto (590 AM reales) hubo **9 reasignaciones legítimas** de la
+misma persona el mismo día sin un PM que cerrara la anterior — el PM llegaba a
+las 16:00. Un bloqueo duro las habría impedido en el campo. Los otros 61 casos
+de repetición son reintentos exactos de la app vieja, o sea el pendiente
+#Limpieza.
+
+El espejo local vive en `am_persona_local` / `pm_cierre_local` (SQLite del
+teléfono). "Cerrado" = existe un PM del mismo (persona, fecha, lote, subtarea),
+que es la definición que mejor calzó contra los datos: 533 de 590.
+
+**La validación de verdad no existe todavía.** Exige `reg_pm.am_id` (o
+`reg_am_personal.cerrado_por_pm_id`), la validación en `sync_am` y un endpoint
+de AM abiertos. Es un paso propio, posterior a estas pantallas. Ver el detalle
+y el hallazgo de `tiene_pm` en `00-plan.md`.
+
+## PM — "Reporte PM": el CIERRE de una tarea AM
+
+**Reescrito el 2026-09-01. Decisión de Kevin: "NO se pueden crear PM, un PM
+solo es el reflejo de un AM".** El PM dejó de capturar tareas.
+
+Página 1 `Tareas de la mañana`: Fecha de proceso, Hora de cierre, Finca,
+**Responsable que cierra**, y la **lista de asignaciones AM abiertas** de esa
+fecha, con casilla por cada (tarea, persona).
+Página 2..N: una por asignación elegida, con **Avance** en la unidad que ya
+define la subtarea, y Comentarios.
+Página final: `Revisar y enviar`.
+
+En la pantalla no hay Cultivo, ni Tarea, ni Lote, ni Subtarea, ni Módulo: todo
+eso viene del AM y el teléfono no puede contradecirlo. Antes se podía mandar un
+PM con un lote distinto al de la programación de la mañana y nadie se enteraba.
+
+El **Responsable sí se elige acá**, y a propósito: es quien zanja la tarea, que
+no tiene por qué ser el que la programó a la mañana.
+
+### De dónde sale la lista, y por qué de dos lados
+
+- `GET /v4/am_abiertos` es la fuente autoritativa, pero **solo conoce los AM
+  que ya llegaron al servidor**.
+- El **espejo local** (`am_persona_local`) cubre los AM capturados en este
+  equipo que siguen PENDIENTES en la cola. Sin él, un supervisor sin señal no
+  podría cerrar por la tarde la tarea que él mismo cargó por la mañana.
+
+Se juntan y se deduplican por (`am_guid`, persona); gana la del servidor, que
+trae los nombres ya resueltos. Las que salen solo del espejo local se marcan
+**"cargada en este equipo, todavía sin enviar"**, para que el supervisor sepa
+qué está viendo.
+
+### Lo que esto arregla del diseño anterior
+
+- **`Unidad de Labor` deja de ser un selector muerto y gris.** Sale de la
+  subtarea del AM y se muestra como etiqueta del campo: "Avance en Libra".
+- **Los tiempos dejan de dar `0 días, 0 horas, 0 minutos`.** La hora de inicio
+  es la del AM y la de cierre la pone el supervisor; en la prueba contra la
+  base real quedó 06:57:50 → 16:00.
+- **Desaparece la colisión con la clave natural** que advertía
+  `02-bd-y-api.md` §4: el PM ya no repite la combinación, apunta a una
+  asignación concreta.
+- `pm_year` / `pm_week` **no los manda la app**: los calcula el servidor con
+  `format('o')`, no con `'Y'`.
+
+### Lo que hay que aceptar
+
+En agosto **16 de 598 PM (2,7%) fueron de gente sin AM cargado esa mañana**.
+Con esta pantalla esos casos ya no se pueden registrar: hay que crear el AM
+primero. Es intencional (Kevin, 2026-09-01) y empuja a que el AM se cargue
+siempre por la mañana, que es la conducta que se quiere.
 
 ## Cosecha de Cacao
 
@@ -248,9 +334,14 @@ fechas". Lo que toca a la UI:
   `max = ahora_corregido`. `ahora_corregido = reloj del teléfono + offset del
   servidor`, nunca el reloj pelado.
 - **No se ofrecen fechas futuras.** Sin interruptor, sin excepción.
-- Para ir más atrás de la ventana, un interruptor **"registro retroactivo"**
-  habilita el rango completo y exige una **justificación escrita**. Sin texto,
-  el botón de guardar queda deshabilitado.
+- Para ir más atrás de la ventana, un interruptor habilita el rango completo y
+  exige una **justificación escrita**. Sin texto, el botón de guardar queda
+  deshabilitado.
+- **En pantalla ese interruptor NO dice "registro retroactivo".** "Retroactivo"
+  es jerga de estos documentos; el supervisor en el lote no la usa. Dice
+  **"Estoy cargando un día anterior"**, y el campo de motivo pregunta **"¿Por
+  qué se carga tarde?"** con un ejemplo real ("sin señal en el lote, se cargó
+  al día siguiente").
 - Fuera de la ventana horaria AM/PM: aviso visible, el registro se guarda igual.
   El usuario decide; el sistema anota.
 - Si la app nunca sincronizó la hora, banner permanente: "sin hora verificada";

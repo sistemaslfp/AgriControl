@@ -669,6 +669,7 @@ Controlador nuevo: `application/controllers/V4.php`.
 | GET  | `/v4/hora` | Hora del servidor ISO-8601 con offset. |
 | GET  | `/v4/bootstrap` | Ventanas AM/PM, ventanas de retroactividad, subtareas de cosecha, versión de catálogos. |
 | GET  | `/v4/catalogos` | Maestros activos en una respuesta. |
+| GET  | `/v4/am_abiertos` | Asignaciones AM de una fecha que todavía no cerró ningún PM. |
 | POST | `/v4/sync` | Lote de registros. Idempotente por `guid`. |
 | POST | `/v4/fotos` | Multipart. `guid` del padre + etapa + orden. |
 | GET  | `/v4/postcosecha/lotes-pendientes` | Cosechas sin proceso de postcosecha. |
@@ -759,10 +760,123 @@ Validaciones que la FK sola no puede hacer y el endpoint sí:
 - El personal se valida por `eregistro = 'A'`, los catálogos por
   `estado IN ('1','A')` — los mismos filtros que `/v4/catalogos`.
 - Un AM sin `personal_ids` se rechaza: una programación sin gente no es un
-  registro. **[CONFIRMAR con Kevin]** si alguna vez es legítimo.
+  registro. **CONFIRMADO (Kevin, 2026-08-31)**: nunca es legítimo, y la app
+  además bloquea el guardado antes de llegar al servidor.
 
 Tope de lote: 200 registros (413 si se pasa). Body ilegible: 400. Todo lo demás
 responde 200 con su `results`.
+
+### `POST /v4/sync` con `tipo: pm` — el PM CIERRA un AM (2026-09-01)
+
+Decisión de Kevin: **"NO se pueden crear PM, un PM solo es el reflejo de un
+AM".** El payload del PM se redujo a lo único que el PM aporta:
+
+```json
+{
+  "am_guid": "ad31cfcb-4823-4e9b-bcfb-26445358372f",
+  "trabajador_id": 301,
+  "responsable_id": 26,
+  "cantidad": 3.5,
+  "hora_cierre": "2026-08-13T16:00:00-05:00",
+  "comentario": ""
+}
+```
+
+Finca, cultivo, lote, subtarea, módulos, fecha de proceso y hora de inicio los
+**deriva el servidor del AM**. El teléfono ya no puede contradecir la
+programación de la mañana, que era el agujero real: antes se podía mandar un
+PM con un lote distinto al del AM y nadie se enteraba.
+
+`responsable_id` es **quien zanja** la tarea, y no tiene por qué ser el que la
+programó. Si falta, se hereda del AM.
+
+**La regla que hace que esto funcione offline: si el AM todavía no llegó al
+servidor, el guid del PM se OMITE de `results`.** El teléfono lo deja
+PENDIENTE y lo reintenta solo. Es el mismo mecanismo del guid omitido, sin
+nada nuevo, y pasa siempre que el AM y su PM viajan en lotes distintos.
+
+Por qué una columna (`reg_pm.am_personal_id`) y no fundir el PM dentro de
+`reg_am_personal`, que fue la otra opción sobre la mesa: **la cola del teléfono
+es solo-inserción, idempotente por guid.** "El PM rellena los campos que le
+faltan al AM" es un UPDATE de una fila que puede no existir todavía en el
+servidor, y eso exige ordenar el update después del insert y darle su propia
+historia de idempotencia. Con la columna, el PM sigue siendo un INSERT. Además
+no toca la migración de agosto, ni `vw_reporte_pago`, ni `pm_year`/`pm_week`,
+ni el índice `idx_pm_semana`.
+
+DDL: `docs/db/migrations/2026-09-01-01-pm-cierra-am.sql`. `UNIQUE KEY` sobre
+`am_personal_id` (nullable: las filas migradas de agosto no tienen vínculo),
+que es lo que hace cumplir **una asignación se cierra una sola vez**.
+
+Probado con `curl` contra la copia real de la base, sobre los datos ya
+migrados:
+
+| caso | resultado |
+|---|---|
+| PM válido que cierra una asignación | `created`, `am_personal_id` seteado |
+| El mismo guid otra vez | `duplicate`, no inserta |
+| Otro guid cerrando la MISMA asignación | `rejected` |
+| `am_guid` que el servidor no conoce | **omitido** → sigue PENDIENTE |
+| Trabajador que no está en esa tarea AM | `rejected` |
+| Sin `am_guid` | `rejected` — no existe el PM libre |
+| `cantidad` negativa | `rejected` |
+| `hora_cierre` anterior a la hora del AM | `rejected` |
+
+Verificado además en la base: `hora_inicio` heredada del AM (06:57:50) contra
+`hora_cierre` real (16:00) — se acabaron los "0 días, 0 horas, 0 minutos" de la
+app vieja; `pm_week` = 33, igual que `WEEK('2026-08-13', 3)`; módulos
+heredados del AM; y **cero filas fantasma** tras los seis rechazos.
+
+### `GET /v4/am_abiertos?fecha=YYYY-MM-DD[&finca_id=N]`
+
+Una fila por (tarea AM, persona) de esa fecha que todavía no tiene PM. Es lo
+que lista la pantalla PM.
+
+```json
+{
+  "server_time": "2026-09-01T12:50:07-05:00",
+  "fecha": "2026-08-13",
+  "asignaciones": [
+    { "am_personal_id": 246, "am_guid": "f6661d7e-…", "am_id": 186,
+      "fecha_proceso": "2026-08-13 06:57:50", "finca_id": 1,
+      "responsable_id": 26, "cultivo_id": 1, "lote_id": 2, "subtarea_id": 65,
+      "personal_id": 4, "trabajador": "ALVEAR MORALES VÍCTOR",
+      "lote": "2", "cultivo": "Cacao",
+      "subtarea": "Operador de canguro entrenamiento",
+      "unidad_labor_id": 2, "unidad_labor": "Jornal" }
+  ]
+}
+```
+
+`fecha` es obligatoria (400 sin ella): sin acotar, la consulta barre la tabla.
+**Sin guion en la ruta**: CodeIgniter mapea el segmento de URI al nombre del
+método y `am-abiertos` no es un identificador PHP válido.
+
+Dos cosas que sólo salieron al correrlo contra la base real, y que `php -l` no
+habría visto nunca:
+
+1. **Los nombres de columna están mezclados en los catálogos.** `z_subtarea`
+   guarda el nombre en `nombre_subtarea` y `z_ulabor` en `ulabor_nombre`;
+   `z_cultivo` sí usa `nombre`. La primera versión de la consulta murió con
+   *Unknown column 'st.nombre'*.
+2. **La consulta necesita `try/catch` y apagar `db_debug`.** Sin eso, desde
+   PHP 8.1 el `mysqli_sql_exception` sube hasta `RestController` y el endpoint
+   responde una traza HTML de CI3 **con HTTP 200**, que la app no puede
+   distinguir de una respuesta buena.
+
+### Hueco abierto: la justificación del registro retroactivo
+
+`01-sincronizacion.md` exige una **justificación escrita** cuando la fecha
+supera la ventana de retroactividad del módulo, y la pantalla la pide y bloquea
+el guardado sin ella. Pero **el payload de `/v4/sync` no tiene un campo para
+guardarla**: hoy viaja dentro de `comentario`, con el prefijo `[RETROACTIVO]`
+y recortada a 255 caracteres junto con el comentario del usuario.
+
+Funciona, pero es una limitación del contrato, no una decisión de diseño: el
+motivo queda mezclado con texto libre y no se puede consultar aparte. Lo
+correcto es un campo propio (`justificacion_retroactiva`) en `reg_am`/`reg_pm`
+y en el payload. **[PENDIENTE]**, para cuando se vuelva a tocar el servidor —
+va junto con `reg_pm.am_id` del cierre AM→PM.
 
 ### Dos cosas que sólo aparecieron al correrlo
 

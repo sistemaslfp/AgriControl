@@ -11,6 +11,8 @@ export const KV = {
   LAST_SYNC_OK_AT: 'last_sync_ok_at',
   CATALOGOS_VERSION: 'catalogos_version',
   CATALOGOS_UPDATED_AT: 'catalogos_updated_at',
+  BOOTSTRAP_JSON: 'bootstrap_json',
+  BOOTSTRAP_AT: 'bootstrap_at',
 } as const;
 
 /**

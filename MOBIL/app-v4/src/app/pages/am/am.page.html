@@ -1,0 +1,319 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Reporte AM</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="agregarTarea()" aria-label="Agregar tarea">
+        <ion-icon slot="icon-only" name="add-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content
+  class="ion-padding"
+  appSwipePasos
+  (swipeSiguiente)="siguiente()"
+  (swipeAnterior)="anterior()"
+>
+  @if (sinHoraVerificada()) {
+    <div class="banner aviso">
+      Este equipo nunca sincronizó la hora con el servidor. Se puede capturar,
+      pero los registros viajan marcados como no verificables.
+    </div>
+  }
+
+  <!-- ==================== Paso 0: encabezado ==================== -->
+  @if (paso() === 0) {
+    <h2 class="titulo-seccion">Encabezado</h2>
+
+    <ion-list inset="true">
+      <ion-item>
+        <ion-label>Fecha y hora de proceso</ion-label>
+        <ion-datetime-button slot="end" datetime="fechaAm"></ion-datetime-button>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirFinca()">
+        <ion-label>
+          Finca
+          <p>{{ finca()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirResponsable()">
+        <ion-label>
+          Responsable
+          <p>{{ responsable()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="fechaAm"
+          presentation="date-time"
+          locale="es-EC"
+          [preferWheel]="false"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fechaLocal()"
+          [min]="limites().min"
+          [max]="limites().max"
+          (ionChange)="setFecha($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+
+    @if (evaluacion(); as ev) {
+      @if (ev.fueraDeVentanaHoraria) {
+        <div class="banner aviso">
+          La hora elegida está fuera de la ventana AM ({{ ev.ventana.inicio }} a
+          {{ ev.ventana.fin }}). El registro se guarda igual; el servidor lo deja
+          anotado.
+        </div>
+      }
+      @if (ev.excedeRetroactividad) {
+        <div class="banner alerta">
+          La fecha es de hace más de {{ ev.diasRetroactividad }} días.
+          Activá "Estoy cargando un día anterior" y explicá el motivo.
+        </div>
+      }
+    }
+
+    <ion-list inset="true">
+      <ion-item>
+        <ion-checkbox
+          [checked]="retroactivo()"
+          (ionChange)="retroactivo.set($any($event.detail).checked)"
+          labelPlacement="end"
+          justify="start"
+        >
+          Estoy cargando un día anterior
+        </ion-checkbox>
+      </ion-item>
+      @if (retroactivo()) {
+        <ion-item>
+          <ion-input
+            label="¿Por qué se carga tarde? (obligatorio)"
+            labelPlacement="stacked"
+            placeholder="Ej.: sin señal en el lote, se cargó al día siguiente"
+            [value]="justificacion()"
+            (ionInput)="justificacion.set($any($event.target).value ?? '')"
+          ></ion-input>
+        </ion-item>
+      }
+      <ion-item lines="none">
+        <ion-note>
+          Normalmente se carga el mismo día. Este interruptor permite elegir
+          una fecha de hasta hace
+          {{ evaluacion()?.diasRetroactividad ?? 3 }} días o más, y pide
+          explicar el motivo. Fechas futuras no se ofrecen nunca.
+        </ion-note>
+      </ion-item>
+    </ion-list>
+
+    @if (problemasEncabezado().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasEncabezado(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+  }
+
+  <!-- ==================== Pasos 1..N: tareas ==================== -->
+  @if (paso() > 0 && paso() < indiceRevision()) {
+    @let i = indiceTarea();
+    @let t = tareas()[i];
+
+    <div class="cabecera-tarea">
+      <h2 class="titulo-seccion">Tarea {{ i + 1 }}</h2>
+      <ion-button fill="clear" color="danger" size="small" (click)="quitarTarea(i)">
+        <ion-icon slot="start" name="trash-outline"></ion-icon>
+        Quitar
+      </ion-button>
+    </div>
+
+    <ion-list inset="true">
+      <ion-item button="true" detail="true" (click)="abrirCultivo(i)">
+        <ion-label>
+          Cultivo
+          <p>{{ t.cultivo?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirLote(i)">
+        <ion-label>
+          Lote
+          <p>{{ t.lote?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+      <!-- Cascada Cultivo -> Tarea -> Subtarea: la subtarea queda apagada
+           hasta que haya tarea, y se ve por qué. -->
+      <ion-item button="true" detail="true" [disabled]="!t.cultivo" (click)="abrirTarea(i)">
+        <ion-label>
+          Tarea
+          <p>{{ t.tarea?.nombre ?? (t.cultivo ? 'Sin elegir' : 'Elegí primero el cultivo') }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item button="true" detail="true" [disabled]="!t.tarea" (click)="abrirSubtarea(i)">
+        <ion-label>
+          Subtarea
+          <p>{{ t.subtarea?.nombre ?? (t.tarea ? 'Sin elegir' : 'Elegí primero la tarea') }}</p>
+        </ion-label>
+      </ion-item>
+      @if (t.lote?.tieneModulos) {
+        <ion-item button="true" detail="true" (click)="abrirModulos(i)">
+          <ion-label>
+            Módulos
+            <p>
+              {{ t.modulos.length ? t.modulos.length + ' seleccionado(s)' : 'Sin elegir' }}
+            </p>
+          </ion-label>
+        </ion-item>
+      }
+    </ion-list>
+
+    <h3 class="titulo-seccion">Personal</h3>
+    <ion-list inset="true">
+      <ion-item button="true" detail="true" (click)="abrirPersonal(i)">
+        <ion-icon slot="start" name="people-outline"></ion-icon>
+        <ion-label>
+          Seleccionar personal
+          <p>{{ t.personal.length }} persona(s)</p>
+        </ion-label>
+      </ion-item>
+      @for (p of t.personal; track p.id) {
+        <ion-item>
+          <ion-label class="persona">{{ p.nombre }}</ion-label>
+        </ion-item>
+      }
+    </ion-list>
+
+    <ion-list inset="true">
+      <ion-item>
+        <ion-input
+          label="Comentarios"
+          labelPlacement="stacked"
+          placeholder="Opcional"
+          [value]="t.comentario"
+          (ionInput)="setComentario(i, $any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+    </ion-list>
+
+    @if (problemasTarea(i).length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasTarea(i); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <div class="fila-botones">
+      <ion-button expand="block" fill="outline" (click)="agregarTarea()">
+        <ion-icon slot="start" name="add-outline"></ion-icon>
+        Siguiente tarea
+      </ion-button>
+    </div>
+  }
+
+  <!-- ==================== Último paso: revisión ==================== -->
+  @if (paso() === indiceRevision()) {
+    <h2 class="titulo-seccion">Revisar y enviar</h2>
+
+    <ion-list inset="true">
+      <ion-item lines="none">
+        <ion-label>
+          <p>Fecha de proceso</p>
+          <strong>{{ fechaLocal().replace('T', ' ') }}</strong>
+        </ion-label>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-label>
+          <p>Finca / Responsable</p>
+          <strong>{{ finca()?.nombre ?? '—' }} · {{ responsable()?.nombre ?? '—' }}</strong>
+        </ion-label>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-label>
+          <p>Totales</p>
+          <strong>{{ tareas().length }} tarea(s) · {{ totalPersonas() }} persona(s)</strong>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    @for (t of tareas(); track $index) {
+      <ion-list inset="true">
+        <ion-item button="true" detail="true" (click)="irA($index + 1)">
+          <ion-label>
+            <strong>Tarea {{ $index + 1 }}</strong>
+            <p>{{ t.lote?.nombre ?? 'sin lote' }} · {{ t.subtarea?.nombre ?? 'sin subtarea' }}</p>
+            <p>{{ t.cultivo?.nombre ?? '' }}{{ t.tarea ? ' · ' + t.tarea.nombre : '' }}</p>
+            <p>{{ t.personal.length }} persona(s)</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+    }
+
+    <div class="banner info">
+      Cada tarea viaja como un registro propio, con su propio identificador: el
+      servidor confirma una por una. Si alguna se rechaza, las demás siguen su
+      curso — el detalle queda en Pendientes.
+    </div>
+
+    @if (problemas().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemas(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <div class="fila-botones">
+      <ion-button expand="block" [disabled]="!puedeGuardar()" (click)="guardar()">
+        <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
+        Guardar {{ tareas().length }} tarea(s)
+      </ion-button>
+    </div>
+  }
+</ion-content>
+
+<ion-footer>
+  <app-barra-pasos
+    [indice]="paso()"
+    [total]="totalPasos()"
+    [etiqueta]="etiquetaPaso()"
+    (anterior)="anterior()"
+    (siguiente)="siguiente()"
+  ></app-barra-pasos>
+</ion-footer>
+
+<!-- Ventana flotante, no pantalla completa: se cierra tocando fuera
+     (backdropDismiss viene activado). Los estilos están en styles.scss. -->
+<ion-modal
+  class="selector-flotante"
+  [isOpen]="selectorAbierto()"
+  (ionModalDidDismiss)="cerrarSelector()"
+>
+  <ng-template>
+    <app-selector
+      [titulo]="selectorTitulo()"
+      [opciones]="selectorOpciones()"
+      [multiple]="selectorMultiple()"
+      [seleccion]="selectorSeleccion()"
+      [vacioTexto]="selectorVacio()"
+      [conBuscador]="selectorBuscador()"
+      (confirmar)="onSeleccion($event)"
+      (cambio)="onCambio($event)"
+      (cerrar)="cerrarSelector()"
+    ></app-selector>
+  </ng-template>
+</ion-modal>

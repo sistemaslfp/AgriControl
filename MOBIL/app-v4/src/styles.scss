@@ -4,3 +4,29 @@
 ion-label {
   font-weight: 500;
 }
+
+
+/* =====================================================================
+   Selector flotante (app-selector dentro de un ion-modal)
+
+   No es una pantalla completa: es una ventana chica, centrada, que se cierra
+   tocando fuera (backdropDismiss viene activado por defecto).
+
+   Altura FIJA y no `--height: auto` a proposito. La receta de altura
+   automatica de Ionic exige que el contenido del modal sea un div normal;
+   con ion-header + ion-content + ion-footer el ion-content queda posicionado
+   en absoluto sobre un contenedor sin altura, el layout se colapsa y el
+   propio ion-modal termina interceptando los toques: las opciones dejan de
+   ser clicables. Verificado con Playwright, no supuesto.
+
+   Vive aca y no en el .scss de la pagina porque el contenido del modal se
+   proyecta fuera del encapsulado de estilos del componente.
+   ===================================================================== */
+ion-modal.selector-flotante {
+  --width: 92%;
+  --max-width: 460px;
+  --height: 68%;
+  --max-height: 560px;
+  --border-radius: 14px;
+  --box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32);
+}

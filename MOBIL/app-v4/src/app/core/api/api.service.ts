@@ -44,6 +44,36 @@ export interface CatalogosResponse {
 }
 
 /**
+ * Una asignacion AM abierta: una persona programada en una tarea de la
+ * manana que todavia no tiene PM que la cierre. Es lo que lista la pantalla
+ * PM (GET /v4/am_abiertos).
+ */
+export interface AsignacionAmApi {
+  am_personal_id: number;
+  am_guid: string;
+  am_id: number;
+  fecha_proceso: string;
+  finca_id: number;
+  responsable_id: number;
+  cultivo_id: number;
+  lote_id: number;
+  subtarea_id: number;
+  personal_id: number;
+  trabajador: string;
+  lote: string;
+  cultivo: string;
+  subtarea: string;
+  unidad_labor_id: number | null;
+  unidad_labor: string | null;
+}
+
+export interface AmAbiertosResponse {
+  server_time: string;
+  fecha: string;
+  asignaciones: AsignacionAmApi[];
+}
+
+/**
  * Cliente HTTP de la API V4. Toda llamada sale de aquí; nadie más arma URLs.
  * El alias del dispositivo viaja en X-Device-Alias (trazabilidad, no auth).
  */
@@ -64,6 +94,19 @@ export class ApiService {
 
   catalogos(): Promise<CatalogosResponse> {
     return this.get<CatalogosResponse>('catalogos');
+  }
+
+  /**
+   * Asignaciones AM sin cerrar de esa fecha. `fecha` es obligatoria del lado
+   * del servidor: sin ella la consulta barreria la tabla entera.
+   *
+   * Sin guion en la ruta: CodeIgniter mapea el segmento de URI al nombre del
+   * metodo y `am-abiertos` no es un identificador PHP valido.
+   */
+  amAbiertos(fecha: string, fincaId: number | null): Promise<AmAbiertosResponse> {
+    const q = `am_abiertos?fecha=${encodeURIComponent(fecha)}` +
+      (fincaId !== null ? `&finca_id=${fincaId}` : '');
+    return this.get<AmAbiertosResponse>(q);
   }
 
   sync(body: SyncRequest): Promise<SyncResponse> {
