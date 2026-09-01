@@ -122,6 +122,101 @@ class V4 extends RestController
     }
 
     // -----------------------------------------------------------------
+    // GET /v4/am_abiertos — asignaciones AM sin cerrar, para la pantalla PM
+    // -----------------------------------------------------------------
+
+    /**
+     * Una fila por (tarea AM, persona) de esa fecha que todavia no tiene PM.
+     *
+     * Es lo que la pantalla PM lista: el supervisor elige de aca y solo carga
+     * el avance. Sin este endpoint el telefono solo ve lo que capturo el
+     * mismo equipo, que es exactamente el agujero que dejaba la regla de
+     * "una persona, una tarea AM a la vez".
+     *
+     * `fecha` es obligatoria y acota la consulta: sin ella esto barre la tabla
+     * entera. `finca_id` es opcional.
+     *
+     * Sin guion en la ruta a proposito: CodeIgniter mapea el segmento de URI
+     * al nombre del metodo, y `am-abiertos` no es un identificador PHP valido.
+     */
+    public function am_abiertos_get()
+    {
+        $fecha = $this->input->get('fecha', TRUE);
+        if (!is_string($fecha) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+            $this->response(array('error' => 'Falta el parametro fecha (YYYY-MM-DD)'), 400);
+            return;
+        }
+        $finca_id = $this->input->get('finca_id', TRUE);
+        $finca_id = is_numeric($finca_id) ? (int) $finca_id : NULL;
+
+        $db = $this->requireDb();
+
+        // db_debug TRUE (el valor fuera de produccion) convierte cualquier
+        // error de base en una pagina HTML que se come la respuesta JSON. Y
+        // desde PHP 8.1 mysqli ademas LANZA, asi que hace falta el try/catch:
+        // sin el, esta consulta responde una traza de CI3 con 200.
+        $debug_previo = $db->db_debug;
+        $db->db_debug = FALSE;
+
+        try {
+            // OJO con los nombres de columna: z_subtarea guarda el nombre en
+            // `nombre_subtarea` y z_ulabor en `ulabor_nombre`, no en `nombre`.
+            // z_cultivo si usa `nombre`. La convencion esta mezclada en toda
+            // la base; verificado contra el esquema real.
+            $db->select('ap.id AS am_personal_id, am.guid AS am_guid, am.id AS am_id,
+                         am.fecha_proceso, am.finca_id, am.responsable_id,
+                         am.cultivo_id, am.lote_id, am.subtarea_id,
+                         ap.personal_id, per.nombre AS trabajador,
+                         l.lote, c.nombre AS cultivo,
+                         st.nombre_subtarea AS subtarea,
+                         st.unidad_labor_id, u.ulabor_nombre AS unidad_labor', FALSE)
+               ->from('reg_am_personal ap')
+               ->join('reg_am am', 'am.id = ap.am_id')
+               ->join('z_personal per', 'per.id = ap.personal_id')
+               ->join('z_lote l', 'l.id = am.lote_id', 'left')
+               ->join('z_cultivo c', 'c.id = am.cultivo_id', 'left')
+               ->join('z_subtarea st', 'st.id = am.subtarea_id', 'left')
+               ->join('z_ulabor u', 'u.id = st.unidad_labor_id', 'left')
+               ->where('DATE(am.fecha_proceso)', $fecha)
+               // La asignacion esta ABIERTA si nadie la cerro todavia.
+               ->where('NOT EXISTS (SELECT 1 FROM reg_pm pm WHERE pm.am_personal_id = ap.id)', NULL, FALSE);
+            if ($finca_id !== NULL) {
+                $db->where('am.finca_id', $finca_id);
+            }
+            $q = $db->order_by('am.fecha_proceso, per.nombre')->get();
+        } catch (Throwable $e) {
+            $db->db_debug = $debug_previo;
+            log_message('error', 'V4 am_abiertos: ' . $e->getMessage());
+            $this->response(array('error' => 'No se pudo consultar'), 500);
+            return;
+        }
+        $db->db_debug = $debug_previo;
+
+        if ($q === FALSE) {
+            $this->response(array('error' => 'No se pudo consultar'), 500);
+            return;
+        }
+
+        $filas = $this->castRows($q->result(), array(
+            'am_personal_id'  => 'int',
+            'am_id'           => 'int',
+            'finca_id'        => 'int',
+            'responsable_id'  => 'int',
+            'cultivo_id'      => 'int',
+            'lote_id'         => 'int',
+            'subtarea_id'     => 'int',
+            'personal_id'     => 'int',
+            'unidad_labor_id' => 'int',
+        ));
+
+        $this->response(array(
+            'server_time' => date('c'),
+            'fecha'       => $fecha,
+            'asignaciones' => $filas,
+        ), 200);
+    }
+
+    // -----------------------------------------------------------------
     // GET /v4/catalogos — maestros activos, descarga completa
     // -----------------------------------------------------------------
     public function catalogos_get()
@@ -485,80 +580,135 @@ class V4 extends RestController
     }
 
     // -----------------------------------------------------------------
-    // PM — avance de la tarde
+    // PM — CIERRE de una asignacion AM, no un registro suelto
     // -----------------------------------------------------------------
+
+    /**
+     * Decision de Kevin (2026-09-01): un PM es el reflejo de un AM. La app ya
+     * no crea tareas en PM: elige una asignacion AM abierta y carga el avance.
+     *
+     * Por eso el payload se reduce a:
+     *   am_guid, trabajador_id, cantidad, [hora_cierre], [responsable_id],
+     *   [comentario]
+     *
+     * Todo lo demas -- finca, cultivo, lote, subtarea, modulos, fecha de
+     * proceso -- se DERIVA del AM. El telefono no puede contradecirlo, que es
+     * justamente el punto: antes podia mandar un PM con un lote distinto al
+     * de la programacion de la manana.
+     *
+     * La regla que hace que esto funcione offline: **si el AM todavia no
+     * llego al servidor, se devuelve NULL**. El guid del PM no aparece en
+     * `results`, el telefono lo deja PENDIENTE y lo reintenta. Es el mismo
+     * mecanismo del guid omitido, sin nada nuevo. Pasa siempre que el AM y su
+     * PM viajan en lotes distintos, o cuando el AM quedo trabado por red.
+     */
     private function sync_pm($db, $guid, $p, $cad, $alias, $offset, $ahora)
     {
-        $fecha = $this->sync_fecha(isset($p['fecha_proceso']) ? $p['fecha_proceso'] : NULL);
-        if ($fecha === NULL) {
-            return $this->sync_rechazo($guid, 'fecha_proceso ausente o no es ISO-8601');
+        $am_guid = isset($p['am_guid']) && is_string($p['am_guid']) ? trim($p['am_guid']) : '';
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $am_guid)) {
+            // Rechazo duro: reenviar no lo arregla. Un PM sin AM no existe.
+            return $this->sync_rechazo($guid, 'am_guid ausente o ilegible: un PM cierra una tarea AM');
         }
 
-        $ids = array();
-        foreach (array('finca_id', 'responsable_id', 'cultivo_id', 'lote_id', 'subtarea_id', 'trabajador_id') as $campo) {
-            $v = $this->sync_int($p, $campo);
-            if ($v === NULL) {
-                return $this->sync_rechazo($guid, $campo . ' ausente o no es un entero positivo');
-            }
-            $ids[$campo] = $v;
+        $trabajador_id = $this->sync_int($p, 'trabajador_id');
+        if ($trabajador_id === NULL) {
+            return $this->sync_rechazo($guid, 'trabajador_id ausente o no es un entero positivo');
         }
 
-        $err = $this->sync_valida_catalogos($db, $ids);
-        if ($err !== NULL) {
-            return $this->sync_rechazo($guid, $err);
+        $q = $db->select('id, fecha_proceso, finca_id, responsable_id, cultivo_id, lote_id, subtarea_id')
+                ->from('reg_am')->where('guid', $am_guid)->limit(1)->get();
+        if ($q === FALSE) {
+            return NULL;   // la base no responde: PENDIENTE
         }
-        if (!$this->sync_personal_activo($db, $ids['trabajador_id'])) {
-            return $this->sync_rechazo($guid, 'trabajador ' . $ids['trabajador_id'] . ' inexistente o inactivo');
+        $am = $q->row();
+        if (!$am) {
+            // El AM todavia no llego (otro lote, o trabado por red). PENDIENTE:
+            // la cola lo reintenta sola cuando el AM entre.
+            return NULL;
+        }
+
+        // El trabajador tiene que estar EN esa tarea AM. Si no esta, reenviar
+        // no lo arregla.
+        $q = $db->select('id')->from('reg_am_personal')
+                ->where('am_id', (int) $am->id)->where('personal_id', $trabajador_id)
+                ->limit(1)->get();
+        if ($q === FALSE) {
+            return NULL;
+        }
+        $asignacion = $q->row();
+        if (!$asignacion) {
+            return $this->sync_rechazo(
+                $guid,
+                'el trabajador ' . $trabajador_id . ' no esta en la tarea AM ' . $am_guid
+            );
+        }
+        $am_personal_id = (int) $asignacion->id;
+
+        // Una asignacion se cierra UNA vez. El mismo guid ya se filtro antes
+        // (idempotencia); llegar aca con otro guid es un cierre repetido.
+        $q = $db->select('id, guid')->from('reg_pm')
+                ->where('am_personal_id', $am_personal_id)->limit(1)->get();
+        if ($q === FALSE) {
+            return NULL;
+        }
+        $ya = $q->row();
+        if ($ya) {
+            return $this->sync_rechazo(
+                $guid,
+                'esa asignacion AM ya fue cerrada por el PM ' . $ya->guid
+            );
         }
 
         if (!isset($p['cantidad']) || !is_numeric($p['cantidad']) || (float) $p['cantidad'] < 0) {
             return $this->sync_rechazo($guid, 'cantidad ausente o negativa');
         }
 
-        // hora_inicio / hora_cierre: se acepta ISO completo o 'HH:MM' del dia
-        // de fecha_proceso. La app manda ISO; 'HH:MM' es tolerancia, no contrato.
-        $ini = $this->sync_hora($p, 'hora_inicio', $fecha);
-        $fin = $this->sync_hora($p, 'hora_cierre', $fecha);
-        if ($ini === NULL || $fin === NULL) {
-            return $this->sync_rechazo($guid, 'hora_inicio/hora_cierre ausentes o ilegibles');
-        }
-        if ($fin->getTimestamp() < $ini->getTimestamp()) {
-            return $this->sync_rechazo($guid, 'hora_cierre anterior a hora_inicio');
+        // Responsable: quien zanja la tarea. Puede no ser el que la programo.
+        $responsable_id = $this->sync_int($p, 'responsable_id');
+        if ($responsable_id === NULL) {
+            $responsable_id = (int) $am->responsable_id;
+        } elseif (!$this->sync_personal_activo($db, $responsable_id)) {
+            return $this->sync_rechazo($guid, 'responsable ' . $responsable_id . ' inexistente o inactivo');
         }
 
-        $modulos = $this->sync_lista_ids($p, 'modulo_ids');
-        if ($modulos === NULL) {
-            return $this->sync_rechazo($guid, 'modulo_ids debe ser una lista de enteros positivos');
+        // La fecha y la hora de inicio SALEN DEL AM: son la programacion de
+        // la manana, no algo que el PM pueda redefinir.
+        $inicio = $this->sync_fecha($am->fecha_proceso);
+        if ($inicio === NULL) {
+            return NULL;
         }
-        foreach ($modulos as $mid) {
-            if (!$this->sync_modulo_de_lote($db, $mid, $ids['lote_id'])) {
-                return $this->sync_rechazo($guid, 'modulo ' . $mid . ' inexistente, inactivo o no pertenece al lote ' . $ids['lote_id']);
-            }
+        $fecha = clone $inicio;
+
+        // hora_cierre es lo unico temporal que aporta el PM. Sin ella se usa
+        // el momento de captura, que es lo que hacia la app vieja -- y por eso
+        // todos los tiempos salian en cero.
+        $cierre = $this->sync_hora($p, 'hora_cierre', $fecha);
+        if ($cierre === NULL) {
+            $cierre = clone $cad;
+        }
+        if ($cierre->getTimestamp() < $inicio->getTimestamp()) {
+            return $this->sync_rechazo($guid, 'hora_cierre anterior a la hora de la tarea AM');
         }
 
-        if ($fecha->getTimestamp() > $ahora + 7200) {
-            return $this->sync_rechazo($guid, 'fecha_proceso en el futuro (I1)');
-        }
-
-        // pm_year/pm_week SIEMPRE los calcula el servidor. Se usa 'o' (año ISO)
-        // y no 'Y' (año calendario) a proposito: V3 usa 'Y'.'W' y eso guardo
-        // 181 filas del 29-31 de diciembre de 2025 como (2025, semana 1),
-        // mezclandolas con la primera semana de enero de 2025 en el reporte de
-        // pago. Con 'o' esas filas caen en (2026, 1), que es lo correcto.
-        // Vuelve a pasar en diciembre de 2029. No copiar el bug de V3.
+        // pm_year/pm_week SIEMPRE los calcula el servidor, y con 'o' (ano ISO)
+        // y no 'Y' (ano calendario). V3 usa 'Y'.'W' y eso guardo 181 filas del
+        // 29-31 de diciembre de 2025 como (2025, semana 1), mezclandolas con
+        // la primera semana de enero de 2025 en el reporte de pago. Vuelve a
+        // pasar en diciembre de 2029. No copiar el bug de V3.
         $ok = $db->insert('reg_pm', array(
             'guid'                => $guid,
             'fecha_proceso'       => $fecha->format('Y-m-d'),
-            'hora_inicio'         => $ini->format('Y-m-d H:i:s'),
-            'hora_cierre'         => $fin->format('Y-m-d H:i:s'),
+            'hora_inicio'         => $inicio->format('Y-m-d H:i:s'),
+            'hora_cierre'         => $cierre->format('Y-m-d H:i:s'),
             'pm_year'             => (int) $fecha->format('o'),
             'pm_week'             => (int) $fecha->format('W'),
-            'finca_id'            => $ids['finca_id'],
-            'responsable_id'      => $ids['responsable_id'],
-            'trabajador_id'       => $ids['trabajador_id'],
-            'cultivo_id'          => $ids['cultivo_id'],
-            'lote_id'             => $ids['lote_id'],
-            'subtarea_id'         => $ids['subtarea_id'],
+            'finca_id'            => (int) $am->finca_id,
+            'responsable_id'      => $responsable_id,
+            'trabajador_id'       => $trabajador_id,
+            'am_personal_id'      => $am_personal_id,
+            'cultivo_id'          => (int) $am->cultivo_id,
+            'lote_id'             => (int) $am->lote_id,
+            'subtarea_id'         => (int) $am->subtarea_id,
             'cantidad'            => (float) $p['cantidad'],
             'comentario'          => $this->sync_texto($p, 'comentario', 255),
             'device_alias'        => $alias,
@@ -572,13 +722,17 @@ class V4 extends RestController
         }
         $id = (int) $db->insert_id();
 
-        foreach (array_unique($modulos) as $mid) {
-            if ($db->insert('reg_pm_modulo', array('pm_id' => $id, 'modulo_id' => $mid)) === FALSE) {
-                return NULL;
+        // Los modulos del PM se heredan del AM: es la misma tarea.
+        $q = $db->select('modulo_id')->from('reg_am_modulo')->where('am_id', (int) $am->id)->get();
+        if ($q !== FALSE) {
+            foreach ($q->result() as $m) {
+                if ($db->insert('reg_pm_modulo', array('pm_id' => $id, 'modulo_id' => (int) $m->modulo_id)) === FALSE) {
+                    return NULL;
+                }
             }
         }
 
-        $flags = $this->sync_flags($ini, $cad, $ahora, 'pm');
+        $flags = $this->sync_flags($cierre, $cad, $ahora, 'pm');
         $this->sync_guarda_flags($db, 'reg_pm', $id, $guid, $flags, $ahora);
 
         $out = array('guid' => $guid, 'status' => 'created', 'id' => $id);
