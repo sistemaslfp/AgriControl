@@ -87,6 +87,14 @@ Página 2..N `Tarea N`: Cultivo, **Tarea**, Lote, Subtarea, Módulo,
 Personal (múltiple), Comentarios, botón `SIGUIENTE +`.
 Página final: `Revisar y enviar`.
 
+**Los lotes se ordenan y se nombran distinto** (2026-09-01): primero los
+numéricos por valor (`Lote 0`, `Lote 1`, … `Lote 5`) y después los que tienen
+nombre, alfabéticamente (`Administrativos`, `AREA CAMPAMENTO`, …). **A los que
+tienen nombre no se les antepone "Lote"**: nadie dice "Lote Administrativos".
+El orden se hace en TypeScript y no en SQL a propósito: en SQLite
+`CAST('Administrativos' AS INTEGER)` da 0 y el área administrativa terminaba
+mezclada con el lote "0", que existe de verdad.
+
 **La cascada es Cultivo → Tarea → Subtarea** (2026-09-01). La subtarea queda
 apagada hasta que haya tarea, y entonces muestra solo las de esa tarea: sin ese
 corte, un cultivo vuelca decenas de subtareas sueltas en una sola lista.
@@ -98,6 +106,13 @@ corte, un cultivo vuelca decenas de subtareas sueltas en una sola lista.
 
   - **Ventana flotante centrada**, no pantalla completa, que **se cierra
     tocando fuera** y además tiene botón `Listo`.
+  - **La ventana mide exactamente lo que mide su contenido**: encabezado más
+    una fila por opción, con techo de 12 filas y de 72 vh. Una ventana de 600
+    px para elegir entre dos responsables deja media pantalla en blanco, y una
+    de 250 px para buscar entre 1.100 personas es inservible.
+  - **Tocar la opción que ya estaba elegida también cierra.** Va por el click
+    del ítem y no por el `ionChange` del radio: si el valor no cambia, el
+    evento no dispara y la ventana se quedaba abierta sin hacer nada.
   - **El buscador aparece solo si hace falta** (más de 10 opciones). Con seis
     responsables es estorbo; con 1.100 personas es imprescindible. Busca sin
     tildes y por palabras sueltas: "ALAVA ERICKA" encuentra "ALAVA TOMALA
@@ -105,9 +120,15 @@ corte, un cultivo vuelca decenas de subtareas sueltas en una sola lista.
   - **En selección múltiple cada toque aplica ya**, así que cerrar tocando
     fuera nunca pierde lo elegido.
   - **El Responsable se filtra por `z_personal.rol = 8`** (responsable de
-    campo). Verificado contra los datos: hay 6 personas activas con ese rol y
-    son exactamente las 6 que figuran como `responsable_id` en los 590 AM de
-    agosto, sin una excepción.
+    campo) **y por finca**. Verificado contra los datos: hay 6 personas activas
+    con ese rol, son exactamente las 6 que figuran como `responsable_id` en los
+    590 AM de agosto, y en las 590 filas la finca del responsable **siempre**
+    coincide con la del AM.
+  - **Elegir el responsable ANTES que la finca no lo borra.** Al fijar la finca
+    se revisa si el responsable elegido pertenece a ella: solo entonces se
+    limpia, diciendo por qué. Borrarlo siempre obligaba a elegirlo dos veces
+    sin explicación; no borrarlo nunca dejaba pasar un responsable de la otra
+    finca, que el servidor no rechaza pero es un dato equivocado.
 - `Módulo` sólo se pide si `lote.tiene_modulos = true` (ver `02-bd-y-api.md` §3).
 - **OJO, esta nota describía V3 y ya no aplica.** En `z_tabla_am` un AM con N
   personas eran N filas. En V4 **las personas son tabla hija** (`reg_am_personal`),
@@ -186,8 +207,10 @@ no tiene por qué ser el que la programó a la mañana.
   equipo que siguen PENDIENTES en la cola. Sin él, un supervisor sin señal no
   podría cerrar por la tarde la tarea que él mismo cargó por la mañana.
 
-Se juntan y se deduplican por (`am_guid`, persona); gana la del servidor, que
-trae los nombres ya resueltos. Las que salen solo del espejo local se marcan
+Cada fila muestra **trabajador, lote, módulo y subtarea**: sin el módulo, dos
+asignaciones del mismo lote y la misma subtarea se ven idénticas. Se juntan y se
+deduplican por (`am_guid`, persona); gana la del servidor, que trae los nombres
+ya resueltos. Las que salen solo del espejo local se marcan
 **"cargada en este equipo, todavía sin enviar"**, para que el supervisor sepa
 qué está viendo.
 

@@ -25,8 +25,21 @@ ion-label {
 ion-modal.selector-flotante {
   --width: 92%;
   --max-width: 460px;
-  --height: 68%;
-  --max-height: 560px;
   --border-radius: 14px;
   --box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32);
+
+  /* La altura la calcula la pagina y la inyecta como --height: es el alto
+     exacto de las opciones que hay. Una ventana de 600 px para elegir entre
+     dos responsables deja media pantalla en blanco, y una de 250 px para
+     buscar entre 1.100 personas es inservible.
+
+     No se usa `--height: auto` porque con ion-header + ion-content adentro el
+     layout se colapsa, el ion-content se derrumba y el propio ion-modal
+     termina interceptando los toques: las opciones dejan de ser clicables.
+     Verificado midiendo el DOM.
+
+     Estos dos son el piso y el techo por si la cuenta se queda corta. */
+  --height: 40%;
+  --min-height: 150px;
+  --max-height: 72vh;
 }

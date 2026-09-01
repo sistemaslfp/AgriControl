@@ -63,6 +63,8 @@ export interface AsignacionAmApi {
   lote: string;
   cultivo: string;
   subtarea: string;
+  /** "3, 4" — modulos del AM, o null si el lote no trabaja por modulos. */
+  modulos: string | null;
   unidad_labor_id: number | null;
   unidad_labor: string | null;
 }

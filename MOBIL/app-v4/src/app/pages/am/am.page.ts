@@ -157,6 +157,29 @@ export class AmPage implements OnInit {
   readonly selectorVacio = signal('No hay opciones para elegir.');
   /** null = automático (buscador solo si hay muchas opciones). */
   readonly selectorBuscador = signal<boolean | null>(null);
+  /**
+   * Alto exacto de la ventana flotante, en px, para que el contenido la
+   * llene sin dejar blanco abajo.
+   *
+   * 56 del encabezado + 60 del buscador (si aparece) + 44 del pie de conteo
+   * (solo en multiple) + una fila por opcion. Las filas con detalle ("12.5
+   * ha") son mas altas. Se topea a 12 filas: mas que eso ya es una lista para
+   * recorrer con el buscador, no de un vistazo. El CSS pone el piso y el
+   * techo por si la cuenta se queda corta.
+   */
+  readonly alturaSelector = computed(() => {
+    const opciones = this.selectorOpciones();
+    const n = Math.min(opciones.length, 12);
+    const conDetalle = opciones.some((o) => !!o.detalle);
+    const buscador = this.selectorBuscador() ?? opciones.length > 10;
+    const alto =
+      56 +
+      (buscador ? 60 : 0) +
+      (this.selectorMultiple() ? 44 : 0) +
+      Math.max(n, 1) * (conDetalle ? 66 : 49) +
+      6;
+    return `${alto}px`;
+  });
   private destino: Destino | null = null;
 
   // --- Catálogos base ---
@@ -463,9 +486,9 @@ export class AmPage implements OnInit {
           this.tareas.set(
             this.tareas().map((t) => ({ ...t, lote: null, modulos: [], personal: [] })),
           );
-          this.responsable.set(null);
           await this.aviso('Cambió la finca: se limpiaron lotes, módulos y personal.');
         }
+        await this.validarResponsable();
         break;
       }
       case 'responsable':
@@ -516,6 +539,23 @@ export class AmPage implements OnInit {
       case 'personal':
         this.actualizarTarea(d.i, (t) => ({ ...t, personal: refs }));
         break;
+    }
+  }
+
+  /**
+   * El responsable se puede elegir ANTES que la finca. Al fijar la finca se
+   * revisa si sigue siendo válido, en vez de borrarlo a ciegas: borrarlo
+   * siempre obligaba a elegirlo dos veces sin explicación.
+   */
+  private async validarResponsable(): Promise<void> {
+    const r = this.responsable();
+    if (!r) {
+      return;
+    }
+    const validos = await this.catalogo.responsables(this.finca()?.id ?? null);
+    if (!validos.some((v) => v.id === r.id)) {
+      this.responsable.set(null);
+      await this.aviso(`${r.nombre} no es responsable de esa finca; elegí otro.`);
     }
   }
 
@@ -578,6 +618,7 @@ export class AmPage implements OnInit {
           t.lote!.id,
           t.subtarea!.id,
           t.personal.map((p) => p.id),
+          t.modulos.map((m) => m.id),
         );
       }
     } finally {

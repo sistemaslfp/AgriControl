@@ -843,10 +843,15 @@ que lista la pantalla PM.
       "personal_id": 4, "trabajador": "ALVEAR MORALES VÍCTOR",
       "lote": "2", "cultivo": "Cacao",
       "subtarea": "Operador de canguro entrenamiento",
+      "modulos": "3, 4",
       "unidad_labor_id": 2, "unidad_labor": "Jornal" }
   ]
 }
 ```
+
+`modulos` sale de `reg_am_modulo` con un `GROUP_CONCAT`, y va porque la
+pantalla PM lo muestra: sin el módulo, dos asignaciones del mismo lote y la
+misma subtarea se ven idénticas en la lista.
 
 `fecha` es obligatoria (400 sin ella): sin acotar, la consulta barre la tabla.
 **Sin guion en la ruta**: CodeIgniter mapea el segmento de URI al nombre del

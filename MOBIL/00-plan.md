@@ -129,10 +129,26 @@ servidor) y solo carga el **avance** y quién cerró.
   fantasma. Tabla en `02-bd-y-api.md` §7.
 
 **Selectores (2026-09-01, Kevin).** Ventana flotante que cierra tocando fuera,
-buscador solo con más de 10 opciones, selección múltiple que aplica en vivo,
-**Responsable filtrado por `rol = 8`** (verificado: son 6 y son exactamente los
-6 responsables de los AM de agosto), cascada **Cultivo → Tarea → Subtarea**, y
-**los códigos de tarea/subtarea no se muestran** (control interno).
+**con el alto exacto de su contenido**; buscador solo con más de 10 opciones;
+selección múltiple que aplica en vivo; tocar la opción ya elegida también
+cierra. **Responsable filtrado por `rol = 8` y por finca** (verificado: son 6,
+son exactamente los 6 responsables de los AM de agosto, y en las 590 filas la
+finca del responsable siempre coincide con la del AM); elegirlo antes que la
+finca ya no lo borra — se limpia solo si no pertenece a ella. Cascada
+**Cultivo → Tarea → Subtarea**, y **los códigos de tarea/subtarea no se
+muestran** (control interno).
+
+**Lotes (2026-09-01, Kevin).** Se ordenan primero los numéricos por valor y
+después los que tienen nombre, alfabéticamente; y **a los que tienen nombre no
+se les antepone "Lote"**. En Bellita hay 5 lotes numéricos ("0" a "4") y 4
+áreas con nombre (Administrativos, campamento, empacadora, área social), todas
+de 1 ha y sin módulos.
+
+**Módulos (2026-09-01).** La lista de tareas AM abiertas del PM muestra el
+módulo junto al lote: sin él, dos asignaciones del mismo lote y la misma
+subtarea se ven idénticas. `GET /v4/am_abiertos` lo devuelve desde
+`reg_am_modulo`, y el espejo local del teléfono lo guarda en una columna nueva
+`am_persona_local.modulos`.
 
 **Vocabulario de pantalla (2026-09-01).** "Retroactivo" es jerga de estos
 documentos. En la app el interruptor dice **"Estoy cargando un día anterior"**.

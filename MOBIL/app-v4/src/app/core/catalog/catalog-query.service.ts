@@ -36,6 +36,41 @@ export interface Subtarea extends OpcionCatalogo {
  */
 export const ROL_RESPONSABLE_CAMPO = 8;
 
+/**
+ * Nombre de un lote para mostrar.
+ *
+ * Los lotes productivos se llaman con un numero ("0", "1", …, "4") y las areas
+ * de servicio con un nombre ("Administrativos", "AREA EMPACADORA", "Area
+ * social"). Anteponerle "Lote" a un numero ayuda; anteponerselo a un nombre
+ * produce "Lote Administrativos", que no lo dice nadie.
+ */
+export function nombreLote(lote: string): string {
+  const v = String(lote ?? '').trim();
+  return /^\d+$/.test(v) ? `Lote ${v}` : v;
+}
+
+/**
+ * Orden de los lotes: primero los numericos por valor (0, 1, 2, …) y despues
+ * los que tienen nombre, alfabeticamente.
+ *
+ * Se ordena en TypeScript y no en SQL a proposito: en SQLite
+ * `CAST('Administrativos' AS INTEGER)` da 0 y el area administrativa termina
+ * mezclada con el lote "0", que existe de verdad.
+ */
+export function ordenarLotes<T extends { raw: string }>(lotes: T[]): T[] {
+  const esNumero = (v: string) => /^\d+$/.test(v.trim());
+  return [...lotes].sort((a, b) => {
+    const na = esNumero(a.raw);
+    const nb = esNumero(b.raw);
+    if (na !== nb) {
+      return na ? -1 : 1;
+    }
+    return na
+      ? Number(a.raw) - Number(b.raw)
+      : a.raw.localeCompare(b.raw, 'es', { sensitivity: 'base' });
+  });
+}
+
 @Injectable({ providedIn: 'root' })
 export class CatalogQueryService {
   private readonly database = inject(DatabaseService);
@@ -52,29 +87,50 @@ export class CatalogQueryService {
     );
   }
 
-  async lotesDeFinca(fincaId: number): Promise<(OpcionCatalogo & { tieneModulos: boolean })[]> {
-    return this.filas(
-      `SELECT id, lote, ha, tiene_modulos FROM cat_lote WHERE finca_id = ?
-        ORDER BY CAST(lote AS INTEGER), lote;`,
+  async lotesDeFinca(
+    fincaId: number,
+  ): Promise<(OpcionCatalogo & { tieneModulos: boolean; raw: string })[]> {
+    const filas = await this.filas(
+      `SELECT id, lote, ha, tiene_modulos FROM cat_lote WHERE finca_id = ?;`,
       [fincaId],
       (f) => ({
         id: Number(f['id']),
-        nombre: `Lote ${f['lote']}`,
+        raw: String(f['lote']),
+        nombre: nombreLote(String(f['lote'])),
         detalle: f['ha'] != null ? `${f['ha']} ha` : undefined,
         // tiene_modulos se guarda como 0/1. OJO con el "0" string: en JS es
         // truthy, así que se compara contra 1 y no se usa como booleano.
         tieneModulos: Number(f['tiene_modulos']) === 1,
       }),
     );
+    return ordenarLotes(filas);
   }
 
   async lote(id: number): Promise<OpcionCatalogo | null> {
     const r = await this.filas(
       `SELECT id, lote FROM cat_lote WHERE id = ? LIMIT 1;`,
       [id],
-      (f) => ({ id: Number(f['id']), nombre: `Lote ${f['lote']}` }),
+      (f) => ({ id: Number(f['id']), nombre: nombreLote(String(f['lote'])) }),
     );
     return r[0] ?? null;
+  }
+
+  /** Nombres de módulos por id, para pintar "Lote 2 · Mód. 3, 4". */
+  async nombresModulo(ids: number[]): Promise<Map<number, string>> {
+    const mapa = new Map<number, string>();
+    if (ids.length === 0) {
+      return mapa;
+    }
+    const marcas = ids.map(() => '?').join(',');
+    const filas = await this.filas(
+      `SELECT id, modulo FROM cat_modulo WHERE id IN (${marcas});`,
+      ids,
+      (f) => ({ id: Number(f['id']), nombre: String(f['modulo']) }),
+    );
+    for (const f of filas) {
+      mapa.set(f.id, f.nombre);
+    }
+    return mapa;
   }
 
   async modulosDeLote(loteId: number): Promise<OpcionCatalogo[]> {

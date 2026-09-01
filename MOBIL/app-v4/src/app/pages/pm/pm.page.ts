@@ -34,7 +34,11 @@ import { ApiService } from '../../core/api/api.service';
 import { AsignacionAmLocal, AsignacionesService } from '../../core/captura/asignaciones.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { BootstrapService } from '../../core/bootstrap/bootstrap.service';
-import { CatalogQueryService, OpcionCatalogo } from '../../core/catalog/catalog-query.service';
+import {
+  CatalogQueryService,
+  OpcionCatalogo,
+  nombreLote,
+} from '../../core/catalog/catalog-query.service';
 import { ClockService } from '../../core/clock/clock.service';
 import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
@@ -153,6 +157,29 @@ export class PmPage implements OnInit {
   readonly selectorSeleccion = signal<number[]>([]);
   readonly selectorVacio = signal('No hay opciones para elegir.');
   readonly selectorBuscador = signal<boolean | null>(null);
+  /**
+   * Alto exacto de la ventana flotante, en px, para que el contenido la
+   * llene sin dejar blanco abajo.
+   *
+   * 56 del encabezado + 60 del buscador (si aparece) + una fila por opcion.
+   * Los selectores de esta pantalla son todos simples, asi que no hay pie de
+   * conteo que sumar. Las filas con detalle ("12.5
+   * ha") son mas altas. Se topea a 12 filas: mas que eso ya es una lista para
+   * recorrer con el buscador, no de un vistazo. El CSS pone el piso y el
+   * techo por si la cuenta se queda corta.
+   */
+  readonly alturaSelector = computed(() => {
+    const opciones = this.selectorOpciones();
+    const n = Math.min(opciones.length, 12);
+    const conDetalle = opciones.some((o) => !!o.detalle);
+    const buscador = this.selectorBuscador() ?? opciones.length > 10;
+    const alto =
+      56 +
+      (buscador ? 60 : 0) +
+      Math.max(n, 1) * (conDetalle ? 66 : 49) +
+      6;
+    return `${alto}px`;
+  });
   private destino: 'finca' | 'responsable' | null = null;
 
   private fincas: OpcionCatalogo[] = [];
@@ -238,9 +265,10 @@ export class PmPage implements OnInit {
           trabajador: a.trabajador,
           fechaProceso: a.fecha_proceso,
           loteId: a.lote_id,
-          lote: `Lote ${a.lote}`,
+          lote: nombreLote(a.lote),
           subtareaId: a.subtarea_id,
           subtarea: a.subtarea,
+          modulos: a.modulos ?? '',
           unidadLabor: a.unidad_labor,
           origen: 'servidor' as const,
         }));
@@ -357,13 +385,37 @@ export class PmPage implements OnInit {
     if (d === 'finca') {
       const antes = this.finca()?.id;
       this.finca.set(ref);
-      if (antes !== ref?.id) {
-        this.responsable.set(null);
+      // Solo un cambio REAL de finca invalida las tareas ya elegidas.
+      // `antes === undefined` es "todavia no habia finca", no un cambio.
+      if (antes !== undefined && antes !== ref?.id) {
         this.elegidas.set([]);
-        await this.cargarLista();
       }
+      await this.validarResponsable();
+      await this.cargarLista();
     } else if (d === 'responsable') {
       this.responsable.set(ref);
+    }
+  }
+
+  /**
+   * El responsable se puede elegir ANTES que la finca: en ese caso la lista
+   * trae a los de las dos fincas. Al fijar la finca hay que revisar si el que
+   * quedó elegido pertenece a ella — y solo entonces limpiarlo, diciendo por
+   * qué.
+   *
+   * Borrarlo siempre (que es lo que hacía antes) obligaba a elegirlo dos
+   * veces sin explicación; no borrarlo nunca dejaba un responsable de la otra
+   * finca, que el servidor no rechaza pero es un dato equivocado.
+   */
+  private async validarResponsable(): Promise<void> {
+    const r = this.responsable();
+    if (!r) {
+      return;
+    }
+    const validos = await this.catalogo.responsables(this.finca()?.id ?? null);
+    if (!validos.some((v) => v.id === r.id)) {
+      this.responsable.set(null);
+      await this.aviso(`${r.nombre} no es responsable de esa finca; elegí otro.`);
     }
   }
 

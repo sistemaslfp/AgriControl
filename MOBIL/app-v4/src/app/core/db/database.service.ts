@@ -104,6 +104,8 @@ export class DatabaseService {
        lote_id       INTEGER NOT NULL,
        subtarea_id   INTEGER NOT NULL,
        created_at    TEXT    NOT NULL,
+       -- ids de modulo separados por coma; el PM los muestra junto al lote.
+       modulos       TEXT,
        PRIMARY KEY (guid, personal_id)
      );`,
     `CREATE INDEX IF NOT EXISTS idx_am_persona_abierto
@@ -155,10 +157,30 @@ export class DatabaseService {
     for (const sql of DatabaseService.SCHEMA) {
       await db.execute(sql, false);
     }
+    await this.agregarColumnasFaltantes(db);
     await this.persistirSiWeb(db);
 
     this.db = db;
     return db;
+  }
+
+  /**
+   * Columnas agregadas DESPUES de que la tabla ya existia en equipos en uso.
+   *
+   * `CREATE TABLE IF NOT EXISTS` no agrega columnas a una tabla que ya esta,
+   * asi que un ALTER hace falta; y SQLite no tiene `ADD COLUMN IF NOT EXISTS`,
+   * asi que el error de "duplicate column" se ignora a proposito. Es el
+   * camino barato mientras los cambios sean solo agregar columnas nullables.
+   */
+  private async agregarColumnasFaltantes(db: SQLiteDBConnection): Promise<void> {
+    const alters = ['ALTER TABLE am_persona_local ADD COLUMN modulos TEXT;'];
+    for (const sql of alters) {
+      try {
+        await db.execute(sql, false);
+      } catch {
+        // la columna ya existe
+      }
+    }
   }
 
   /**

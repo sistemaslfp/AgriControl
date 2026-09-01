@@ -45,6 +45,13 @@ import { OpcionCatalogo } from '../core/catalog/catalog-query.service';
 @Component({
   selector: 'app-selector',
   standalone: true,
+  // `ion-page` NO lo pone Ionic solo: dentro de un ion-modal con ng-template
+  // el componente queda `display: block` y con la altura de su contenido, asi
+  // que el ion-header medía 56 px y el ion-content se derrumbaba a otros 56,
+  // dejando media ventana en blanco. Verificado midiendo el DOM, no supuesto.
+  // La clase le da el `flex column; height 100%` que hace que el contenido
+  // llene la ventana.
+  host: { class: 'ion-page' },
   imports: [
     IonButton,
     IonButtons,
@@ -113,10 +120,14 @@ import { OpcionCatalogo } from '../core/catalog/catalog-query.service';
           }
         </ion-list>
       } @else {
-        <ion-radio-group [value]="unico()" (ionChange)="elegirUno($any($event.detail).value)">
+        <!-- El click va en el ion-item y no en el ionChange del grupo: si el
+             usuario reabre el selector y toca la opcion que YA estaba elegida,
+             el radio no cambia, el ionChange no dispara y la ventana se queda
+             abierta sin hacer nada. Con el click siempre confirma y cierra. -->
+        <ion-radio-group [value]="unico()">
           <ion-list>
             @for (o of filtradas(); track o.id) {
-              <ion-item>
+              <ion-item (click)="elegirUno(o.id)">
                 <ion-radio [value]="o.id" labelPlacement="end" justify="start">
                   <ion-label>
                     {{ o.nombre }}

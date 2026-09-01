@@ -47,6 +47,8 @@ export interface AsignacionAmLocal {
   lote: string;
   subtareaId: number;
   subtarea: string;
+  /** "3, 4" o '' si el lote no trabaja por módulos. */
+  modulos: string;
   unidadLabor: string | null;
   origen: 'servidor' | 'local';
 }
@@ -77,15 +79,17 @@ export class AsignacionesService {
     loteId: number,
     subtareaId: number,
     personalIds: number[],
+    moduloIds: number[] = [],
   ): Promise<void> {
     const db = await this.database.abrir();
     const ahora = new Date().toISOString();
+    const modulos = moduloIds.join(',');
     for (const pid of new Set(personalIds)) {
       await db.run(
         `INSERT OR REPLACE INTO am_persona_local
-           (guid, personal_id, fecha, lote_id, subtarea_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?);`,
-        [guid, pid, fecha, loteId, subtareaId, ahora],
+           (guid, personal_id, fecha, lote_id, subtarea_id, created_at, modulos)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [guid, pid, fecha, loteId, subtareaId, ahora, modulos],
       );
     }
     await this.database.persistir();
@@ -182,7 +186,7 @@ export class AsignacionesService {
   async abiertasLocales(fecha: string): Promise<AsignacionAmLocal[]> {
     const db = await this.database.abrir();
     const r = await db.query(
-      `SELECT a.guid, a.personal_id, a.fecha, a.lote_id, a.subtarea_id
+      `SELECT a.guid, a.personal_id, a.fecha, a.lote_id, a.subtarea_id, a.modulos
          FROM am_persona_local a
         WHERE a.fecha = ?
           AND NOT EXISTS (
@@ -205,6 +209,11 @@ export class AsignacionesService {
       const subtareaId = Number(f['subtarea_id']);
       const sub = await this.catalogo.subtarea(subtareaId);
       const lote = await this.catalogo.lote(loteId);
+      const ids = String(f['modulos'] ?? '')
+        .split(',')
+        .map((x) => Number(x))
+        .filter((x) => x > 0);
+      const nombresMod = await this.catalogo.nombresModulo(ids);
       salida.push({
         amGuid: String(f['guid']),
         amPersonalId: null,
@@ -215,6 +224,7 @@ export class AsignacionesService {
         lote: lote?.nombre ?? `Lote ${loteId}`,
         subtareaId,
         subtarea: sub?.nombre ?? `Subtarea ${subtareaId}`,
+        modulos: ids.map((x) => nombresMod.get(x) ?? String(x)).join(', '),
         unidadLabor: sub?.unidadLaborNombre ?? null,
         origen: 'local',
       });

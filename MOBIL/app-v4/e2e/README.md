@@ -10,7 +10,7 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   el bloqueo del AM sin personal, el bloqueo por persona repetida, el aviso de
   AM abierto, el filtro del responsable por rol 8, la cascada
   Cultivo → Tarea → Subtarea, y el PM que cierra tareas AM en vez de crearlas.
-  44 comprobaciones.
+  51 comprobaciones.
   Se corre cuando se tocan las pantallas de captura.
 
 No corren en CI ni hacen falta para desarrollar.
@@ -48,6 +48,13 @@ Dos cosas que cuestan tiempo si no se saben, y que estas pruebas ya resuelven:
 - **Después de cerrar hay que ESPERAR** a que se vaya la clase `show-modal`:
   Ionic deja el `ion-modal` en el DOM y mientras tanto sigue interceptando los
   toques, así que el siguiente click de la página se cuelga 30 s.
+- **Al componente dentro de un `ion-modal` hay que ponerle la clase
+  `ion-page` a mano.** Ionic no se la pone: sin ella el componente queda
+  `display: block` con la altura de su contenido, el `ion-content` se derrumba
+  y media ventana queda en blanco.
+- **Tras cerrar un modal hay que esperar la condición, no un timeout fijo**
+  (`esperarModalCerrado`): 500 ms alcanzan a veces y a veces no, y el fallo se
+  ve como un click que se cuelga 30 s en otra parte de la prueba.
 - **Un modal con `--height: auto` colapsa el layout** si adentro hay
   `ion-header` + `ion-content` + `ion-footer`: la receta de altura automática
   de Ionic exige un div normal. Con `ion-content` el propio `ion-modal`

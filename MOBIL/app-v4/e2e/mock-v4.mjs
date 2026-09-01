@@ -20,8 +20,12 @@ let amRecibidos = new Map();   // am_guid -> {payload, personas:[ids]}
 let cerradas = new Set();      // `${am_guid}|${personal_id}`
 
 // Espejo minimo de los catalogos, para poder resolver nombres en am_abiertos.
-const NOMBRES = { 214: 'ALAVA TOMALA ERICKA', 301: 'BRIONES MERO JUAN', 26: 'HOLGUIN LUIS ALBERTO' };
+const NOMBRES = { 214: 'ALAVA TOMALA ERICKA', 301: 'BRIONES MERO JUAN',
+                  26: 'HOLGUIN LUIS ALBERTO', 27: 'MENDOZA CARLOS RUBEN',
+                  400: 'PACARI PEREZ ANA' };
 const SUBTAREAS = { 88: 'COSECHA CACAO', 90: 'PODA DE FORMACION' };
+const LOTES = { 1: '1', 5: '5', 6: 'Administrativos' };
+const MODULOS = { 2: '02' };
 
 const server = http.createServer((req, res) => {
   const cors = {
@@ -63,8 +67,10 @@ const server = http.createServer((req, res) => {
           cultivo_id: am.payload.cultivo_id, lote_id: am.payload.lote_id,
           subtarea_id: am.payload.subtarea_id,
           personal_id: pid, trabajador: NOMBRES[pid] ?? `#${pid}`,
-          lote: String(am.payload.lote_id), cultivo: 'CACAO',
+          lote: LOTES[am.payload.lote_id] ?? String(am.payload.lote_id),
+          cultivo: 'CACAO',
           subtarea: SUBTAREAS[am.payload.subtarea_id] ?? 'Subtarea',
+          modulos: (am.payload.modulo_ids ?? []).map((x) => MODULOS[x] ?? x).join(', ') || null,
           unidad_labor_id: 4, unidad_labor: 'Libra',
         });
       }
@@ -97,9 +103,16 @@ const server = http.createServer((req, res) => {
 
   if (req.url === '/v4/catalogos') return json(200, {
     version: 'mock-1',
-    fincas: [{ id: 1, nombre: 'Bellita', ha: 250 }],
-    lotes: [{ id: 1, lote: '1', finca_id: 1, ha: 12.5, tiene_modulos: true },
-            { id: 5, lote: '5', finca_id: 1, ha: 8.0, tiene_modulos: false }],
+    // DOS fincas, como en produccion: con una sola la app la preselecciona y
+    // nunca se ejerce el camino de elegir responsable ANTES que la finca.
+    fincas: [{ id: 1, nombre: 'Bellita', ha: 250 },
+             { id: 2, nombre: 'Pacaritambo', ha: 90 }],
+    // Deliberadamente desordenados y con un lote con NOMBRE: la app tiene que
+    // mostrarlos 1, 5, Administrativos — y sin anteponerle "Lote" al nombre.
+    lotes: [{ id: 6, lote: 'Administrativos', finca_id: 1, ha: 1.0, tiene_modulos: false },
+            { id: 5, lote: '5', finca_id: 1, ha: 8.0, tiene_modulos: false },
+            { id: 1, lote: '1', finca_id: 1, ha: 12.5, tiene_modulos: true },
+            { id: 20, lote: '1', finca_id: 2, ha: 25.1, tiene_modulos: false }],
     modulos: [{ id: 2, modulo: '02', lote_id: 1, ha: 3.2 }],
     cultivos: [{ id: 1, nombre: 'CACAO' }],
     tareas: [{ id: 3, nombre: 'COSECHA', cultivos_id: 1 },
@@ -111,7 +124,9 @@ const server = http.createServer((req, res) => {
     // HOLGUIN tiene que aparecer ahi y los dos operarios NO.
     personal: [{ id: 214, nombre: 'ALAVA TOMALA ERICKA', id_finca: 1, rol: 13, rol_app: '1' },
                { id: 301, nombre: 'BRIONES MERO JUAN', id_finca: 1, rol: 13, rol_app: '1' },
-               { id: 26, nombre: 'HOLGUIN LUIS ALBERTO', id_finca: 1, rol: 8, rol_app: '2' }] });
+               { id: 26, nombre: 'HOLGUIN LUIS ALBERTO', id_finca: 1, rol: 8, rol_app: '2' },
+               { id: 400, nombre: 'PACARI PEREZ ANA', id_finca: 2, rol: 13, rol_app: '1' },
+               { id: 27, nombre: 'MENDOZA CARLOS RUBEN', id_finca: 2, rol: 8, rol_app: '2' }] });
 
   if (req.url === '/v4/sync' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c));

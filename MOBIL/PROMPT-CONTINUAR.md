@@ -24,7 +24,7 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
   asignaciones AM abiertas de la fecha y solo carga el avance. Columna nueva
   `reg_pm.am_personal_id` + `GET /v4/am_abiertos`. Probado con `curl` contra la
   base real ya migrada.
-- **Verificación:** `e2e/am-pm.spec.mjs` 44 comprobaciones y
+- **Verificación:** `e2e/am-pm.spec.mjs` 51 comprobaciones y
   `e2e/cola.spec.mjs` 22, **todas en verde**; y 8 casos de `sync_pm` con `curl`
   contra la copia real de la base, con cero filas fantasma.
 
@@ -68,8 +68,10 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
 - **Responsable = `z_personal.rol = 8`.** Son 6 y son exactamente los 6 que
   figuran en los AM de agosto.
 - **Cascada Cultivo → Tarea → Subtarea**, y los **códigos no se muestran**.
-- Los selectores son **ventanas flotantes** que cierran tocando fuera; el
-  buscador aparece solo con más de 10 opciones.
+- Los selectores son **ventanas flotantes** con el alto exacto de su contenido,
+  que cierran tocando fuera; el buscador aparece solo con más de 10 opciones.
+- **Lotes**: primero los numéricos por valor, después los de nombre; y a un
+  lote con nombre no se le antepone "Lote".
 - En pantalla no se dice "retroactivo": dice **"Estoy cargando un día
   anterior"**.
 - **Una tarea = un guid = una fila.** El ACK es por registro: un AM de tres
@@ -106,6 +108,10 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
   `new DateTime($valor)`, y una cadena sin offset se interpreta en la zona del
   SERVIDOR: con el teléfono en otra zona, la hora de proceso se corre sin que
   nadie lo note.
+- **A un componente dentro de un `ion-modal` hay que ponerle `ion-page` a
+  mano**: Ionic no se la pone y el `ion-content` se derrumba, dejando media
+  ventana en blanco. Y `--height: auto` no es alternativa: colapsa el layout y
+  el modal se come los toques.
 - **`ion-button` se come el `aria-label`** en su shadow DOM, y el `isDisabled()`
   de Playwright no entiende un `ion-button` deshabilitado (hay que leer
   `aria-disabled`). Las dos cosas hacen pasar pruebas en falso. Detalle en

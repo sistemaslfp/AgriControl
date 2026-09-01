@@ -60,6 +60,19 @@ const conteo = () => p.evaluate(() => window['__lagricontrol'].sync.conteo());
 const deshabilitado = async (loc) => (await loc.getAttribute('aria-disabled')) === 'true';
 
 /**
+ * Espera a que el modal se haya ido de verdad.
+ *
+ * Ionic deja el `ion-modal` en el DOM y solo le saca la clase `show-modal`;
+ * mientras esta la animacion de cierre sigue interceptando los toques, y el
+ * siguiente click de la pagina se cuelga 30 s. Un `waitForTimeout` fijo
+ * alcanza a veces y a veces no: por eso se espera la condicion.
+ */
+const esperarModalCerrado = () =>
+  p.waitForFunction(() => document.querySelectorAll('ion-modal.show-modal').length === 0, {
+    timeout: 5000,
+  });
+
+/**
  * El modal del selector es flotante y se cierra tocando fuera.
  *
  * Hay que ESPERAR a que se vaya: Ionic deja el `ion-modal` en el DOM y solo
@@ -71,18 +84,17 @@ const cerrarTocandoFuera = async () => {
   // "tocar afuera". Hacer .click() sobre el <ion-backdrop> NO dispara el
   // cierre — Ionic escucha el gesto, no el click del elemento.
   await p.mouse.click(8, 8);
-  await p.waitForFunction(() => document.querySelectorAll('ion-modal.show-modal').length === 0, {
-    timeout: 5000,
-  });
+  await esperarModalCerrado();
   await t(400);
 };
 
 /** Selector simple: un toque en la opción cierra el modal. */
 async function elegirUno(etiqueta, opcion) {
   await campo(etiqueta).click();
-  await t(500);
+  await t(400);
   await enModal('ion-radio', opcion).click();
-  await t(500);
+  await esperarModalCerrado();
+  await t(250);
 }
 
 /** Selector múltiple: se marcan las opciones y se confirma con "Listo". */
@@ -94,7 +106,8 @@ async function elegirVarios(etiqueta, opciones) {
     await t(150);
   }
   await p.locator('ion-modal ion-button', { hasText: 'Listo' }).first().click();
-  await t(500);
+  await esperarModalCerrado();
+  await t(250);
 }
 
 // ------------------------------------------------------------------
@@ -121,24 +134,39 @@ await p.locator('button.celda', { hasText: 'AM' }).first().click();
 await t(1500);
 ok('01 la pantalla AM abre desde el menú', await p.locator('ion-title', { hasText: 'Reporte AM' }).isVisible());
 
-// Con una sola finca en el catálogo no se pregunta: viene preseleccionada.
-ok(
-  '02 finca preseleccionada cuando hay una sola',
-  (await campo('Finca').innerText()).includes('Bellita'),
-  await campo('Finca').innerText(),
-);
+// Con dos fincas hay que elegirla; con una sola vendría preseleccionada.
+ok('02 con dos fincas la finca no viene preseleccionada',
+  (await campo('Finca').innerText()).includes('Sin elegir'), await campo('Finca').innerText());
+await elegirUno('Finca', 'Bellita');
 
 // El selector de Responsable filtra por rol = 8: los operarios no aparecen.
 await campo('Responsable').click();
 await t(600);
 const textoResp = await p.locator('ion-modal ion-content').first().innerText();
-ok('03 el responsable se filtra por rol 8',
-  textoResp.includes('HOLGUIN') && !textoResp.includes('ALAVA TOMALA'),
+ok('03 el responsable se filtra por rol 8 y por finca',
+  textoResp.includes('HOLGUIN') && !textoResp.includes('ALAVA TOMALA') &&
+    !textoResp.includes('MENDOZA'),
   textoResp.replace(/\n/g, ' ').slice(0, 80));
 ok('03b con seis responsables no se muestra el buscador',
   (await p.locator('ion-modal ion-searchbar').count()) === 0);
 ok('03c el selector es una ventana flotante, no pantalla completa',
   (await p.locator('ion-modal.selector-flotante').count()) > 0);
+// El contenido tiene que LLENAR la ventana: sin la clase ion-page el
+// componente medía 56 px y quedaba media ventana en blanco.
+const cajas = await p.evaluate(() => {
+  const h = (el) => (el ? Math.round(el.getBoundingClientRect().height) : 0);
+  const modal = document.querySelector('ion-modal.selector-flotante');
+  return {
+    ventana: h(modal?.shadowRoot?.querySelector('.modal-wrapper')),
+    contenido: h(document.querySelector('app-selector')),
+  };
+});
+ok('03e el contenido llena la ventana flotante',
+  cajas.contenido > 0 && Math.abs(cajas.ventana - cajas.contenido) <= 2, JSON.stringify(cajas));
+// Dos responsables: la ventana tiene que medir lo que miden dos filas mas el
+// encabezado, no un porcentaje fijo de la pantalla.
+ok('03f con pocas opciones la ventana mide lo que mide el contenido',
+  cajas.ventana >= 150 && cajas.ventana <= 175, JSON.stringify(cajas));
 await enModal('ion-radio', 'HOLGUIN').click();
 await t(600);
 ok('03d responsable elegido', (await campo('Responsable').innerText()).includes('HOLGUIN'));
@@ -152,7 +180,21 @@ ok('04 la barra de pasos avanza a Tarea 1',
   (await p.locator(`${raiz} .paso`).innerText()) === '2 / 3');
 
 await elegirUno('Cultivo', 'CACAO');
-await elegirUno('Lote', 'Lote 1');
+
+// Orden de los lotes: primero los numéricos por valor, después los que tienen
+// nombre. Y a los que tienen nombre NO se les antepone "Lote".
+await campo('Lote').click();
+await t(600);
+// Solo la primera linea: la segunda es el detalle ("12.5 ha").
+const opcLote = (await p.locator('ion-modal ion-radio').allInnerTexts())
+  .map((x) => x.trim().split('\n')[0].trim());
+ok('04b los lotes van primero numéricos y después los de nombre',
+  JSON.stringify(opcLote) === JSON.stringify(['Lote 1', 'Lote 5', 'Administrativos']),
+  JSON.stringify(opcLote));
+ok('04c a un lote con nombre no se le antepone "Lote"',
+  !opcLote.some((x) => x.startsWith('Lote Admin')), JSON.stringify(opcLote));
+await enModal('ion-radio', 'Lote 1').click();
+await t(600);
 // tiene_modulos = true: el campo Módulos solo aparece para este lote.
 ok('05 Módulos aparece solo si el lote tiene módulos', await campo('Módulos').isVisible());
 await elegirVarios('Módulos', ['Módulo 02']);
@@ -272,6 +314,7 @@ ok('19 la app no manda flags ni ids que calcula el servidor',
 await t(1200);
 await p.goto(`${APP}/am`, { waitUntil: 'networkidle' });
 await t(1800);
+await elegirUno('Finca', 'Bellita');
 await elegirUno('Responsable', 'HOLGUIN');
 await flecha('siguiente').click();
 await t(600);
@@ -317,9 +360,30 @@ ok('25 no existe ninguna forma de crear una tarea desde PM',
   (await p.locator(`${raiz} ion-item`, { hasText: 'Cultivo' }).count()) === 0 &&
   (await p.locator(`${raiz} ion-item`, { hasText: 'Subtarea' }).count()) === 0);
 
+// Se elige el responsable ANTES que la finca: no se puede perder al fijarla.
 await elegirUno('Responsable que cierra', 'HOLGUIN');
-ok('26 el responsable que zanja se elige aparte',
+await elegirUno('Finca', 'Bellita');
+ok('26 elegir el responsable antes que la finca no lo borra',
+  (await campo('Responsable que cierra').innerText()).includes('HOLGUIN'),
+  await campo('Responsable que cierra').innerText());
+
+// Reabrir el selector y tocar la opción YA elegida tiene que cerrar igual.
+await elegirUno('Responsable que cierra', 'HOLGUIN');
+ok('26b tocar la opción ya elegida cierra la ventana',
   (await campo('Responsable que cierra').innerText()).includes('HOLGUIN'));
+
+// Pero un responsable de OTRA finca sí se limpia, y se dice por qué.
+await elegirUno('Finca', 'Pacaritambo');
+ok('26c un responsable ajeno a la finca sí se limpia',
+  (await campo('Responsable que cierra').innerText()).includes('Sin elegir'),
+  await campo('Responsable que cierra').innerText());
+await elegirUno('Finca', 'Bellita');
+await elegirUno('Responsable que cierra', 'HOLGUIN');
+await t(1500);
+
+ok('26d la lista muestra el módulo junto al lote',
+  (await p.locator(`${raiz} ion-checkbox`, { hasText: 'BRIONES' }).first().innerText()).includes('Mód.'),
+  await p.locator(`${raiz} ion-checkbox`, { hasText: 'BRIONES' }).first().innerText());
 
 // Se cierra la de BRIONES.
 await p.locator(`${raiz} ion-checkbox`, { hasText: 'BRIONES' }).first().click();

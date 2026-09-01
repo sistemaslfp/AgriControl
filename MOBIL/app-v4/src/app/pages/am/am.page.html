@@ -300,6 +300,7 @@
      (backdropDismiss viene activado). Los estilos están en styles.scss. -->
 <ion-modal
   class="selector-flotante"
+  [style.--height]="alturaSelector()"
   [isOpen]="selectorAbierto()"
   (ionModalDidDismiss)="cerrarSelector()"
 >
