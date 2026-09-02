@@ -224,12 +224,49 @@ no tiene por qué ser el que la programó a la mañana.
   equipo que siguen PENDIENTES en la cola. Sin él, un supervisor sin señal no
   podría cerrar por la tarde la tarea que él mismo cargó por la mañana.
 
-Cada fila muestra **trabajador, lote, módulo y subtarea**: sin el módulo, dos
-asignaciones del mismo lote y la misma subtarea se ven idénticas. Se juntan y se
-deduplican por (`am_guid`, persona); gana la del servidor, que trae los nombres
-ya resueltos. Las que salen solo del espejo local se marcan
-**"cargada en este equipo, todavía sin enviar"**, para que el supervisor sepa
-qué está viendo.
+Las dos fuentes se juntan y se deduplican por (`am_guid`, persona); gana la del
+servidor, que trae los nombres ya resueltos. Lo que sale solo del espejo local se
+marca **"cargada en este equipo, todavía sin enviar"**, para que el supervisor
+sepa qué está viendo.
+
+### La lista se agrupa por TAREA, no por persona (2026-09-02)
+
+**Una tarjeta por tarea**: lote, módulo y subtarea. Tocarla abre una **ventana
+flotante con el personal de esa tarea**, donde se eligen una o varias personas;
+la selección aplica en vivo y la tarjeta queda mostrando a quién se eligió y un
+contador `2/4`.
+
+El motivo es de control, no de comodidad: la lista plana venía **ordenada por
+nombre**, así que las personas de una misma tarea quedaban salteadas entre las de
+otras y quien revisaba el PM después —otro supervisor, o administración— no tenía
+cómo saber cuáles se habían programado juntas. Sobre los datos de agosto la
+lista pasa de **55 filas a 29 tarjetas** (16 de una persona, 1 de dos, 11 de tres,
+1 de cuatro).
+
+La tarjeta dice **"N personas por cerrar"**, no "N personas", y la diferencia
+importa: `/v4/am_abiertos` sólo devuelve lo abierto, así que una tarea de 4
+personas con 2 ya cerradas aparece como tarea de 2. Son las 2 que faltan.
+
+**Los pasos de captura no cambian**: sigue habiendo una página de avance por
+persona, porque la `cantidad` es de la persona y es lo que se paga.
+
+#### Qué identifica a una tarea, y un problema que esto destapó
+
+La clave del grupo es **`captura_guid` más la tarea** (lote, subtarea, módulos), y
+las dos partes hacen falta:
+
+- **`captura_guid` solo no alcanza, porque no identifica una tarea sino un envío
+  del formulario.** `am.page.ts` genera un guid antes del bucle de tareas, así
+  que un AM con dos tareas manda las dos con el mismo `captura_guid`. Agrupar
+  sólo por él fundiría dos tareas distintas en una tarjeta.
+- **La tarea sola tampoco**, porque es una heurística: dos formularios distintos
+  que programen la misma subtarea en el mismo lote se verían como una sola.
+
+**El campo significa dos cosas según de dónde venga la fila:** la app lo asigna
+por envío del formulario, y la migración de agosto lo asignó **por tarea**. La
+clave compuesta funciona con las dos semánticas, pero la ambigüedad sigue ahí y
+va a morder a la pantalla "Registros Enviados" cuando se construya. Está anotado
+en `02-bd-y-api.md`.
 
 ### Lo que esto arregla del diseño anterior
 

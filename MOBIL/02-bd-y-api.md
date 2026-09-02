@@ -183,6 +183,19 @@ ocupa 8,7 MB.
 hay forma de saber qué filas fueron una sola captura, que es lo que "Registros
 Enviados" necesita para mostrar una tarjeta y no cinco.
 
+> **Ambigüedad conocida (2026-09-02): el campo significa dos cosas según de
+> dónde venga la fila.** La app lo genera **por envío del formulario**
+> (`am.page.ts` lo crea antes del bucle de tareas, así que un AM con dos tareas
+> manda las dos con el mismo guid), mientras que la migración de agosto lo asignó
+> **por tarea** —una captura por grupo (fecha, hora, finca, responsable, cultivo,
+> lote, módulos, subtarea)—.
+>
+> No rompe nada hoy: la pantalla PM agrupa por `captura_guid` **más** la tarea, y
+> esa clave compuesta funciona con las dos semánticas. Pero **"Registros
+> Enviados" va a tener que elegir una**, porque ahí el guid ES la tarjeta: con la
+> semántica de la app, un AM de tres tareas es una tarjeta; con la de la
+> migración, tres. Decidirlo antes de construir esa pantalla, no después.
+
 
 ### Cosecha
 
@@ -950,6 +963,11 @@ habría visto nunca:
    PHP 8.1 el `mysqli_sql_exception` sube hasta `RestController` y el endpoint
    responde una traza HTML de CI3 **con HTTP 200**, que la app no puede
    distinguir de una respuesta buena.
+
+Desde el 2026-09-02 devuelve además **`captura_guid`**, que es lo que la pantalla
+PM necesita para agrupar por tarea en vez de listar personas sueltas ordenadas
+por nombre. Es `NULL` en las filas migradas con `origen = 'mig-pm'`, que no
+salieron de ningún formulario: la app las trata como grupo de una sola persona.
 
 ### Hueco abierto: la justificación del registro retroactivo
 

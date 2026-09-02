@@ -19,6 +19,8 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   `docs/db/migrations/02-tablas-v4.sql`.
 - **Paso 3 — HECHO, las dos mitades.** `POST /v4/sync` para `am` y `pm`, y las
   **pantallas AM y PM** en la app (`/am`, `/pm`, habilitadas desde el menú).
+  El 2026-09-02 la lista del PM pasó a **agruparse por tarea**, con ventana
+  flotante para elegir el personal (55 filas → 29 tarjetas en agosto).
 - **Migración de la ventana de agosto — HECHA y verificada.**
   `docs/db/migrations/03-migracion-agosto.sql`.
 - **Migraciones consolidadas — HECHO (2026-09-02).** De seis archivos a cuatro
@@ -40,8 +42,8 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 - Nueve casos de `POST /v4/sync` con `curl` contra la base real, cero filas
   fantasma, incluido el que prueba que cerrar a la segunda persona de una
   captura no pisa a la primera.
-- e2e: **59 comprobaciones** en `app-v4/e2e/am-pm.spec.mjs` y **22** en
-  `cola.spec.mjs`.
+- e2e: **63 comprobaciones** en `app-v4/e2e/am-pm.spec.mjs` y **22** en
+  `cola.spec.mjs`, todas en verde con la app compilada.
 
 ## Lo siguiente, en orden
 
@@ -141,6 +143,15 @@ Esta lista vale más que el resto de los documentos juntos.
   trampas de Ionic, con su detalle, están en `app-v4/e2e/README.md`.
 
 ### Herramientas
+
+- **`captura_guid` no identifica una tarea, identifica un ENVÍO del formulario.**
+  `am.page.ts` lo genera antes del bucle de tareas, así que un AM con dos tareas
+  manda las dos con el mismo guid — pero la migración de agosto lo asignó por
+  tarea. Significa dos cosas según de dónde venga la fila. La pantalla PM agrupa
+  por `captura_guid` + lote + subtarea + módulos, que funciona con las dos;
+  "Registros Enviados" va a tener que elegir una semántica.
+- **`pkill` devuelve exit 144 y se lleva el resto del comando.** Matar el mock y
+  relanzarlo tiene que ir en dos llamadas o la suite que sigue nunca corre.
 
 - **`git commit` se cuelga sobre el mount de Windows** refrescando el índice, y
   además git no puede borrar sus `.git/index.lock` / `HEAD.lock`, que dejan el
