@@ -1,4 +1,22 @@
-# Prompt de arranque — Paso 1 del plan móvil V4
+# HISTÓRICO — Prompt de arranque del paso 1 (2026-08-28)
+
+> **Este documento ya no sirve para arrancar nada.** Es el prompt con el que se
+> abrió la sesión de implementación del paso 1, que está HECHO desde el
+> 2026-08-31. Se conserva porque deja ver qué se pidió y qué restricciones se
+> fijaron al empezar, no porque haya que volver a leerlo.
+>
+> **Para retomar el trabajo, leer `PROMPT-CONTINUAR.md`.**
+>
+> Lo que este texto dice y ya NO es cierto:
+> - Habla de PHP 7.4. Se decidió **PHP 8.1** el 2026-08-31.
+> - Manda leer `02-bd-y-api.md` para el modelo de datos: el que describe es el
+>   de cabecera + `reg_am_personal` + `reg_pm`, que **dejó de existir** el
+>   2026-09-03. El modelo vigente es una fila por persona con el cierre adentro.
+> - Pide dejar `POST /v4/sync` sólo esbozado: está implementado y probado.
+> - Los tres `ALTER` de catálogos son hoy `docs/db/migrations/01-catalogos.sql`.
+
+---
+
 
 Texto para abrir la sesión de implementación. Copiar tal cual.
 

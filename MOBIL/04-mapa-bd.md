@@ -1,7 +1,7 @@
 # Mapa de la base — qué hay hoy y quién lo usa
 
-Medido el 2026-08-31 sobre una copia real de `lfp_prodapp`
-(el dump de `docs/db/init/01-schema.sql`). 58 tablas y 23 vistas.
+Medido el 2026-08-31 y revisado el 2026-09-02 sobre una copia real de `lfp_prodapp`
+(el dump de `docs/db/init/01-schema.sql`). 58 tablas y 23 vistas (sin contar las de v4).
 
 La base tiene **cuatro grupos de tablas**, y la única pregunta que importa para
 cada una es: ¿la usa v3, v4, o las dos?
@@ -63,19 +63,29 @@ Las 9 de postcosecha: `_weight`, `_lotsharvest`, `_predrying`, `_fermentation`,
 
 ---
 
-## Grupo 3 — Transaccionales NUEVAS (v4): 17 tablas, todo nuevo
+## Grupo 3 — Transaccionales NUEVAS (v4): 13 tablas, todo nuevo
 
-Ninguna recicla estructura vieja. Diseño propio, `guid` como unicidad dura,
-26 FK reales, `utf8mb4_spanish_ci`, columnas generadas.
+Ninguna recicla estructura vieja. Diseño propio, `guid` como unicidad dura, FK
+reales, `utf8mb4_spanish_ci`, columnas generadas.
 
 **Campo**
-- `reg_am` + `reg_am_personal` + `reg_am_modulo` — la programación AM pasa a ser
-  cabecera + personas + módulos, en vez de una fila por persona.
-- `reg_pm` + `reg_pm_modulo` — el avance de la tarde.
+
+- **`reg_am` — la única tabla del trabajo diario.** Una fila = **una persona en
+  una tarea**, con la programación de la mañana y el cierre de la tarde en la
+  misma fila. Es la forma de `z_tabla_am`, que también lleva un `personal_id`
+  por fila.
+  - `modulos` es una columna con comas, no una tabla hija.
+  - `captura_guid` dice qué filas salieron del mismo formulario.
+  - `cierre_*` son diez columnas: cantidad, hora, comentario, responsable,
+    guid, alias, fechas, offset y origen.
+  - **No hay tabla de PM.** El avance de la tarde es un UPDATE de esta misma
+    fila, idempotente porque su guid vive en `cierre_guid` y el UPDATE lleva
+    `AND cierre_guid IS NULL`.
 - `reg_cosecha` + `reg_cosecha_saco` — los 15 `sacoN` dejan de ser columnas.
 - `reg_riego`.
 
 **Postcosecha**
+
 - `pc_proceso` — la partida. `peso_baba` es columna generada.
 - `pc_proceso_cosecha` — **el enlace que el esquema viejo nunca tuvo**: qué
   cosechas entraron en qué partida.
@@ -85,13 +95,23 @@ Ninguna recicla estructura vieja. Diseño propio, `guid` como unicidad dura,
 - `pc_foto`, `pc_lot_code_seq`.
 
 **Servicio**
+
 - `reg_flag` — banderas del servidor (fuera de ventana horaria, retroactivo).
-- `mig_descarte` — auditoría de la migración.
+- `mig_descarte` — auditoría de la migración, con la fila completa en un
+  `payload` JSON.
 
-Estado hoy en la base de Kevin: **creadas a mano, vacías**. En la copia de
-prueba tienen la ventana de agosto migrada.
+**Una vista propia:** `vw_reg_reporte_pago`. Las 20 viejas no se tocan.
 
----
+**Estado hoy:** creadas y con la ventana de agosto cargada en la copia de
+prueba — 550 filas, 495 cerradas. En producción **no existe ninguna**: sigue
+corriendo V3 con la app v2.0.5.
+
+**Trampa del dump:** `docs/db/init/01-schema.sql` trae estas tablas en una forma
+ANTERIOR (17 tablas, `reg_am` como cabecera + `reg_am_personal` + `reg_pm`),
+vacías, porque se crearon a mano antes de consolidar las migraciones. Como
+`CREATE TABLE IF NOT EXISTS` las acepta en silencio, `02-tablas-v4.sql` abre con
+un guardián que aborta con un mensaje legible. Para dejar una base virgen:
+`docs/db/migrations/_historico/00-limpiar-intermedias.sql`.
 
 ## Grupo 4 — Soporte y restos
 
@@ -124,8 +144,9 @@ arranque. Por eso el selector v3/v4 tiene sentido justo ahí.
 Cada pantalla lee una fuente u otra según el período; nadie tiene que mezclar.
 Lo que sí hace falta es que las pantallas de v4 tengan **sus propias vistas**
 sobre `reg_*`/`pc_*` — no son las viejas con una palabra cambiada, porque la
-forma cambió: AM es cabecera+hijos, cosecha tiene tabla de sacos, postcosecha
-tiene el enlace con cosecha.
+forma cambió: el AM y el PM son la misma fila, cosecha tiene tabla de sacos, y
+postcosecha tiene el enlace con cosecha. Hoy sólo existe
+`vw_reg_reporte_pago`, que es la nómina; repuntar las otras 19 está pendiente.
 
 ## Nota sobre colaciones (verificado, corrige lo que decían versiones previas)
 

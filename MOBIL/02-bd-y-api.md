@@ -54,8 +54,8 @@ arrastrarlas otros diez años.
 |---|---|
 | `fecha VARCHAR(10)` + `hora VARCHAR(5)` | Un `DATETIME`. Se acabaron las comparaciones de fecha como texto. |
 | `z_cosecha_cacao.saco1 … saco15` | Tabla hija `reg_cosecha_saco`. Se acabó el techo de 15. |
-| `modulos VARCHAR(50)` con CSV `"2,3"` | Tabla hija `reg_am_modulo` / `reg_pm_modulo`. |
-| Un AM = N filas idénticas, una por persona | Cabecera `reg_am` + detalle `reg_am_personal`. **Esto resuelve solo el problema del `guid` por fila.** |
+| `modulos VARCHAR(50)` con CSV `"2,3"` | Sigue siendo una columna con comas, pero ordenada, sin repetidos y **validada en la escritura** (módulo ∈ lote), y ya no se pueden borrar módulos. Ver §3. |
+| Un AM = N filas idénticas, una por persona, sin nada que las relacione | Se conservan las N filas —cada persona carga su propio cierre— pero comparten `captura_guid`, que dice qué salió del mismo formulario. |
 | Cinco tablas de etapa casi idénticas (`_predrying`, `_fermentation`, `_sundrying`, `_machinedrying`, `_result`) | Una `pc_etapa` con `UNIQUE (lote_id, etapa)`. Agregar una etapa deja de ser un `CREATE TABLE`. |
 
 Dos más, silenciosas pero caras:
@@ -84,87 +84,105 @@ Bloque común de sincronización, presente en toda tabla de cabecera:
   UNIQUE KEY uq_<t>_guid (guid)
 ```
 
-### AM
+### AM — la única tabla del trabajo diario
+
+**Una fila = una persona en una tarea**, con la programación de la mañana y el
+cierre de la tarde juntos. Es la forma de `z_tabla_am`, que también lleva un
+`personal_id` por fila. El DDL completo, con sus comentarios, está en
+`docs/db/migrations/02-tablas-v4.sql`; acá va la forma y el porqué.
 
 ```sql
 CREATE TABLE reg_am (
-  id             INT AUTO_INCREMENT PRIMARY KEY,
-  guid           CHAR(36)     NOT NULL,
-  fecha_proceso  DATETIME     NOT NULL,
-  finca_id       INT          NOT NULL,
-  responsable_id INT          NOT NULL,
-  cultivo_id     INT          NOT NULL,
-  lote_id        INT          NOT NULL,
-  subtarea_id    INT          NOT NULL,
-  comentario     VARCHAR(255) NULL,          -- la pantalla ya lo captura; z_tabla_am no lo guardaba
-  device_alias        VARCHAR(50) NULL,
-  created_at_device   DATETIME    NULL,
-  received_at_server  DATETIME    NOT NULL,
-  device_clock_offset INT         NULL,
-  origen         VARCHAR(10)  NOT NULL DEFAULT 'app',
+  id                  INT AUTO_INCREMENT PRIMARY KEY,
+  guid                CHAR(36)     NOT NULL,
+  captura_guid        CHAR(36)     NULL,   -- lo comparten las N personas del mismo formulario
+
+  -- la programación de la mañana
+  fecha_proceso       DATETIME     NOT NULL,
+  finca_id            INT          NOT NULL,
+  responsable_id      INT          NOT NULL,
+  cultivo_id          INT          NOT NULL,
+  lote_id             INT          NOT NULL,
+  modulos             VARCHAR(255) NULL,   -- ids con comas, ordenados y sin repetidos
+  subtarea_id         INT          NOT NULL,
+  personal_id         INT          NOT NULL,
+  comentario          VARCHAR(255) NULL,
+  <bloque común de sincronización>
+  origen              VARCHAR(10)  NOT NULL DEFAULT 'app',  -- app|web|migracion|mig-pm
+
+  -- el cierre de la tarde: diez columnas, no una tabla
+  cantidad                 DECIMAL(9,3) NULL,
+  hora_cierre              DATETIME     NULL,
+  comentario_cierre        VARCHAR(255) NULL,
+  responsable_cierre_id    INT          NULL,
+  cierre_guid              CHAR(36)     NULL,
+  cierre_device_alias      VARCHAR(50)  NULL,
+  cierre_created_at_device DATETIME     NULL,
+  cierre_received_at       DATETIME     NULL,
+  cierre_offset            INT          NULL,
+  cierre_origen            VARCHAR(10)  NULL,
+
   UNIQUE KEY uq_am_guid (guid),
-  KEY idx_am_natural (finca_id, fecha_proceso, subtarea_id),
-  CONSTRAINT fk_am_finca    FOREIGN KEY (finca_id)    REFERENCES z_finca(id),
-  CONSTRAINT fk_am_lote     FOREIGN KEY (lote_id)     REFERENCES z_lote(id),
-  CONSTRAINT fk_am_subtarea FOREIGN KEY (subtarea_id) REFERENCES z_subtarea(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
-
-CREATE TABLE reg_am_personal (
-  id          INT AUTO_INCREMENT PRIMARY KEY,
-  am_id       INT NOT NULL,
-  personal_id INT NOT NULL,
-  UNIQUE KEY uq_am_persona (am_id, personal_id),
-  CONSTRAINT fk_amp_am FOREIGN KEY (am_id) REFERENCES reg_am(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
-
-CREATE TABLE reg_am_modulo (
-  id        INT AUTO_INCREMENT PRIMARY KEY,
-  am_id     INT NOT NULL,
-  modulo_id INT NOT NULL,
-  UNIQUE KEY uq_am_modulo (am_id, modulo_id),
-  CONSTRAINT fk_amm_am FOREIGN KEY (am_id) REFERENCES reg_am(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+  UNIQUE KEY uq_am_cierre_guid (cierre_guid),   -- una fila se cierra UNA vez
+  KEY idx_am_captura   (captura_guid),
+  KEY idx_am_abiertas  (finca_id, fecha_proceso, cierre_guid),
+  KEY idx_am_persona   (personal_id, fecha_proceso, finca_id),
+  KEY idx_am_natural   (finca_id, fecha_proceso, subtarea_id)
+  -- + 7 FK a los catálogos
+);
 ```
 
-Un AM = un `guid` = una cabecera. **La decisión pendiente de "guid por fila vs.
-por cabecera" desaparece.**
+**No hay tabla de PM.** El avance de la tarde es un UPDATE de esta misma fila.
+Es idempotente porque el guid del cierre vive acá (`cierre_guid`) y el UPDATE
+lleva `AND cierre_guid IS NULL`, así que es atómico sin transacción. La mecánica
+completa —qué responde en cada caso, y qué pasa cuando el cierre llega antes que
+su AM— está en `01-sincronizacion.md` §El cierre es un UPDATE.
 
-### PM
+`idx_am_natural` es **no único** por lo verificado en §5: la clave natural es
+índice de detección, no restricción. `idx_am_persona` reemplaza a
+`idx_pm_composite`, que los reportes de pago sí usan. `numero_registro` de
+`z_tabla_pm` no se replica: era `"PM-" . timestamp`, colisiona entre registros
+del mismo segundo y no identifica nada; el `guid` lo sustituye.
 
-```sql
-CREATE TABLE reg_pm (
-  id             INT AUTO_INCREMENT PRIMARY KEY,
-  guid           CHAR(36)     NOT NULL,
-  fecha_proceso  DATE         NOT NULL,
-  hora_inicio    DATETIME     NOT NULL,
-  hora_cierre    DATETIME     NOT NULL,
-  pm_year        SMALLINT     NOT NULL,      -- calculado por el servidor
-  pm_week        TINYINT      NOT NULL,      -- calculado por el servidor
-  finca_id       INT          NOT NULL,
-  responsable_id INT          NOT NULL,
-  trabajador_id  INT          NOT NULL,
-  cultivo_id     INT          NOT NULL,
-  lote_id        INT          NOT NULL,
-  subtarea_id    INT          NOT NULL,
-  cantidad       DECIMAL(9,3) NOT NULL DEFAULT 0,
-  comentario     VARCHAR(255) NULL,
-  device_alias        VARCHAR(50) NULL,
-  created_at_device   DATETIME    NULL,
-  received_at_server  DATETIME    NOT NULL,
-  device_clock_offset INT         NULL,
-  origen         VARCHAR(10)  NOT NULL DEFAULT 'app',
-  UNIQUE KEY uq_pm_guid (guid),
-  KEY idx_pm_natural (finca_id, fecha_proceso, subtarea_id, trabajador_id),
-  KEY idx_pm_semana  (trabajador_id, pm_year, pm_week, finca_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
--- + reg_pm_modulo, igual que reg_am_modulo
-```
+#### Por qué los módulos son columna y las personas son filas
 
-`idx_pm_natural` es **no único**, por lo verificado en §5. `idx_pm_semana`
-replica el `idx_pm_composite` actual, que los reportes de pago sí usan.
+No es inconsistencia, y las dos mitades se discutieron por separado.
 
-`numero_registro` no se replica: era `"PM-" . timestamp`, colisiona entre
-registros del mismo segundo y no identifica nada. El `guid` lo sustituye.
+**Módulos: columna.** Un módulo es un elemento de un conjunto sin atributos
+propios, y una lista con comas guarda bien un conjunto. El argumento con el que
+se defendía la tabla hija era real —**3.176 filas de `z_tabla_am` (2,80 %)
+apuntan a módulos que ya no existen** en `z_modulo` con ningún estado, y 16
+apuntan a un módulo de otro lote— pero el diagnóstico estaba incompleto: **eso
+no lo causa el VARCHAR, lo causa que se podían borrar módulos**. `Modulo.php`
+dejaba borrar al grupo admin aunque la tabla ya tiene `estado` Activo/Inactivo.
+**Se quitó el borrado para todos**; la baja se hace desactivando. Con eso, más
+`sync_am` validando en la escritura que cada módulo pertenezca al lote declarado
+—lo que cubre las otras 16—, la columna queda tan sana como la tabla para datos
+nuevos. Lo que se resigna, sin adornos: un `DELETE` por SQL directo sigue
+pudiendo dejar ids colgando, y una FK lo habría impedido. En este servidor eso
+no es teórico: hubo un Adminer expuesto por HTTP hasta el 2026-08-28.
+
+*(Las 57 filas que declaran 8 o 9 módulos "cuando ningún lote tiene más de 7"
+—valores como `40,3,8,12,17,21,25,28`— no son un problema aparte: son los 7
+módulos reales del lote más los ids borrados, y están dentro de las 3.176.)*
+
+**Personas: filas.** Una persona, con el cierre adentro, carga seis datos suyos:
+avance, hora de cierre, comentario, quién cerró, guid del cierre y fecha del
+cierre. En columnas con comas serían seis listas alineadas por posición: una
+coma dentro de un comentario desalinea todo en silencio, y cerrar a UNA persona
+obligaría a reescribir la cadena entera, así que dos equipos cerrando personas
+distintas de la misma tarea se pisarían y se perdería un avance. **Una fila por
+persona es lo contrario de eso**: son dos UPDATE a filas distintas.
+
+El costo de repetir la cabecera está medido: **el 27,5 % de las capturas de
+agosto tienen más de una persona, con un máximo de 9** (sobre las 367 capturas
+migradas, 2026-09-02). `z_tabla_am` hace exactamente esto con 113.410 filas y
+ocupa 8,7 MB.
+
+**`captura_guid`** conserva qué filas salieron del mismo formulario. Sin él no
+hay forma de saber qué filas fueron una sola captura, que es lo que "Registros
+Enviados" necesita para mostrar una tarjeta y no cinco.
+
 
 ### Cosecha
 
@@ -547,14 +565,15 @@ corte, decida lo que decida el pendiente #10.
 
 ### El migrador — escrito y verificado
 
-`docs/db/migrations/2026-08-31-05-migracion-agosto.sql`. Corrido tres veces
-seguidas sobre la copia real: la segunda y la tercera no insertan nada.
+`docs/db/migrations/03-migracion-agosto.sql`. Corrido dos veces seguidas sobre
+la copia real: la segunda no inserta nada **y los 550 guid son los mismos** —es
+idempotente y además reproducible, porque los guid se derivan del id de origen.
 Cero rechazos de FK, cero filas tocadas en las `z_*`.
 
 | origen (>= 2026-08-01) | destino |
 |---|---|
-| `z_tabla_am` 590 | `reg_am` 367 cabeceras, 529 personas, 505 módulos, 61 descartes |
-| `z_tabla_pm` 598 | `reg_pm` 495, 629 módulos, 103 descartes |
+| `z_tabla_am` 590 | `reg_am` 529 filas en 367 capturas, 61 descartes |
+| `z_tabla_pm` 598 | 495 cierres sobre filas de `reg_am` + 21 filas nuevas `mig-pm`, 103 descartes |
 | `z_cosecha_cacao` 60 | `reg_cosecha` 60, 292 sacos |
 | `z_riego` 279 | `reg_riego` 279 |
 | `z_postharvest_*` 4 partidas | `pc_proceso` 4, 25 enlaces, 13 etapas, 2 calidades, 4 fotos |
@@ -574,15 +593,24 @@ Tres cosas que salieron al escribirlo y no estaban en ningún documento:
 3. **MariaDB no soporta `LATERAL`.** El despivote de `saco1..saco15` va con una
    tabla de números y `CASE`, no con un derivado lateral.
 
-### Bis — vistas UNION para los reportes de la web — VERIFICADO
+### Bis — vistas UNION para los reportes de la web — RETIRADAS (2026-09-02)
+
+> **Se retiraron el 2026-09-02.** El SQL está en
+> `docs/db/migrations/_historico/2026-08-31-03-vistas-union.sql`, con el porqué
+> en el README de esa carpeta. En corto: la web resuelve v3/v4 con un selector
+> por período, así que nadie mezcla; las dos vistas escritas hoy están rotas
+> (leen `reg_pm`); agosto está duplicado a propósito y una UNION sin corte lo
+> cuenta doble; y toda vista con UNION es de sólo lectura, así que no sirve para
+> los formularios. **Lo que sigue valiendo es la medición**, que costó tiempo
+> obtener y está abajo.
 
 Kevin confirmó que las pantallas de la web siguen en uso, y decidió (2026-08-31)
 **convivencia con diferenciador**: las dos mitades se leen unidas, cada fila
 marcada con su origen, hasta una fusión futura sin fecha.
 
 Probado el 2026-08-31 sobre una **copia real de la base** (MariaDB 10.11,
-108.149 filas en `z_tabla_pm`, la ventana de agosto migrada a `reg_pm`).
-SQL listo en `docs/db/migrations/2026-08-31-03-vistas-union.sql`.
+108.149 filas en `z_tabla_pm`, la ventana de agosto migrada).
+SQL en `docs/db/migrations/_historico/2026-08-31-03-vistas-union.sql`.
 
 **Funciona.** `vw_reporte_pm` repuntada a la vista de unión devuelve v3 y v4
 juntas, con nombres, tarifas y totales resueltos. Costo: `COUNT(*)` del reporte
@@ -605,7 +633,7 @@ Tres cosas que fallan si se hacen de la forma obvia:
    columnas de texto de la vista **heredan la colación vieja**
    (`utf8mb3_spanish2_ci`), que es lo que después rompe un `JOIN`.
 2. **El doble conteo.** Sin `WHERE z.fecha < <corte>` en el lado viejo, agosto
-   sale **dos veces**: está migrado en `reg_pm` y sigue en `z_tabla_pm`.
+   sale **dos veces**: está migrado en `reg_am` y sigue en `z_tabla_pm`.
    Son 598 filas de nómina contadas doble.
 3. **Sólo lectura.** Toda vista con `UNION` es no actualizable: `UPDATE` da
    **ERROR 1288** y `information_schema.views.is_updatable = NO`. Grocery CRUD
@@ -614,15 +642,20 @@ Tres cosas que fallan si se hacen de la forma obvia:
    `id` nuevos (`r.id + 1000000`; los viejos llegan a ~121.000), y así la PK
    sigue siendo entera.
 
-### El trabajo real: 20 vistas, no una
+### El trabajo real: 19 vistas que repuntar, no una
 
 Medido sobre el esquema: **20 vistas existentes dependen de las tablas
 transaccionales `z_*`** — 8 de PM, 2 de AM, 2 de cosecha y 7 de postcosecha.
-La lista completa está en el `.sql`. Cada una necesita el mismo cambio de una
-palabra el día que su tabla entre en la ventana migrada.
+De ésas, **una ya tiene su equivalente en V4** (`vw_reg_reporte_pago`, la
+nómina, en `docs/db/migrations/04-vistas-v4.sql`); **quedan 19 por repuntar**.
+
+Y no es "el mismo cambio de una palabra": la forma cambió. El AM y el PM son
+ahora la misma fila, la cosecha tiene tabla de sacos y la postcosecha tiene el
+enlace con cosecha que el esquema viejo nunca tuvo. Las viejas **no se tocan**:
+siguen leyendo `z_*` para el período hasta julio de 2026.
 
 Además, `tbl_pm_payment_daily_adjustment.pm_id` tiene **FK a `z_tabla_pm(id)`**:
-un ajuste de pago no puede apuntar a una fila de `reg_pm`. Hoy esa tabla está
+un ajuste de pago no puede apuntar a una fila de `reg_am`. Hoy esa tabla está
 **vacía**, así que no bloquea el corte — pero si el módulo de ajustes se activa,
 esa FK hay que repuntarla antes.
 
@@ -646,10 +679,9 @@ CREATE VIEW z_tabla_am AS
 SELECT a.id, DATE_FORMAT(a.fecha_proceso,'%Y-%m-%d') AS fecha,
        DATE_FORMAT(a.fecha_proceso,'%H:%i')          AS hora,
        a.finca_id AS finca, a.responsable_id, a.cultivo_id, a.lote_id,
-       (SELECT GROUP_CONCAT(m.modulo_id) FROM reg_am_modulo m WHERE m.am_id = a.id) AS modulos,
-       p.personal_id, a.subtarea_id, '0' AS tiene_pm
-FROM reg_am a
-JOIN reg_am_personal p ON p.am_id = a.id;
+       a.modulos, a.personal_id, a.subtarea_id,
+       IF(a.cierre_guid IS NULL,'0','1') AS tiene_pm
+FROM reg_am a;
 ```
 
 **Advertencia honesta:** una vista con `JOIN` y subconsulta **no es
@@ -766,78 +798,10 @@ Validaciones que la FK sola no puede hacer y el endpoint sí:
 Tope de lote: 200 registros (413 si se pasa). Body ilegible: 400. Todo lo demás
 responde 200 con su `results`.
 
-### Un registro = una PERSONA en una tarea (2026-09-03)
+### El contrato de `POST /v4/sync` con el modelo final
 
-Dos decisiones de Kevin, en el mismo día:
-
-1. **"PM se vuelve redundante si lo manejamos como un update para AM."**
-2. **"Cada fila de AM va por persona; la acumulación `Personal(2,5,54)` es del
-   front, no de la base."**
-
-Las dos eran correctas. La objeción que yo había puesto a la primera —que la
-cola es solo-inserción y un UPDATE necesita su propia historia de
-idempotencia— **tiene respuesta y es simple**: el guid del cierre se guarda
-**en la fila que cierra** (`reg_am.cierre_guid`).
-
-- mismo guid → `duplicate`
-- otro guid sobre una fila ya cerrada → `rejected`
-- la programación todavía no llegó → se omite de `results`, queda PENDIENTE y
-  se reintenta
-
-Las mismas garantías que tenía el INSERT. Y el `UPDATE` lleva
-`AND cierre_guid IS NULL` en el `WHERE`: dos equipos cerrando la misma tarea a
-la vez no necesitan transacción — uno actualiza una fila y el otro cero.
-
-Mi objeción a la segunda apuntaba a otra cosa: a meter a las personas en una
-**columna con comas**. Ahí sí se pierden cierres, porque cerrar a una persona
-obliga a reescribir la cadena entera. **Una fila por persona es lo contrario**
-y no tiene ese problema.
-
-| antes | ahora |
-|---|---|
-| `reg_am` — `reg_am_personal` — `reg_pm` (+ `reg_am_modulo`, `reg_pm_modulo`) | `reg_am`, y nada más |
-
-Es la forma de `z_tabla_am`, que también lleva un `personal_id` por fila. La
-cabecera se repite por persona — 49 copias en la tarea más grande del
-histórico — y está bien: `z_tabla_am` hace exactamente eso con 113.410 filas y
-ocupa 8,7 MB.
-
-`reg_am` gana `personal_id`, `modulos` (lista con comas), las diez columnas del
-cierre, y **`captura_guid`**: el guid del formulario, que comparten las N
-personas capturadas juntas. Sin él no hay forma de saber qué filas salieron de
-la misma captura, que es lo que "Registros Enviados" necesita para mostrar una
-tarjeta y no cinco.
-
-Migración: `docs/db/migrations/2026-09-03-01-fusion-pm-en-am.sql`. Reemplaza a
-`2026-09-01-01-pm-cierra-am.sql` y a la mitad de
-`2026-09-02-01-modulos-clave-natural.sql`; **las dos ya estaban aplicadas en
-producción, así que parte de ese estado. No se borran del repositorio**: una
-migración aplicada que se borra deja un esquema que ya nadie puede reproducir
-desde cero.
-
-Corrida contra la copia real, partiendo del mismo estado que producción:
-
-| | |
-|---|---|
-| filas de `reg_am` | 367 AM + 529 asignaciones → **550** |
-| cerradas / abiertas | **495 / 55** |
-| capturas distintas | **367** |
-| programaciones deducidas (`origen='mig-pm'`) | **21** |
-| `vw_reg_reporte_pago` de agosto | **495 filas, 79.298,40 en cantidad, 15.091,66 en total** |
-
-Ese último renglón es idéntico a lo que devuelve `vw_reporte_pago` desde
-`z_tabla_pm`. **La nómina de agosto no se movió ni un centavo.**
-
-**Los 21 avances sin programación**: se les creó la fila completa, con
-`origen = 'mig-pm'` y un comentario que lo dice. En V3 el PM era prácticamente
-una copia del AM con más datos, así que la mañana se reconstruye del propio
-avance. El modelo queda simétrico desde el 1 de agosto, sin excepciones.
-
-**La primera persona de cada tarea conserva el guid original**; solo las demás
-reciben uno nuevo. Si un teléfono alguna vez reenvía ese guid, sigue siendo
-idempotente contra la fila que le corresponde.
-
-Contrato de `POST /v4/sync`, ahora:
+La forma de `reg_am` y las razones del diseño están en §3. Acá sólo el contrato
+y lo que se probó.
 
 ```json
 { "tipo": "am",
@@ -851,11 +815,19 @@ Contrato de `POST /v4/sync`, ahora:
                "cantidad": 2.5, "hora_cierre": "…", "comentario": "" } }
 ```
 
-`trabajador_id` en el cierre es redundante —la fila ya sabe de quién es— pero
-si viene tiene que coincidir: es la red que atrapa un `am_guid` mal copiado
-antes de escribir el avance en la persona equivocada.
+`personal_id` va **en singular**: cada persona es su propio registro, con su
+propio guid y su propio ACK. La pantalla acumula varias personas y manda N
+registros; eso es del front, no del modelo. Las N comparten `captura_guid`.
 
-Probado con `curl` contra la base real, partiendo del estado de producción:
+`trabajador_id` en el cierre es redundante —la fila ya sabe de quién es— pero si
+viene tiene que coincidir: es la red que atrapa un `am_guid` mal copiado antes
+de escribir el avance en la persona equivocada.
+
+Finca, cultivo, lote, subtarea, módulos, fecha de proceso y hora de inicio los
+**deriva el servidor del AM**. El teléfono ya no puede contradecir la
+programación de la mañana, que era el agujero real.
+
+**Probado con `curl` contra la base real:**
 
 | caso | resultado |
 |---|---|
@@ -871,34 +843,43 @@ Probado con `curl` contra la base real, partiendo del estado de producción:
 
 Cero filas fantasma tras los rechazos, y el cuadre de agosto intacto.
 
-### Los módulos pasan a ser una columna (2026-09-03)
+### La migración, y el cuadre que la valida
 
-`reg_am_modulo` desaparece; `reg_am.modulos` es una lista separada por comas,
-ordenada y sin repetidos (`3,8,25`), igual que `z_tabla_am.modulos`.
+Las cuatro migraciones consolidadas están en `docs/db/migrations/` (`01..04`);
+las siete anteriores, en `_historico/` con un README que dice de qué estado a
+qué estado llevaba cada una. **Producción nunca tuvo `reg_am_personal` ni
+`reg_pm`**, así que las migraciones no la hacen pasar por ellas.
 
-El argumento con el que yo defendía la tabla era real: **3.119 filas de
-`z_tabla_am` (2,75 %) apuntan a módulos que ya no existen** en `z_modulo` con
-ningún estado, y 16 apuntan a un módulo de otro lote. Pero el diagnóstico
-estaba incompleto: eso no lo causa el `VARCHAR`, lo causa que **se podían
-borrar módulos**. `application/controllers/Modulo.php` dejaba borrar al grupo
-admin, aunque la tabla ya tiene `estado` Activo/Inactivo. **Se quitó el borrado
-para todos** — la baja se hace desactivando.
+Corrido desde el dump, con sólo `01..04`:
 
-Con eso, y con `sync_am` validando en la escritura que cada módulo pertenezca
-al lote declarado (que cubre las otras 16), la columna queda tan sana como la
-tabla para datos nuevos.
+| | |
+|---|---|
+| filas de `reg_am` | **550** |
+| cerradas / abiertas | **495 / 55** |
+| capturas distintas | **367** |
+| programaciones deducidas (`origen='mig-pm'`) | **21** |
+| `vw_reg_reporte_pago` de agosto | **495 filas, 79.298,40 en cantidad, 15.091,66 en total** |
 
-Lo que se resigna, dicho sin adornos: un `DELETE` por SQL directo sigue
-pudiendo dejar ids colgando, y una FK lo habría impedido. En este servidor eso
-no es teórico — había un Adminer expuesto por HTTP hasta el 28 de agosto.
+Ese último renglón es idéntico a lo que devuelve `vw_reporte_pago` desde
+`z_tabla_pm`. **La nómina de agosto no se movió ni un centavo.** Es el criterio
+de aceptación de cualquier cambio en las migraciones.
 
-**Corrección de una cifra que di mal:** dije que 57 filas declaraban 8 o 9
-módulos "cuando ningún lote tiene más de 7", como si fuera un tercer problema.
-No lo es. Los valores son `40,3,8,12,17,21,25,28` (lote 2) y
-`41,51,4,9,13,18,22,26,29` (lote 3): los 7 módulos reales del lote **más los
-ids borrados**. Es el mismo caso de los 3.119, contado dos veces.
+**Los 21 avances sin programación**: se les creó la fila completa, con
+`origen = 'mig-pm'` y un comentario que lo dice. En V3 el PM era prácticamente
+una copia del AM con más datos, así que la mañana se reconstruye del propio
+avance. El modelo queda simétrico desde el 1 de agosto, sin excepciones.
 
-### `GET /v4/catalogos`: las subtareas viajan con `id_finca`### `GET /v4/catalogos`: las subtareas viajan con `id_finca`### `GET /v4/catalogos`: las subtareas viajan con `id_finca`
+**Los guid son deterministas**, derivados del id de origen
+(`z_tabla_am:<id>`, `z_tabla_pm:<id>`, `am-de-pm:<id>`). Por eso la migración es
+reproducible: dos corridas dan exactamente la misma base y se pueden comparar.
+La versión anterior sacaba 183 de los 550 guid de `UUID()` y no lo era.
+
+**Trampa del dump:** `docs/db/init/01-schema.sql` trae las tablas v4 en su forma
+vieja, vacías, y `CREATE TABLE IF NOT EXISTS` las acepta en silencio. Por eso
+`02-tablas-v4.sql` abre con un guardián que aborta con un mensaje legible.
+
+
+### `GET /v4/catalogos`: las subtareas viajan con `id_finca`
 
 `z_subtarea.id_finca` existía y no se estaba usando. Cada finca tiene su propio
 juego: **78 subtareas activas en Bellita y 21 en Pacaritambo**. La app filtra
@@ -909,68 +890,24 @@ de subtareas vacía.
 `z_tarea` **no** tiene finca; el corte por finca solo se puede hacer desde la
 subtarea hacia arriba.
 
-### `POST /v4/sync` con `tipo: pm` — el PM CIERRA un AM (2026-09-01)
+### El PM cierra un AM: qué arregló del diseño anterior
 
-Decisión de Kevin: **"NO se pueden crear PM, un PM solo es el reflejo de un
-AM".** El payload del PM se redujo a lo único que el PM aporta:
+*(La mecánica y el contrato están arriba, en §El contrato de `POST /v4/sync`.
+Esto es sólo lo que la decisión resolvió, que no se ve en el contrato.)*
 
-```json
-{
-  "am_guid": "ad31cfcb-4823-4e9b-bcfb-26445358372f",
-  "trabajador_id": 301,
-  "responsable_id": 26,
-  "cantidad": 3.5,
-  "hora_cierre": "2026-08-13T16:00:00-05:00",
-  "comentario": ""
-}
-```
+Decisión de Kevin (2026-09-01): **"NO se pueden crear PM, un PM solo es el
+reflejo de un AM".** Antes el PM era un registro suelto y el teléfono mandaba
+finca, lote, subtarea y hora de inicio otra vez, así que podía contradecir la
+programación de la mañana. Ahora los deriva el servidor.
 
-Finca, cultivo, lote, subtarea, módulos, fecha de proceso y hora de inicio los
-**deriva el servidor del AM**. El teléfono ya no puede contradecir la
-programación de la mañana, que era el agujero real: antes se podía mandar un
-PM con un lote distinto al del AM y nadie se enteraba.
+Lo que eso arregló, verificado en la base: `hora_inicio` heredada del AM
+(06:57:50) contra `hora_cierre` real (16:00) — **se acabaron los "0 días, 0
+horas, 0 minutos" de la app vieja**, que salían de que el PM guardaba las dos
+horas del mismo momento. Y `pm_week` = 33, igual que `WEEK('2026-08-13', 3)`.
 
-`responsable_id` es **quien zanja** la tarea, y no tiene por qué ser el que la
-programó. Si falta, se hereda del AM.
+**Lo que se acepta perder:** en agosto, 16 de 598 PM (2,7 %) fueron de gente sin
+AM cargado esa mañana. Ahora hay que crear el AM primero.
 
-**La regla que hace que esto funcione offline: si el AM todavía no llegó al
-servidor, el guid del PM se OMITE de `results`.** (Desde el 2026-09-03 el PM
-no inserta nada: actualiza la fila de `reg_asignacion`. El contrato del payload
-no cambió.) El teléfono lo deja
-PENDIENTE y lo reintenta solo. Es el mismo mecanismo del guid omitido, sin
-nada nuevo, y pasa siempre que el AM y su PM viajan en lotes distintos.
-
-Por qué una columna (`reg_pm.am_personal_id`) y no fundir el PM dentro de
-`reg_am_personal`, que fue la otra opción sobre la mesa: **la cola del teléfono
-es solo-inserción, idempotente por guid.** "El PM rellena los campos que le
-faltan al AM" es un UPDATE de una fila que puede no existir todavía en el
-servidor, y eso exige ordenar el update después del insert y darle su propia
-historia de idempotencia. Con la columna, el PM sigue siendo un INSERT. Además
-no toca la migración de agosto, ni `vw_reporte_pago`, ni `pm_year`/`pm_week`,
-ni el índice `idx_pm_semana`.
-
-DDL: `docs/db/migrations/2026-09-01-01-pm-cierra-am.sql`. `UNIQUE KEY` sobre
-`am_personal_id` (nullable: las filas migradas de agosto no tienen vínculo),
-que es lo que hace cumplir **una asignación se cierra una sola vez**.
-
-Probado con `curl` contra la copia real de la base, sobre los datos ya
-migrados:
-
-| caso | resultado |
-|---|---|
-| PM válido que cierra una asignación | `created`, `am_personal_id` seteado |
-| El mismo guid otra vez | `duplicate`, no inserta |
-| Otro guid cerrando la MISMA asignación | `rejected` |
-| `am_guid` que el servidor no conoce | **omitido** → sigue PENDIENTE |
-| Trabajador que no está en esa tarea AM | `rejected` |
-| Sin `am_guid` | `rejected` — no existe el PM libre |
-| `cantidad` negativa | `rejected` |
-| `hora_cierre` anterior a la hora del AM | `rejected` |
-
-Verificado además en la base: `hora_inicio` heredada del AM (06:57:50) contra
-`hora_cierre` real (16:00) — se acabaron los "0 días, 0 horas, 0 minutos" de la
-app vieja; `pm_week` = 33, igual que `WEEK('2026-08-13', 3)`; módulos
-heredados del AM; y **cero filas fantasma** tras los seis rechazos.
 
 ### `GET /v4/am_abiertos?fecha=YYYY-MM-DD[&finca_id=N]`
 
@@ -994,7 +931,7 @@ que lista la pantalla PM.
 }
 ```
 
-`modulos` sale de `reg_am_modulo` con un `GROUP_CONCAT`, y va porque la
+`modulos` sale de la columna `reg_am.modulos` resuelta a nombres con `FIND_IN_SET`, y va porque la
 pantalla PM lo muestra: sin el módulo, dos asignaciones del mismo lote y la
 misma subtarea se ven idénticas en la lista.
 
@@ -1024,9 +961,8 @@ y recortada a 255 caracteres junto con el comentario del usuario.
 
 Funciona, pero es una limitación del contrato, no una decisión de diseño: el
 motivo queda mezclado con texto libre y no se puede consultar aparte. Lo
-correcto es un campo propio (`justificacion_retroactiva`) en `reg_am`/`reg_pm`
-y en el payload. **[PENDIENTE]**, para cuando se vuelva a tocar el servidor —
-va junto con `reg_pm.am_id` del cierre AM→PM.
+correcto es un campo propio (`justificacion_retroactiva`) en `reg_am`
+y en el payload. **[PENDIENTE]**, para cuando se vuelva a tocar el servidor.
 
 ### Dos cosas que sólo aparecieron al correrlo
 
@@ -1052,11 +988,11 @@ Relacionado: `db_debug` viene `TRUE` fuera de producción, así que una violaci�
 de FK imprime una página de error y mata el request. `sync_post` lo apaga
 mientras dura el lote y lo restaura al terminar.
 
-### Lo que se probó, contra la base real
+### Lo que se probó del resto del contrato, contra la base real
 
 | caso | resultado |
 |---|---|
-| AM válido con 3 personas y 2 módulos | `created` + hijos escritos |
+| AM válido con 3 personas y 2 módulos | 3 `created`, un guid por persona |
 | El mismo guid otra vez | `duplicate`, no inserta nada |
 | PM válido | `created`, `pm_week` calculada por el servidor |
 | Lote que no es de la finca declarada | `rejected` |
@@ -1070,14 +1006,14 @@ mientras dura el lote y lo restaura al terminar.
 | Registro de hace 20 días | `created` + flag `retroactivo_excedido` |
 | AM a las 22:00 | `created` + flag `fuera_de_ventana_horaria` |
 | `created_at_device` adelantado | `created` + flag `reloj_adelantado` |
-| Fallo del INSERT hijo | rollback: la cabecera NO queda, y el guid se puede reenviar |
+| Fallo del INSERT | rollback: la fila NO queda, y el guid se puede reenviar |
 | Body ilegible / lote de 201 | 400 / 413 |
 
-Tras los rechazos: **cero cabeceras fantasma y cero hijos huérfanos**.
+Tras los rechazos: **cero filas fantasma**.
 
 Reglas del servidor, sin excepción:
 
-- `pm_year` / `pm_week` se calculan desde `fecha_proceso`. Nunca los manda el cliente.
+- El año y la semana se DERIVAN de `fecha_proceso` con `WEEK(...,3)`; no se guardan.
 - `total_sacos` / `total_peso` se recalculan desde el detalle.
 - `lot_code` lo asigna el servidor.
 - Los porcentajes de fermentación se calculan, no se guardan.

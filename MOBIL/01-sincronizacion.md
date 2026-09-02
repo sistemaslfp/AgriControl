@@ -1,7 +1,13 @@
-# 01 — Reglas de sincronización (app móvil v3)
+# 01 — Reglas de sincronización
 
-> Actualizado 2026-08-28 con las respuestas de kevin.
-> Aplica a la reescritura Ionic+Angular contra la API **V4**.
+> Aplica a la reescritura Ionic + Angular contra la API **V4**.
+> Escrito el 2026-08-28, revisado el 2026-09-02.
+>
+> **Todo lo de este documento sobrevivió al cambio de modelo de datos del
+> 2026-09-03.** El ACK, la cola, el backoff, los tres tiempos, las invariantes
+> I1..I5 y la máquina de estados son independientes de qué es un registro: sólo
+> cambió qué hay adentro de uno. La única regla que el cambio agregó está más
+> abajo, en §El cierre es un UPDATE.
 
 ## Principio
 
@@ -60,6 +66,39 @@ queda en PENDIENTE y se reintenta.
 
 **No hay confirmación manual en ningún punto.** El supervisor no "acepta" nada;
 la pantalla "Registros Enviados" es lectura del estado, no una acción.
+
+---
+
+## El cierre es un UPDATE, y también es idempotente
+
+Desde el 2026-09-03 un registro de campo es **una persona en una tarea**, y el
+avance de la tarde no crea nada: **rellena los campos `cierre_*` de esa misma
+fila**. Eso rompería la premisa de esta cola —que es solo-inserción e
+idempotente por `guid`— si no fuera por una cosa: **el guid del cierre se guarda
+en la fila que cierra**, en `cierre_guid`.
+
+Con eso el UPDATE tiene exactamente las mismas garantías que el INSERT:
+
+| situación | respuesta | qué hace la app |
+|---|---|---|
+| el cierre entra por primera vez | `created` | ACK, sale de la cola |
+| llega el mismo `cierre_guid` otra vez | `duplicate` | ACK, sale de la cola |
+| llega OTRO guid sobre una fila ya cerrada | `rejected` | RECHAZADO, se muestra el motivo |
+| **el AM todavía no llegó al servidor** | **el guid se omite de `results`** | queda PENDIENTE y la cola reintenta sola |
+
+La última fila es el caso nuevo y es el que importa: el AM y su cierre pueden
+salir del mismo teléfono, y el AM puede seguir en la cola cuando el cierre ya se
+intenta enviar. **No hace falta ordenar la cola ni inventar dependencias entre
+registros**: el servidor omite el guid, y la regla que ya existía —"`guid`
+ausente de `results` → el registro queda PENDIENTE"— hace el resto.
+
+El UPDATE lleva `AND cierre_guid IS NULL` en su `WHERE`, así que es **atómico
+sin transacción**: dos equipos cerrando a la vez no se pisan, y el segundo
+recibe `rejected` en vez de sobrescribir el avance del primero.
+
+Consecuencia para la pantalla: un cierre puede quedar PENDIENTE por un motivo
+que no es la red —su AM no llegó— y eso no es un error ni hay que mostrarlo como
+tal.
 
 ---
 

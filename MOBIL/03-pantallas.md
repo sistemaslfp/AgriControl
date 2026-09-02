@@ -188,13 +188,14 @@ de repetición son reintentos exactos de la app vieja, o sea el pendiente
 #Limpieza.
 
 El espejo local vive en `am_persona_local` / `pm_cierre_local` (SQLite del
-teléfono). "Cerrado" = existe un PM del mismo (persona, fecha, lote, subtarea),
-que es la definición que mejor calzó contra los datos: 533 de 590.
+teléfono). "Cerrado" = existe un cierre del mismo (persona, fecha, lote,
+subtarea), que es la definición que mejor calzó contra los datos: 533 de 590.
 
-**La validación de verdad no existe todavía.** Exige `reg_pm.am_id` (o
-`reg_am_personal.cerrado_por_pm_id`), la validación en `sync_am` y un endpoint
-de AM abiertos. Es un paso propio, posterior a estas pantallas. Ver el detalle
-y el hallazgo de `tiene_pm` en `00-plan.md`.
+**Contra el servidor la pregunta ya no es ambigua**: una asignación está abierta
+si su fila de `reg_am` tiene `cierre_guid IS NULL`, y eso es lo que devuelve
+`GET /v4/am_abiertos`. La heurística local sigue existiendo sólo para los AM que
+todavía no salieron de este teléfono. El hallazgo de `tiene_pm` —la columna de
+V3 que nunca se usó— está en `00-plan.md`.
 
 ## PM — "Reporte PM": el CIERRE de una tarea AM
 
@@ -238,10 +239,11 @@ qué está viendo.
   es la del AM y la de cierre la pone el supervisor; en la prueba contra la
   base real quedó 06:57:50 → 16:00.
 - **Desaparece la colisión con la clave natural** que advertía
-  `02-bd-y-api.md` §4: el PM ya no repite la combinación, apunta a una
-  asignación concreta.
-- `pm_year` / `pm_week` **no los manda la app**: los calcula el servidor con
-  `format('o')`, no con `'Y'`.
+  `02-bd-y-api.md` §4: el cierre ya no repite la combinación, es un UPDATE de
+  una fila concreta.
+- **El año y la semana ya no se guardan**: se derivan con `WEEK(fecha,3)`. El
+  bug de V3 que puso 181 filas de diciembre de 2025 en (2025, semana 1) no puede
+  repetirse en un valor que no se almacena.
 
 ### Lo que hay que aceptar
 
