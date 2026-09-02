@@ -61,6 +61,57 @@ Lee esto antes de proponer cambios "obvios".
 - [ ] ¿`z_tabla_pm` se escribe solo por API o también desde el CRUD web?
 - [ ] ¿Dónde vive el repo de la app Android que consume `V3`?
 
+## `z_personal`: `eregistro` manda, `estado` es el tipo de contrato (2026-09-02)
+
+**La única bandera de vigencia de una persona es `eregistro`**: `'A'` activo,
+`'I'` inactivo. Si dice `'I'`, la persona no va, sin importar nada más.
+
+**`estado` NO es una bandera de baja: es el tipo de contratación**, y apunta a
+`z_personal_estado`:
+
+| id | descripción |
+|---|---|
+| 1 | Afiliado |
+| 2 | No afiliado |
+| 3 | Eventual |
+| 4 | Contratista |
+| 6 | Período de prueba |
+
+Por eso **filtrar personal por `estado = '1'` no devuelve "los activos": devuelve
+sólo los Afiliados**, y deja fuera a eventuales y contratistas que sí trabajan.
+Es un filtro de nómina disfrazado de filtro de vigencia, y el error es fácil
+porque `estado` es el nombre que uno esperaría.
+
+Lo que se ve en los datos: de las 8 personas con `rol = 8` (responsables), 7
+tienen `estado = '1'` y sólo **6 tienen `eregistro = 'A'`**. La que discrepa es
+la **id 225** (Bellita), con `estado = '1'` y `eregistro = 'I'`. Los 6 que quedan
+—5 en Bellita, 1 en Pacaritambo— son exactamente los 6 que firman los AM de
+agosto: el filtro correcto está validado por los datos.
+
+**V3 se contradice a sí mismo:** `Personal_model::get_all()` filtra por
+`eregistro` (línea 18) y dos métodos más abajo filtran por `estado`
+(líneas 28 y 36). Según qué pantalla de la web se abra, la id 225 aparece o no.
+V4 usa `eregistro` en los dos lugares que importan: `/v4/catalogos` y
+`sync_personal_activo()`.
+
+### Lo que falta validar en el servidor
+
+`sync_valida_catalogos()` de `V4.php` verifica finca, cultivo, subtarea,
+responsable y personal activos, que el lote pertenezca a la finca declarada y
+que cada módulo pertenezca al lote. **No verifica nada contra la finca de la
+persona ni de la subtarea**, y las columnas existen:
+
+- [ ] **`z_personal.id_finca` vs `finca_id`**, para el responsable y para el
+      trabajador. Hoy un responsable de Bellita puede firmar un AM de
+      Pacaritambo. En las 590 filas de agosto siempre coincidió, pero eso es una
+      medición, no una regla: nada lo impide.
+- [ ] **`z_subtarea.id_finca` vs `finca_id`**. La app ya filtra las subtareas por
+      finca (78 en Bellita, 21 en Pacaritambo); el servidor no. Un AM de
+      Pacaritambo puede llegar con una subtarea de Bellita y entra.
+
+Las dos son del mismo tipo que la validación módulo ∈ lote que ya existe: la FK
+comprueba que el id exista, no que pertenezca a la finca correcta.
+
 ## Mantenimiento de estos documentos
 
 Generados leyendo el código el **2026-08-21**. Si un `.md` contradice al código,
