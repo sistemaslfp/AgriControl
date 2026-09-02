@@ -368,10 +368,14 @@ await t(2500);
 ok('23 la pantalla PM abre', await p.locator('ion-title', { hasText: 'Reporte PM' }).isVisible());
 
 // Tres asignaciones quedaron abiertas: ALAVA en dos AM (lote 1 y lote 5) y
-// BRIONES en uno. El PM no ofrece crear nada: solo esa lista.
-const filas = p.locator(`${raiz} ion-checkbox`);
-ok('24 la primera pantalla lista las tareas AM abiertas',
-  (await filas.count()) === 3, `filas=${await filas.count()}`);
+// BRIONES en uno. La lista agrupa POR TAREA, no por persona: ALAVA y BRIONES
+// comparten la segunda tarea, asi que son DOS tarjetas para tres personas.
+const tareas = p.locator(`${raiz} ion-item.tarea-am`);
+ok('24 la primera pantalla lista las tareas AM abiertas, agrupadas',
+  (await tareas.count()) === 2, `tarjetas=${await tareas.count()}`);
+ok('24b ninguna tarjeta nombra a una persona: el nombre vive en la ventana',
+  !(await tareas.first().innerText()).includes('ALAVA'),
+  await tareas.first().innerText());
 ok('25 no existe ninguna forma de crear una tarea desde PM',
   (await p.locator(`${raiz} ion-item`, { hasText: 'Cultivo' }).count()) === 0 &&
   (await p.locator(`${raiz} ion-item`, { hasText: 'Subtarea' }).count()) === 0);
@@ -397,13 +401,29 @@ await elegirUno('Finca', 'Bellita');
 await elegirUno('Responsable que cierra', 'HOLGUIN');
 await t(1500);
 
-ok('26d la lista muestra el módulo junto al lote',
-  (await p.locator(`${raiz} ion-checkbox`, { hasText: 'BRIONES' }).first().innerText()).includes('Mód.'),
-  await p.locator(`${raiz} ion-checkbox`, { hasText: 'BRIONES' }).first().innerText());
+// La tarjeta de la tarea con modulo los muestra junto al lote: sin eso, dos
+// tareas del mismo lote y la misma subtarea se ven identicas.
+const conModulo = p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód.' });
+ok('26d la tarjeta muestra el módulo junto al lote',
+  (await conModulo.count()) >= 1, `tarjetas con módulo=${await conModulo.count()}`);
 
-// Se cierra la de BRIONES.
-await p.locator(`${raiz} ion-checkbox`, { hasText: 'BRIONES' }).first().click();
+// Al tocar la tarea se abre la ventana flotante con SU personal.
+await conModulo.first().click();
+await t(600);
+ok('26e tocar la tarea abre la ventana con el personal de esa tarea',
+  (await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()) === 1 &&
+  (await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()) === 1,
+  `en la ventana: BRIONES=${await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()}` +
+  ` ALAVA=${await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()}`);
+
+// Se elige solo a BRIONES: la seleccion multiple aplica en vivo.
+await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).first().click();
+await t(300);
+await cerrarTocandoFuera();
 await t(700);
+ok('26f la tarjeta resume a quién se eligió, sin abrirla',
+  (await conModulo.first().innerText()).includes('BRIONES'),
+  await conModulo.first().innerText());
 await flecha('siguiente').click();
 await t(700);
 
@@ -447,9 +467,19 @@ await p.goto(`${APP}/menu`, { waitUntil: 'networkidle' });
 await t(1200);
 await p.goto(`${APP}/pm`, { waitUntil: 'networkidle' });
 await t(2500);
-ok('35 la tarea cerrada ya no aparece entre las abiertas',
-  (await p.locator(`${raiz} ion-checkbox`).count()) === 2,
-  `filas=${await p.locator(`${raiz} ion-checkbox`).count()}`);
+// BRIONES se cerro, pero ALAVA sigue abierta en esa MISMA tarea: la tarjeta
+// no desaparece, se queda con una persona. Es la razon por la que dice
+// "por cerrar" y no "personas".
+ok('35 la persona cerrada ya no aparece, y su tarea sigue con el resto',
+  (await p.locator(`${raiz} ion-item.tarea-am`).count()) === 2,
+  `tarjetas=${await p.locator(`${raiz} ion-item.tarea-am`).count()}`);
+await p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód.' }).first().click();
+await t(600);
+ok('35b la ventana de esa tarea ya no ofrece a la persona cerrada',
+  (await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()) === 0 &&
+  (await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()) === 1);
+await cerrarTocandoFuera();
+await t(400);
 
 // ------------------------------------------------------------------
 // 7. Estado final de la cola

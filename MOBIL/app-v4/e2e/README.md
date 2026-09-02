@@ -10,7 +10,7 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   el bloqueo del AM sin personal, el bloqueo por persona repetida, el aviso de
   AM abierto, el filtro del responsable por rol 8, la cascada
   Cultivo → Tarea → Subtarea, y el PM que cierra tareas AM en vez de crearlas.
-  59 comprobaciones.
+  63 comprobaciones.
   Se corre cuando se tocan las pantallas de captura.
 
 No corren en CI ni hacen falta para desarrollar.
@@ -60,6 +60,13 @@ Dos cosas que cuestan tiempo si no se saben, y que estas pruebas ya resuelven:
   de Ionic exige un div normal. Con `ion-content` el propio `ion-modal`
   termina interceptando los toques y las opciones dejan de ser clicables. El
   selector usa altura fija por eso.
+
+- **`pkill` devuelve exit 144 y se lleva el resto del comando.** Matar el mock o
+  el servidor de la app y relanzarlos tiene que ser en dos pasos, o el
+  `node e2e/...` que va después nunca corre y parece que la suite fallo.
+- **Playwright no viene con `npm ci`**: es `devDependency` opcional. Instalarlo
+  con `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i -D playwright` y apuntarle a un
+  Chromium existente con `PW_CHROMIUM`, o se baja 150 MB de navegador.
 
 El mock reemplaza a la API V4 y permite forzar escenarios que un servidor real
 no produce a pedido: portal cautivo que devuelve 200 con HTML, respuestas

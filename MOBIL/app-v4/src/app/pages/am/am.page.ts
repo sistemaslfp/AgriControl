@@ -662,6 +662,7 @@ export class AmPage implements OnInit {
             t.subtarea!.id,
             persona.id,
             t.modulos.map((m) => m.id),
+            capturaGuid,
           );
         }
       }

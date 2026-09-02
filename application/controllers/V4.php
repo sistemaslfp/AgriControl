@@ -163,7 +163,14 @@ class V4 extends RestController
             // `nombre_subtarea` y z_ulabor en `ulabor_nombre`, no en `nombre`.
             // z_cultivo si usa `nombre`. La convencion esta mezclada en toda
             // la base; verificado contra el esquema real.
+            // `captura_guid` va porque la pantalla PM agrupa por tarea: sin el,
+            // las N personas de un mismo formulario se ven como N filas sueltas
+            // ordenadas por nombre, y nadie que revise sabe cuales iban juntas.
+            // Es NULL en las filas migradas con origen 'mig-pm' (avances sin AM),
+            // que no salieron de ningun formulario: la app las trata como grupo
+            // de una sola persona.
             $db->select('am.id AS am_personal_id, am.guid AS am_guid, am.id AS am_id,
+                         am.captura_guid,
                          am.fecha_proceso, am.finca_id, am.responsable_id,
                          am.cultivo_id, am.lote_id, am.subtarea_id,
                          am.personal_id, per.nombre AS trabajador,

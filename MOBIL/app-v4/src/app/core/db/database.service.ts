@@ -107,6 +107,9 @@ export class DatabaseService {
        created_at    TEXT    NOT NULL,
        -- ids de modulo separados por coma; el PM los muestra junto al lote.
        modulos       TEXT,
+       -- guid del formulario que capturo esta persona. Lo comparten las N
+       -- personas de la misma tarea y es lo que agrupa la lista del PM.
+       captura_guid  TEXT,
        PRIMARY KEY (guid, personal_id)
      );`,
     `CREATE INDEX IF NOT EXISTS idx_am_persona_abierto
@@ -176,6 +179,7 @@ export class DatabaseService {
   private async agregarColumnasFaltantes(db: SQLiteDBConnection): Promise<void> {
     const alters = [
       'ALTER TABLE am_persona_local ADD COLUMN modulos TEXT;',
+      'ALTER TABLE am_persona_local ADD COLUMN captura_guid TEXT;',
       'ALTER TABLE cat_subtarea ADD COLUMN id_finca INTEGER;',
     ];
     for (const sql of alters) {

@@ -63,6 +63,7 @@ const server = http.createServer((req, res) => {
         if (!pid || cerradas.has(`${guid}|${pid}`)) continue;
         asignaciones.push({
           am_personal_id: n++, am_guid: guid, am_id: am.id,
+          captura_guid: am.payload.captura_guid ?? null,
           fecha_proceso: am.payload.fecha_proceso,
           finca_id: am.payload.finca_id, responsable_id: am.payload.responsable_id,
           cultivo_id: am.payload.cultivo_id, lote_id: am.payload.lote_id,

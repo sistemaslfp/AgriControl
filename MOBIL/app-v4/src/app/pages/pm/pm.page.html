@@ -105,26 +105,31 @@
         }
       </div>
     } @else {
+      <!--
+        Una fila por TAREA, no por persona. Tocarla abre la ventana con su
+        personal. Antes eran N filas sueltas ordenadas por nombre y no habia
+        forma de ver cuales se habian programado juntas.
+      -->
       <ion-list inset="true">
-        @for (a of disponibles(); track clave(a)) {
-          <ion-item>
-            <ion-checkbox
-              [checked]="estaElegida(a)"
-              (ionChange)="alternar(a)"
-              labelPlacement="end"
-              justify="start"
-            >
-              <ion-label>
-                <strong>{{ a.trabajador }}</strong>
-                <p>
-                  {{ a.lote }}@if (a.modulos) { · Mód. {{ a.modulos }} } ·
-                  {{ a.subtarea }}
-                </p>
-                @if (a.origen === 'local') {
-                  <p class="pendiente">Cargada en este equipo, todavía sin enviar</p>
-                }
-              </ion-label>
-            </ion-checkbox>
+        @for (g of grupos(); track g.clave) {
+          <ion-item button="true" detail="true" (click)="abrirPersonas(g)" class="tarea-am">
+            <ion-label>
+              <strong>
+                {{ g.lote }}@if (g.modulos) { · Mód. {{ g.modulos }} }
+              </strong>
+              <p>{{ g.subtarea }}</p>
+              <p [class.con-eleccion]="elegidasDe(g).length > 0">
+                {{ resumenPersonas(g) }}
+              </p>
+              @if (g.soloLocal) {
+                <p class="pendiente">Cargada en este equipo, todavía sin enviar</p>
+              }
+            </ion-label>
+            @if (elegidasDe(g).length > 0) {
+              <ion-note slot="end" color="primary">
+                {{ elegidasDe(g).length }}/{{ g.asignaciones.length }}
+              </ion-note>
+            }
           </ion-item>
         }
       </ion-list>
@@ -288,9 +293,11 @@
       [titulo]="selectorTitulo()"
       [opciones]="selectorOpciones()"
       [seleccion]="selectorSeleccion()"
+      [multiple]="selectorMultiple()"
       [vacioTexto]="selectorVacio()"
       [conBuscador]="selectorBuscador()"
       (confirmar)="onSeleccion($event)"
+      (cambio)="onCambio($event)"
       (cerrar)="cerrarSelector()"
     ></app-selector>
   </ng-template>

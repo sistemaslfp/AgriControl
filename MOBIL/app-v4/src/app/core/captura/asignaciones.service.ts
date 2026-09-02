@@ -38,6 +38,13 @@ import { DatabaseService } from '../db/database.service';
 /** Una asignación AM abierta, venga del servidor o del espejo local. */
 export interface AsignacionAmLocal {
   amGuid: string;
+  /**
+   * Guid del formulario del que salio esta persona. Lo comparten las N
+   * personas capturadas juntas y es lo que agrupa la lista de la pantalla PM.
+   * `null` cuando la fila no salio de ningun formulario (filas migradas con
+   * origen 'mig-pm'): la pantalla las trata como grupo de una sola persona.
+   */
+  capturaGuid: string | null;
   /** null cuando sale del espejo local: ese id lo asigna el servidor. */
   amPersonalId: number | null;
   personalId: number;
@@ -84,13 +91,23 @@ export class AsignacionesService {
     subtareaId: number,
     personalId: number,
     moduloIds: number[] = [],
+    capturaGuid: string | null = null,
   ): Promise<void> {
     const db = await this.database.abrir();
     await db.run(
       `INSERT OR REPLACE INTO am_persona_local
-         (guid, personal_id, fecha, lote_id, subtarea_id, created_at, modulos)
-       VALUES (?, ?, ?, ?, ?, ?, ?);`,
-      [guid, personalId, fecha, loteId, subtareaId, new Date().toISOString(), moduloIds.join(',')],
+         (guid, personal_id, fecha, lote_id, subtarea_id, created_at, modulos, captura_guid)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        guid,
+        personalId,
+        fecha,
+        loteId,
+        subtareaId,
+        new Date().toISOString(),
+        moduloIds.join(','),
+        capturaGuid,
+      ],
     );
     await this.database.persistir();
   }
@@ -186,7 +203,8 @@ export class AsignacionesService {
   async abiertasLocales(fecha: string): Promise<AsignacionAmLocal[]> {
     const db = await this.database.abrir();
     const r = await db.query(
-      `SELECT a.guid, a.personal_id, a.fecha, a.lote_id, a.subtarea_id, a.modulos
+      `SELECT a.guid, a.personal_id, a.fecha, a.lote_id, a.subtarea_id, a.modulos,
+              a.captura_guid
          FROM am_persona_local a
         WHERE a.fecha = ?
           AND NOT EXISTS (
@@ -216,6 +234,7 @@ export class AsignacionesService {
       const nombresMod = await this.catalogo.nombresModulo(ids);
       salida.push({
         amGuid: String(f['guid']),
+        capturaGuid: f['captura_guid'] == null ? null : String(f['captura_guid']),
         amPersonalId: null,
         personalId: Number(f['personal_id']),
         trabajador: nombres.get(Number(f['personal_id'])) ?? `#${f['personal_id']}`,

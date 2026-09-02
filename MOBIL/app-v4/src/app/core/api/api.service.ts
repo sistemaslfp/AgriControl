@@ -54,6 +54,8 @@ export interface AsignacionAmApi {
   am_personal_id: number;
   am_guid: string;
   am_id: number;
+  /** Guid del formulario. Lo comparten las N personas de la misma tarea. */
+  captura_guid: string | null;
   fecha_proceso: string;
   finca_id: number;
   responsable_id: number;
