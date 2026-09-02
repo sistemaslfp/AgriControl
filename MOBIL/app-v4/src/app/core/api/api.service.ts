@@ -36,6 +36,8 @@ export interface CatalogosResponse {
     codigo: string;
     nombre: string;
     tarea_id: number;
+    /** z_subtarea.id_finca: cada finca tiene su propio juego de subtareas. */
+    id_finca: number;
     unidad_labor_id: number;
     tipo_pago_id: number;
   }[];

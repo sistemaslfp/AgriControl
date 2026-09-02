@@ -13,6 +13,11 @@ export const KV = {
   CATALOGOS_UPDATED_AT: 'catalogos_updated_at',
   BOOTSTRAP_JSON: 'bootstrap_json',
   BOOTSTRAP_AT: 'bootstrap_at',
+  // Valores por defecto de captura. Un equipo suele quedarse en una finca y
+  // en un cultivo toda la temporada: pre-elegirlos ahorra dos toques en cada
+  // tarea y evita el error de cargar en la finca equivocada.
+  DEFAULT_FINCA_ID: 'default_finca_id',
+  DEFAULT_CULTIVO_ID: 'default_cultivo_id',
 } as const;
 
 /**
@@ -29,6 +34,9 @@ export class AppConfigService {
   readonly deviceAlias = signal<string | null>(null);
   readonly lastSyncOkAt = signal<string | null>(null);
   readonly catalogosUpdatedAt = signal<string | null>(null);
+  /** null = sin valor por defecto; el usuario elige en cada registro. */
+  readonly defaultFincaId = signal<number | null>(null);
+  readonly defaultCultivoId = signal<number | null>(null);
 
   private cargado = false;
 
@@ -41,6 +49,8 @@ export class AppConfigService {
     this.deviceAlias.set(await this.get(KV.DEVICE_ALIAS));
     this.lastSyncOkAt.set(await this.get(KV.LAST_SYNC_OK_AT));
     this.catalogosUpdatedAt.set(await this.get(KV.CATALOGOS_UPDATED_AT));
+    this.defaultFincaId.set(this.aId(await this.get(KV.DEFAULT_FINCA_ID)));
+    this.defaultCultivoId.set(this.aId(await this.get(KV.DEFAULT_CULTIVO_ID)));
     this.cargado = true;
   }
 
@@ -63,6 +73,24 @@ export class AppConfigService {
   async setBaseUrl(url: string): Promise<void> {
     // Normaliza: sin barra final, para concatenar rutas sin sorpresas.
     await this.set(KV.BASE_URL, url.trim().replace(/\/+$/, ''));
+  }
+
+  /** `null` borra el valor por defecto. */
+  async setDefaultFinca(id: number | null): Promise<void> {
+    await this.set(KV.DEFAULT_FINCA_ID, id === null ? '' : String(id));
+    this.defaultFincaId.set(id);
+  }
+
+  async setDefaultCultivo(id: number | null): Promise<void> {
+    await this.set(KV.DEFAULT_CULTIVO_ID, id === null ? '' : String(id));
+    this.defaultCultivoId.set(id);
+  }
+
+  private aId(v: string | null): number | null {
+    // OJO: '' y '0' tienen que dar null. En JS el string "0" es truthy, que es
+    // la misma trampa que muerde con los tipos que devuelve mysqli.
+    const n = v === null || v.trim() === '' ? NaN : Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
   }
 
   async setDeviceAlias(alias: string): Promise<void> {

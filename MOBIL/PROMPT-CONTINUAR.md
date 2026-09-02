@@ -1,4 +1,4 @@
-# Continuar el trabajo — estado al 2026-09-01
+# Continuar el trabajo — estado al 2026-09-02
 
 Texto para abrir una sesión nueva. Lee esto primero, después
 `00-plan.md`, y sólo entonces el documento del tema que toque.
@@ -24,14 +24,15 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
   asignaciones AM abiertas de la fecha y solo carga el avance. Columna nueva
   `reg_pm.am_personal_id` + `GET /v4/am_abiertos`. Probado con `curl` contra la
   base real ya migrada.
-- **Verificación:** `e2e/am-pm.spec.mjs` 51 comprobaciones y
+- **Verificación:** `e2e/am-pm.spec.mjs` 59 comprobaciones y
   `e2e/cola.spec.mjs` 22, **todas en verde**; y 8 casos de `sync_pm` con `curl`
   contra la copia real de la base, con cero filas fantasma.
 
 ## Lo siguiente, en orden
 
-1. **Correr la migración `2026-09-01-01-pm-cierra-am.sql` en el servidor de
-   verdad.** Está probada contra una copia, no aplicada en producción.
+1. **Correr en el servidor de verdad las dos migraciones nuevas:**
+   `2026-09-01-01-pm-cierra-am.sql` y `2026-09-02-01-modulos-clave-natural.sql`.
+   Las dos están probadas contra una copia, ninguna aplicada en producción.
 2. **Pendientes / Enviados** con los tres estados reales (PENDIENTE, ENVIANDO,
    RECHAZADO con el motivo a la vista). Hoy el menú manda a un aviso.
 3. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
@@ -71,7 +72,17 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
 - Los selectores son **ventanas flotantes** con el alto exacto de su contenido,
   que cierran tocando fuera; el buscador aparece solo con más de 10 opciones.
 - **Lotes**: primero los numéricos por valor, después los de nombre; y a un
-  lote con nombre no se le antepone "Lote".
+  lote con nombre no se le antepone "Lote". `Módulos` va justo debajo de `Lote`.
+- **Tareas y subtareas se filtran por finca** (`z_subtarea.id_finca`): 78 en
+  Bellita, 21 en Pacaritambo. `z_tarea` no tiene finca; el corte sale desde la
+  subtarea hacia arriba.
+- **Configuración tiene Finca y Cultivo por defecto**, que quedan pre-elegidos
+  en AM y PM. Cierra el pendiente #8 ("Restricción de Finca") por reemplazo.
+- **Los módulos siguen en tabla hija y no en una columna con comas.** Se
+  discutió el 2026-09-02 y se sostuvo con datos: 3.119 filas de `z_tabla_am`
+  (2,75 %) apuntan a módulos borrados y 16 a un módulo de otro lote — un
+  VARCHAR no puede impedir ninguna de las dos. El costo sí se atendió: sin `id`
+  autoincremental, la pareja es PRIMARY KEY y la tabla ocupa 40 % menos.
 - En pantalla no se dice "retroactivo": dice **"Estoy cargando un día
   anterior"**.
 - **Una tarea = un guid = una fila.** El ACK es por registro: un AM de tres

@@ -117,8 +117,12 @@ const server = http.createServer((req, res) => {
     cultivos: [{ id: 1, nombre: 'CACAO' }],
     tareas: [{ id: 3, nombre: 'COSECHA', cultivos_id: 1 },
              { id: 4, nombre: 'MANTENIMIENTO', cultivos_id: 1 }],
-    subtareas: [{ id: 88, codigo: 'C-01', nombre: 'COSECHA CACAO', tarea_id: 3, unidad_labor_id: 4, tipo_pago_id: 1 },
-                { id: 90, codigo: 'M-07', nombre: 'PODA DE FORMACION', tarea_id: 4, unidad_labor_id: 4, tipo_pago_id: 1 }],
+    // id_finca: cada finca tiene su propio juego de subtareas (78 en Bellita,
+    // 21 en Pacaritambo en los datos reales). La 91 es de la finca 2 y NO
+    // tiene que aparecer trabajando en Bellita.
+    subtareas: [{ id: 88, codigo: 'C-01', nombre: 'COSECHA CACAO', tarea_id: 3, id_finca: 1, unidad_labor_id: 4, tipo_pago_id: 1 },
+                { id: 90, codigo: 'M-07', nombre: 'PODA DE FORMACION', tarea_id: 4, id_finca: 1, unidad_labor_id: 4, tipo_pago_id: 1 },
+                { id: 91, codigo: 'C-09', nombre: 'COSECHA EN PACARITAMBO', tarea_id: 3, id_finca: 2, unidad_labor_id: 4, tipo_pago_id: 1 }],
     ulabores: [{ id: 4, nombre: 'Libra' }],
     // rol 8 = responsable de campo. Es el filtro del selector de Responsable:
     // HOLGUIN tiene que aparecer ahi y los dos operarios NO.

@@ -55,7 +55,6 @@ Capacitor, `io.ionic.starter`, sin repositorio disponible).
 | 2 | ¿Se permite borrar un registro PENDIENTE nunca enviado? | 01 §Máquina de estados |
 | 4 | ¿`lot_code` sin componente de finca es correcto? | 02 §3 |
 | 7 | ¿Qué hace el botón `ADICIONAL` en Cosecha? | 03 §Cosecha |
-| 8 | ¿Qué hace "Restricción de Finca" en Configuración? | 03 §Configuración |
 | 9 | Capturas de pantalla del módulo Riego | 03 §Riego |
 
 ### Decidido
@@ -137,6 +136,28 @@ finca del responsable siempre coincide con la del AM); elegirlo antes que la
 finca ya no lo borra — se limpia solo si no pertenece a ella. Cascada
 **Cultivo → Tarea → Subtarea**, y **los códigos de tarea/subtarea no se
 muestran** (control interno).
+
+**#8 — "Restricción de Finca" (2026-09-02). CERRADO por reemplazo.** No había
+captura ni explicación de qué hacía en la app vieja. Se implementó lo que
+razonablemente era: **valores por defecto de Finca y Cultivo en Configuración**,
+que quedan pre-elegidos en AM y PM y se pueden cambiar en cada registro. Si
+aparece que la original hacía otra cosa, se revisa.
+
+**#Módulos (2026-09-02, Kevin planteó, se sostuvo con datos).** Kevin propuso
+reemplazar `reg_am_modulo` por una columna con comas, como `z_tabla_am.modulos`.
+**Se mantiene la tabla**, con esta evidencia sobre la base real: **3.119 filas
+de `z_tabla_am` (2,75 %) apuntan a módulos que ya no existen** en `z_modulo` con
+ningún estado — se borraron y el VARCHAR no pudo impedirlo — y **16 apuntan a un
+módulo de otro lote**. El reclamo del costo sí era correcto y se atendió: se
+quitó el `id` autoincremental de `reg_am_modulo` y `reg_pm_modulo` y la pareja
+pasó a ser PRIMARY KEY, −40 % de tamaño (80 KB → 48 KB con las mismas filas).
+`reg_pm_modulo` queda anotada como redundante desde que el PM cierra un AM,
+pero no se borra: las 496 filas migradas no tienen AM del cual derivar sus
+módulos.
+
+**Subtareas por finca (2026-09-02).** `z_subtarea.id_finca` existía sin usarse.
+78 subtareas en Bellita, 21 en Pacaritambo. La app filtra subtareas y tareas
+por finca.
 
 **Lotes (2026-09-01, Kevin).** Se ordenan primero los numéricos por valor y
 después los que tienen nombre, alfabéticamente; y **a los que tienen nombre no

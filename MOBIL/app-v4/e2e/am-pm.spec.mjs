@@ -197,6 +197,13 @@ await enModal('ion-radio', 'Lote 1').click();
 await t(600);
 // tiene_modulos = true: el campo Módulos solo aparece para este lote.
 ok('05 Módulos aparece solo si el lote tiene módulos', await campo('Módulos').isVisible());
+// Módulos va DEBAJO de Lote: es una subdivisión del lote, no algo suelto.
+const orden = await p.evaluate(() => {
+  const t = [...document.querySelectorAll('app-am ion-item')].map((x) => x.innerText.split('\n')[0].trim());
+  return { lote: t.indexOf('Lote'), modulos: t.indexOf('Módulos'), tarea: t.indexOf('Tarea') };
+});
+ok('05a Módulos va justo debajo de Lote y antes de Tarea',
+  orden.modulos === orden.lote + 1 && orden.tarea > orden.modulos, JSON.stringify(orden));
 await elegirVarios('Módulos', ['Módulo 02']);
 
 // Cascada Cultivo -> Tarea -> Subtarea: la subtarea esta apagada hasta que
@@ -209,6 +216,10 @@ const textoSub = await p.locator('ion-modal ion-content').first().innerText();
 ok('05c la subtarea se filtra por la tarea elegida',
   textoSub.includes('COSECHA CACAO') && !textoSub.includes('PODA DE FORMACION'),
   textoSub.replace(/\n/g, ' ').slice(0, 80));
+// La subtarea 91 cuelga de la misma tarea pero es de la finca 2: trabajando en
+// Bellita no tiene que aparecer.
+ok('05e la subtarea se filtra también por finca',
+  !textoSub.includes('PACARITAMBO'), textoSub.replace(/\n/g, ' ').slice(0, 80));
 ok('05d no se muestra el código interno de la subtarea',
   !textoSub.includes('C-01') && !textoSub.includes('M-07'), textoSub.slice(0, 60));
 await enModal('ion-radio', 'COSECHA CACAO').click();
@@ -441,7 +452,49 @@ ok('35 la tarea cerrada ya no aparece entre las abiertas',
 const c = await conteo();
 ok('36 todo lo capturado quedó confirmado por el servidor',
   c.enviados === 4 && c.pendientes === 0 && c.rechazados === 0, JSON.stringify(c));
-ok('37 sin errores de JavaScript en toda la sesión', errs.length === 0, errs.join(' | ').slice(0, 200));
+
+// ------------------------------------------------------------------
+// 8. Valores por defecto de Configuración
+// ------------------------------------------------------------------
+raiz = 'app-configuracion';
+await p.goto(`${APP}/configuracion`, { waitUntil: 'networkidle' });
+await t(2500);
+await elegirUno('Finca', 'Pacaritambo');
+await elegirUno('Cultivo', 'CACAO');
+ok('38 los valores por defecto quedan guardados',
+  (await campo('Finca').innerText()).includes('Pacaritambo') &&
+    (await campo('Cultivo').innerText()).includes('CACAO'));
+
+raiz = 'app-am';
+await p.goto(`${APP}/am`, { waitUntil: 'networkidle' });
+await t(2000);
+ok('39 la finca por defecto viene pre-elegida en AM',
+  (await campo('Finca').innerText()).includes('Pacaritambo'), await campo('Finca').innerText());
+await flecha('siguiente').click();
+await t(700);
+ok('40 el cultivo por defecto viene pre-elegido en la tarea',
+  (await campo('Cultivo').innerText()).includes('CACAO'), await campo('Cultivo').innerText());
+// Y en Pacaritambo la subtarea de Bellita no existe.
+await elegirUno('Lote', 'Lote 1');
+await campo('Tarea').click();
+await t(600);
+const tareasPacari = await p.locator('ion-modal ion-content').first().innerText();
+ok('41 en la otra finca solo aparecen sus tareas',
+  tareasPacari.includes('COSECHA') && !tareasPacari.includes('MANTENIMIENTO'),
+  tareasPacari.replace(/\n/g, ' ').slice(0, 60));
+await cerrarTocandoFuera();
+
+raiz = 'app-configuracion';
+await p.goto(`${APP}/configuracion`, { waitUntil: 'networkidle' });
+await t(2000);
+await p.locator(`${raiz} ion-item`, { hasText: 'Finca' }).first()
+  .locator('ion-button').click();
+await t(800);
+ok('42 se puede quitar el valor por defecto',
+  (await campo('Finca').innerText()).includes('Se elige en cada registro'),
+  await campo('Finca').innerText());
+
+ok('43 sin errores de JavaScript en toda la sesión', errs.length === 0, errs.join(' | ').slice(0, 200));
 
 await browser.close();
 console.log(fallos === 0 ? '\nTODO OK' : `\n${fallos} PRUEBA(S) FALLIDA(S)`);

@@ -76,7 +76,8 @@ export class DatabaseService {
      );`,
     `CREATE TABLE IF NOT EXISTS cat_subtarea (
        id INTEGER PRIMARY KEY, codigo TEXT, nombre TEXT NOT NULL,
-       tarea_id INTEGER NOT NULL, unidad_labor_id INTEGER, tipo_pago_id INTEGER
+       tarea_id INTEGER NOT NULL, id_finca INTEGER,
+       unidad_labor_id INTEGER, tipo_pago_id INTEGER
      );`,
     `CREATE TABLE IF NOT EXISTS cat_ulabor (
        id INTEGER PRIMARY KEY, nombre TEXT NOT NULL
@@ -173,7 +174,10 @@ export class DatabaseService {
    * camino barato mientras los cambios sean solo agregar columnas nullables.
    */
   private async agregarColumnasFaltantes(db: SQLiteDBConnection): Promise<void> {
-    const alters = ['ALTER TABLE am_persona_local ADD COLUMN modulos TEXT;'];
+    const alters = [
+      'ALTER TABLE am_persona_local ADD COLUMN modulos TEXT;',
+      'ALTER TABLE cat_subtarea ADD COLUMN id_finca INTEGER;',
+    ];
     for (const sql of alters) {
       try {
         await db.execute(sql, false);

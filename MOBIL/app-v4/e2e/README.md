@@ -10,7 +10,7 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   el bloqueo del AM sin personal, el bloqueo por persona repetida, el aviso de
   AM abierto, el filtro del responsable por rol 8, la cascada
   Cultivo → Tarea → Subtarea, y el PM que cierra tareas AM en vez de crearlas.
-  51 comprobaciones.
+  59 comprobaciones.
   Se corre cuando se tocan las pantallas de captura.
 
 No corren en CI ni hacen falta para desarrollar.

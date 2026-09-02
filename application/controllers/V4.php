@@ -169,7 +169,11 @@ class V4 extends RestController
                          ap.personal_id, per.nombre AS trabajador,
                          l.lote, c.nombre AS cultivo,
                          st.nombre_subtarea AS subtarea,
-                         st.unidad_labor_id, u.ulabor_nombre AS unidad_labor', FALSE)
+                         st.unidad_labor_id, u.ulabor_nombre AS unidad_labor,
+                         (SELECT GROUP_CONCAT(zm.modulo ORDER BY zm.modulo SEPARATOR ", ")
+                            FROM reg_am_modulo ram
+                            JOIN z_modulo zm ON zm.id = ram.modulo_id
+                           WHERE ram.am_id = am.id) AS modulos', FALSE)
                ->from('reg_am_personal ap')
                ->join('reg_am am', 'am.id = ap.am_id')
                ->join('z_personal per', 'per.id = ap.personal_id')
@@ -260,11 +264,11 @@ class V4 extends RestController
 
         // Alias: el contrato V4 usa `codigo` y `nombre`; las columnas reales
         // son codigo_subtarea / nombre_subtarea.
-        $subtareas = $db->select('id, codigo_subtarea AS codigo, nombre_subtarea AS nombre, tarea_id, unidad_labor_id, tipo_pago_id')
+        $subtareas = $db->select('id, codigo_subtarea AS codigo, nombre_subtarea AS nombre, tarea_id, id_finca, unidad_labor_id, tipo_pago_id')
             ->where_in('estado', array('1', 'A'))
             ->order_by('nombre_subtarea')
             ->get('z_subtarea')->result();
-        $subtareas = $this->castRows($subtareas, array('id' => 'int', 'tarea_id' => 'int', 'unidad_labor_id' => 'int', 'tipo_pago_id' => 'int'));
+        $subtareas = $this->castRows($subtareas, array('id' => 'int', 'tarea_id' => 'int', 'id_finca' => 'int', 'unidad_labor_id' => 'int', 'tipo_pago_id' => 'int'));
 
         $ulabores = $db->select('id, ulabor_nombre AS nombre')
             ->where_in('estado', array('1', 'A'))

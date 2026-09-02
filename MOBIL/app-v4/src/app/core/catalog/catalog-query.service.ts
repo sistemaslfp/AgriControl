@@ -153,11 +153,31 @@ export class CatalogQueryService {
     }));
   }
 
-  /** Tareas del cultivo. La subtarea se elige recién después de esta. */
-  async tareasDeCultivo(cultivoId: number): Promise<OpcionCatalogo[]> {
+  /**
+   * Tareas del cultivo que tienen al menos una subtarea de esa finca.
+   *
+   * `z_tarea` no tiene finca; `z_subtarea` sí (`id_finca`), y cada finca
+   * maneja su propio juego: 78 subtareas en Bellita y 21 en Pacaritambo.
+   * Sin este filtro el usuario puede elegir una tarea y encontrarse con la
+   * lista de subtareas vacía, que es de las cosas más frustrantes que puede
+   * hacer un formulario.
+   */
+  async tareasDeCultivo(cultivoId: number, fincaId: number | null): Promise<OpcionCatalogo[]> {
+    if (fincaId === null) {
+      return this.filas(
+        `SELECT id, nombre FROM cat_tarea WHERE cultivos_id = ? ORDER BY nombre;`,
+        [cultivoId],
+        (f) => ({ id: Number(f['id']), nombre: String(f['nombre']) }),
+      );
+    }
     return this.filas(
-      `SELECT id, nombre FROM cat_tarea WHERE cultivos_id = ? ORDER BY nombre;`,
-      [cultivoId],
+      `SELECT t.id, t.nombre
+         FROM cat_tarea t
+        WHERE t.cultivos_id = ?
+          AND EXISTS (SELECT 1 FROM cat_subtarea s
+                       WHERE s.tarea_id = t.id AND s.id_finca = ?)
+        ORDER BY t.nombre;`,
+      [cultivoId, fincaId],
       (f) => ({ id: Number(f['id']), nombre: String(f['nombre']) }),
     );
   }
@@ -169,6 +189,9 @@ export class CatalogQueryService {
    * el corte por tarea, un cultivo con muchas tareas vuelca decenas de
    * subtareas sueltas en una sola lista.
    *
+   * **Se filtran por finca** (`z_subtarea.id_finca`): cada finca tiene su
+   * propio juego — 78 en Bellita y 21 en Pacaritambo.
+   *
    * El payload de /v4/sync pide `subtarea_id` y `cultivo_id`, nunca
    * `tarea_id`: la tarea existe solo para acotar la elección en pantalla. La
    * unidad de labor viaja acá porque el PM la muestra junto al avance, en vez
@@ -176,16 +199,18 @@ export class CatalogQueryService {
    *
    * **El `codigo` no se muestra**: es control interno (Kevin, 2026-08-31).
    */
-  async subtareasDeTarea(tareaId: number): Promise<Subtarea[]> {
+  async subtareasDeTarea(tareaId: number, fincaId: number | null): Promise<Subtarea[]> {
+    const filtroFinca = fincaId === null ? '' : ' AND s.id_finca = ?';
+    const params = fincaId === null ? [tareaId] : [tareaId, fincaId];
     return this.filas(
       `SELECT s.id, s.nombre, s.tarea_id, s.unidad_labor_id,
               t.nombre AS tarea_nombre, u.nombre AS ulabor_nombre
          FROM cat_subtarea s
          JOIN cat_tarea t ON t.id = s.tarea_id
          LEFT JOIN cat_ulabor u ON u.id = s.unidad_labor_id
-        WHERE s.tarea_id = ?
+        WHERE s.tarea_id = ?${filtroFinca}
         ORDER BY s.nombre;`,
-      [tareaId],
+      params,
       (f) => this.aSubtarea(f),
     );
   }

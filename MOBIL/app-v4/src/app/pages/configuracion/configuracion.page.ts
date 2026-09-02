@@ -10,7 +10,9 @@ import {
   IonIcon,
   IonInput,
   IonItem,
+  IonLabel,
   IonList,
+  IonModal,
   IonNote,
   IonSpinner,
   IonTitle,
@@ -18,9 +20,16 @@ import {
   ToastController,
 } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { checkmarkCircleOutline, closeCircleOutline, trashOutline } from 'ionicons/icons';
+import {
+  checkmarkCircleOutline,
+  closeCircleOutline,
+  closeOutline,
+  trashOutline,
+} from 'ionicons/icons';
 
 import { ApiService } from '../../core/api/api.service';
+import { CatalogQueryService, OpcionCatalogo } from '../../core/catalog/catalog-query.service';
+import { SelectorComponent } from '../../shared/selector.component';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { ClockService } from '../../core/clock/clock.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
@@ -33,6 +42,7 @@ import { SyncQueueService } from '../../core/sync/sync-queue.service';
   imports: [
     FormsModule,
     DatePipe,
+    SelectorComponent,
     IonBackButton,
     IonButton,
     IonButtons,
@@ -41,7 +51,9 @@ import { SyncQueueService } from '../../core/sync/sync-queue.service';
     IonIcon,
     IonInput,
     IonItem,
+    IonLabel,
     IonList,
+    IonModal,
     IonNote,
     IonSpinner,
     IonTitle,
@@ -53,6 +65,7 @@ export class ConfiguracionPage implements OnInit {
   readonly clock = inject(ClockService);
   readonly sync = inject(SyncQueueService);
   private readonly api = inject(ApiService);
+  private readonly catalogo = inject(CatalogQueryService);
   private readonly toast = inject(ToastController);
 
   // --- Servidor ---
@@ -65,6 +78,30 @@ export class ConfiguracionPage implements OnInit {
     | null
   >(null);
 
+  // --- Valores por defecto de captura ---
+  //
+  // Un equipo se queda en una finca y en un cultivo toda la temporada. Fijarlos
+  // acá ahorra dos toques por tarea y, sobre todo, evita el error de cargar en
+  // la finca equivocada. Se pueden dejar vacíos: entonces se eligen a mano en
+  // cada registro, como antes.
+  readonly fincaDefecto = signal<OpcionCatalogo | null>(null);
+  readonly cultivoDefecto = signal<OpcionCatalogo | null>(null);
+  private fincas: OpcionCatalogo[] = [];
+  private cultivos: OpcionCatalogo[] = [];
+
+  readonly selectorAbierto = signal(false);
+  readonly selectorTitulo = signal('');
+  readonly selectorOpciones = signal<OpcionCatalogo[]>([]);
+  readonly selectorSeleccion = signal<number[]>([]);
+  private destino: 'finca' | 'cultivo' | null = null;
+
+  readonly alturaSelector = computed(() => {
+    const n = Math.min(this.selectorOpciones().length, 12);
+    const conDetalle = this.selectorOpciones().some((o) => !!o.detalle);
+    const buscador = this.selectorOpciones().length > 10;
+    return `${56 + (buscador ? 60 : 0) + Math.max(n, 1) * (conDetalle ? 66 : 49) + 6}px`;
+  });
+
   // --- Limpieza ---
   confirmacionEscrita = '';
   readonly limpiando = signal(false);
@@ -75,7 +112,7 @@ export class ConfiguracionPage implements OnInit {
   );
 
   constructor() {
-    addIcons({ checkmarkCircleOutline, closeCircleOutline, trashOutline });
+    addIcons({ checkmarkCircleOutline, closeCircleOutline, closeOutline, trashOutline });
   }
 
   async ngOnInit(): Promise<void> {
@@ -84,6 +121,70 @@ export class ConfiguracionPage implements OnInit {
     await this.sync.refrescarConteo();
     this.url = this.config.baseUrl() ?? '';
     this.alias = this.config.deviceAlias() ?? '';
+
+    this.fincas = await this.catalogo.fincas();
+    this.cultivos = await this.catalogo.cultivos();
+    const fid = this.config.defaultFincaId();
+    const cid = this.config.defaultCultivoId();
+    this.fincaDefecto.set(this.fincas.find((f) => f.id === fid) ?? null);
+    this.cultivoDefecto.set(this.cultivos.find((c) => c.id === cid) ?? null);
+  }
+
+  // ------------------------------------------------------------------
+  // Valores por defecto
+  // ------------------------------------------------------------------
+
+  abrirFincaDefecto(): void {
+    this.abrirSelector('finca', 'Finca por defecto', this.fincas, this.fincaDefecto());
+  }
+
+  abrirCultivoDefecto(): void {
+    this.abrirSelector('cultivo', 'Cultivo por defecto', this.cultivos, this.cultivoDefecto());
+  }
+
+  async limpiarFincaDefecto(): Promise<void> {
+    this.fincaDefecto.set(null);
+    await this.config.setDefaultFinca(null);
+  }
+
+  async limpiarCultivoDefecto(): Promise<void> {
+    this.cultivoDefecto.set(null);
+    await this.config.setDefaultCultivo(null);
+  }
+
+  cerrarSelector(): void {
+    this.selectorAbierto.set(false);
+    this.destino = null;
+  }
+
+  async onSeleccion(ids: number[]): Promise<void> {
+    const d = this.destino;
+    const o = this.selectorOpciones().find((x) => x.id === ids[0]) ?? null;
+    this.cerrarSelector();
+    if (d === 'finca') {
+      this.fincaDefecto.set(o);
+      await this.config.setDefaultFinca(o?.id ?? null);
+    } else if (d === 'cultivo') {
+      this.cultivoDefecto.set(o);
+      await this.config.setDefaultCultivo(o?.id ?? null);
+    }
+  }
+
+  private abrirSelector(
+    destino: 'finca' | 'cultivo',
+    titulo: string,
+    opciones: OpcionCatalogo[],
+    actual: OpcionCatalogo | null,
+  ): void {
+    if (opciones.length === 0) {
+      void this.aviso('Descargá primero los maestros desde el menú.');
+      return;
+    }
+    this.destino = destino;
+    this.selectorTitulo.set(titulo);
+    this.selectorOpciones.set(opciones);
+    this.selectorSeleccion.set(actual ? [actual.id] : []);
+    this.selectorAbierto.set(true);
   }
 
   urlValida(): boolean {

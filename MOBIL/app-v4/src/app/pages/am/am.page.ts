@@ -32,6 +32,7 @@ import {
 } from 'ionicons/icons';
 
 import { AsignacionesService } from '../../core/captura/asignaciones.service';
+import { AppConfigService } from '../../core/config/app-config.service';
 import { BootstrapService } from '../../core/bootstrap/bootstrap.service';
 import { CatalogQueryService, OpcionCatalogo, Subtarea } from '../../core/catalog/catalog-query.service';
 import { ClockService } from '../../core/clock/clock.service';
@@ -119,6 +120,7 @@ export class AmPage implements OnInit {
   private readonly asignaciones = inject(AsignacionesService);
   private readonly cola = inject(SyncQueueService);
   private readonly clock = inject(ClockService);
+  private readonly config = inject(AppConfigService);
   private readonly alert = inject(AlertController);
   private readonly toast = inject(ToastController);
   private readonly router = inject(Router);
@@ -185,8 +187,10 @@ export class AmPage implements OnInit {
   // --- Catálogos base ---
   private fincas: OpcionCatalogo[] = [];
   private cultivos: OpcionCatalogo[] = [];
-  private tareasPorCultivo = new Map<number, OpcionCatalogo[]>();
-  private subtareasPorTarea = new Map<number, Subtarea[]>();
+  // La clave lleva la finca: las subtareas se filtran por finca, asi que la
+  // misma tarea da listas distintas en Bellita y en Pacaritambo.
+  private tareasPorCultivo = new Map<string, OpcionCatalogo[]>();
+  private subtareasPorTarea = new Map<string, Subtarea[]>();
 
   // --- Evaluación de la fecha ---
   readonly evaluacion = computed(() => {
@@ -274,13 +278,34 @@ export class AmPage implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
+    // `config.cargar()` NO es redundante aunque la cola ya lo haya llamado al
+    // arrancar: esa carga es asincrona y esta pantalla puede ganarle la
+    // carrera, leer los valores por defecto todavia en null y no
+    // pre-seleccionar nada. Es idempotente.
+    await this.config.cargar();
     await this.bootstrap.cargar();
     this.fechaLocal.set(this.fechas.ahoraLocal());
     this.fincas = await this.catalogo.fincas();
     this.cultivos = await this.catalogo.cultivos();
-    // Con una sola finca no tiene sentido preguntar.
-    if (this.fincas.length === 1) {
-      this.finca.set({ id: this.fincas[0].id, nombre: this.fincas[0].nombre });
+
+    // Finca por defecto de Configuración; si hay una sola, tampoco tiene
+    // sentido preguntar.
+    const porDefecto = this.config.defaultFincaId();
+    const f =
+      (porDefecto !== null ? this.fincas.find((x) => x.id === porDefecto) : undefined) ??
+      (this.fincas.length === 1 ? this.fincas[0] : undefined);
+    if (f) {
+      this.finca.set({ id: f.id, nombre: f.nombre });
+    }
+
+    // Cultivo por defecto: se aplica a la primera tarea y lo hereda cada
+    // tarea nueva, porque la precarga arrastra el cultivo.
+    const cid = this.config.defaultCultivoId();
+    const c =
+      (cid !== null ? this.cultivos.find((x) => x.id === cid) : undefined) ??
+      (this.cultivos.length === 1 ? this.cultivos[0] : undefined);
+    if (c) {
+      this.actualizarTarea(0, (t) => ({ ...t, cultivo: { id: c.id, nombre: c.nombre } }));
     }
   }
 
@@ -387,7 +412,7 @@ export class AmPage implements OnInit {
       'Tarea',
       tareas,
       t.tarea ? [t.tarea.id] : [],
-      'Este cultivo no tiene tareas activas.',
+      'Este cultivo no tiene tareas con subtareas en esta finca.',
     );
   }
 
@@ -483,10 +508,18 @@ export class AmPage implements OnInit {
         // Cambiar de finca invalida lotes, módulos y personal ya elegidos:
         // el servidor rechaza un lote que no es de la finca declarada.
         if (antes !== undefined && antes !== refs[0]?.id) {
+          // Las subtareas tambien son por finca, asi que caen con el resto.
           this.tareas.set(
-            this.tareas().map((t) => ({ ...t, lote: null, modulos: [], personal: [] })),
+            this.tareas().map((t) => ({
+              ...t,
+              lote: null,
+              modulos: [],
+              personal: [],
+              tarea: null,
+              subtarea: null,
+            })),
           );
-          await this.aviso('Cambió la finca: se limpiaron lotes, módulos y personal.');
+          await this.aviso('Cambió la finca: se limpiaron lote, tarea, subtarea y personal.');
         }
         await this.validarResponsable();
         break;
@@ -650,17 +683,21 @@ export class AmPage implements OnInit {
   }
 
   private async tareasDe(cultivoId: number): Promise<OpcionCatalogo[]> {
-    if (!this.tareasPorCultivo.has(cultivoId)) {
-      this.tareasPorCultivo.set(cultivoId, await this.catalogo.tareasDeCultivo(cultivoId));
+    const fincaId = this.finca()?.id ?? null;
+    const clave = `${cultivoId}|${fincaId}`;
+    if (!this.tareasPorCultivo.has(clave)) {
+      this.tareasPorCultivo.set(clave, await this.catalogo.tareasDeCultivo(cultivoId, fincaId));
     }
-    return this.tareasPorCultivo.get(cultivoId)!;
+    return this.tareasPorCultivo.get(clave)!;
   }
 
   private async subtareasDe(tareaId: number): Promise<Subtarea[]> {
-    if (!this.subtareasPorTarea.has(tareaId)) {
-      this.subtareasPorTarea.set(tareaId, await this.catalogo.subtareasDeTarea(tareaId));
+    const fincaId = this.finca()?.id ?? null;
+    const clave = `${tareaId}|${fincaId}`;
+    if (!this.subtareasPorTarea.has(clave)) {
+      this.subtareasPorTarea.set(clave, await this.catalogo.subtareasDeTarea(tareaId, fincaId));
     }
-    return this.subtareasPorTarea.get(tareaId)!;
+    return this.subtareasPorTarea.get(clave)!;
   }
 
   private abrir(

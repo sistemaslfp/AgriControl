@@ -151,6 +151,16 @@
           <p>{{ t.lote?.nombre ?? 'Sin elegir' }}</p>
         </ion-label>
       </ion-item>
+      @if (t.lote?.tieneModulos) {
+        <ion-item button="true" detail="true" (click)="abrirModulos(i)">
+          <ion-label>
+            Módulos
+            <p>
+              {{ t.modulos.length ? t.modulos.length + ' seleccionado(s)' : 'Sin elegir' }}
+            </p>
+          </ion-label>
+        </ion-item>
+      }
       <!-- Cascada Cultivo -> Tarea -> Subtarea: la subtarea queda apagada
            hasta que haya tarea, y se ve por qué. -->
       <ion-item button="true" detail="true" [disabled]="!t.cultivo" (click)="abrirTarea(i)">
@@ -165,16 +175,6 @@
           <p>{{ t.subtarea?.nombre ?? (t.tarea ? 'Sin elegir' : 'Elegí primero la tarea') }}</p>
         </ion-label>
       </ion-item>
-      @if (t.lote?.tieneModulos) {
-        <ion-item button="true" detail="true" (click)="abrirModulos(i)">
-          <ion-label>
-            Módulos
-            <p>
-              {{ t.modulos.length ? t.modulos.length + ' seleccionado(s)' : 'Sin elegir' }}
-            </p>
-          </ion-label>
-        </ion-item>
-      }
     </ion-list>
 
     <h3 class="titulo-seccion">Personal</h3>

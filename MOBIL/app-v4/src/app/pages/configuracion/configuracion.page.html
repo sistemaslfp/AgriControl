@@ -93,6 +93,53 @@
     <ion-button expand="block" (click)="guardar()">Guardar</ion-button>
   </div>
 
+  <!-- ================= Valores por defecto ================= -->
+  <h2 class="titulo-seccion">Valores por defecto</h2>
+  <ion-list inset="true">
+    <ion-item button="true" detail="true" (click)="abrirFincaDefecto()">
+      <ion-label>
+        Finca
+        <p>{{ fincaDefecto()?.nombre ?? 'Se elige en cada registro' }}</p>
+      </ion-label>
+      @if (fincaDefecto()) {
+        <ion-button
+          slot="end"
+          fill="clear"
+          color="medium"
+          (click)="limpiarFincaDefecto(); $event.stopPropagation()"
+          aria-label="Quitar la finca por defecto"
+        >
+          <ion-icon slot="icon-only" name="close-outline"></ion-icon>
+        </ion-button>
+      }
+    </ion-item>
+    <ion-item button="true" detail="true" (click)="abrirCultivoDefecto()">
+      <ion-label>
+        Cultivo
+        <p>{{ cultivoDefecto()?.nombre ?? 'Se elige en cada registro' }}</p>
+      </ion-label>
+      @if (cultivoDefecto()) {
+        <ion-button
+          slot="end"
+          fill="clear"
+          color="medium"
+          (click)="limpiarCultivoDefecto(); $event.stopPropagation()"
+          aria-label="Quitar el cultivo por defecto"
+        >
+          <ion-icon slot="icon-only" name="close-outline"></ion-icon>
+        </ion-button>
+      }
+    </ion-item>
+    <ion-item lines="none">
+      <ion-note>
+        Un equipo suele quedarse en la misma finca y el mismo cultivo toda la
+        temporada. Fijarlos acá los deja pre-elegidos en AM y en PM: ahorra dos
+        toques por tarea y evita cargar en la finca equivocada. Se pueden
+        cambiar en cada registro.
+      </ion-note>
+    </ion-item>
+  </ion-list>
+
   <!-- ================= Limpieza ================= -->
   <h2 class="titulo-seccion">Limpieza de datos locales</h2>
 
@@ -140,3 +187,21 @@
     </p>
   }
 </ion-content>
+
+<ion-modal
+  class="selector-flotante"
+  [style.--height]="alturaSelector()"
+  [isOpen]="selectorAbierto()"
+  (ionModalDidDismiss)="cerrarSelector()"
+>
+  <ng-template>
+    <app-selector
+      [titulo]="selectorTitulo()"
+      [opciones]="selectorOpciones()"
+      [seleccion]="selectorSeleccion()"
+      vacioTexto="Descargá primero los maestros desde el menú."
+      (confirmar)="onSeleccion($event)"
+      (cerrar)="cerrarSelector()"
+    ></app-selector>
+  </ng-template>
+</ion-modal>

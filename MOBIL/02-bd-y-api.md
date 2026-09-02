@@ -766,6 +766,57 @@ Validaciones que la FK sola no puede hacer y el endpoint sí:
 Tope de lote: 200 registros (413 si se pasa). Body ilegible: 400. Todo lo demás
 responde 200 con su `results`.
 
+### Por qué `reg_am_modulo` es una tabla y no una columna con comas
+
+Planteo de Kevin (2026-09-02): una tabla hija para los módulos es redundante y
+desperdicio de recursos, cuando V3 resolvía lo mismo con
+`z_tabla_am.modulos = "2,3"` — y es cierto que una tarea puede tener varios
+módulos y que la coma sirve de separador.
+
+**El problema no es guardar la lista, es que nada la vigila.** Medido sobre la
+base real, no sobre una opinión:
+
+| en `z_tabla_am` (113.410 filas) | cuántas |
+|---|---|
+| filas cuyo CSV apunta a un módulo que **ya no existe** en `z_modulo` | **3.119 (2,75 %)** |
+| filas cuyo módulo existe pero **pertenece a otro lote** | **16** |
+| filas que declaran 8 o 9 módulos, cuando ningún lote tiene más de 7 | 57 |
+
+Los 3.119 no son módulos desactivados: los ids (38, 49, 50, 53–62…) **no están
+en `z_modulo` con ningún estado**. Se borraron, y el `VARCHAR` no tenía cómo
+impedirlo. Con `reg_am_modulo` ese `DELETE` habría fallado contra el FK.
+
+Los 16 son la otra mitad: `Riego_model::isValidModule()` existe y comprueba que
+el módulo pertenezca al lote, pero solo lo llama Riego. AM y PM nunca lo
+llamaron. Una regla que vive en un modelo y se aplica en un módulo de tres no
+es una regla.
+
+Lo que sí era correcto del reclamo es el **costo**, y se atendió: estas tablas
+no necesitaban un `id` propio — nadie las referencia por id y la pareja ya era
+`UNIQUE`. Al volverla `PRIMARY KEY` desaparece un índice entero.
+`reg_am_modulo` pasó de **80 KB a 48 KB** con las mismas 505 filas (−40 %);
+proyectado a la historia completa (~222.000 filas), de ~34 MB a ~20 MB.
+Migración: `docs/db/migrations/2026-09-02-01-modulos-clave-natural.sql`.
+
+Hoy, con solo la ventana de agosto migrada, la tabla ocupa **48 KB**.
+
+**Dónde el reclamo sigue en pie:** `reg_pm_modulo` quedó redundante desde que
+el PM cierra un AM — sus módulos son derivables por `am_personal_id`. No se
+borra porque las 496 filas migradas de agosto no tienen AM del cual
+derivarlos, y porque el reporte de pago lee `reg_pm` directo: hacerlo pasar por
+tres joins para pintar un módulo es peor negocio que 48 KB. Queda anotado.
+
+### `GET /v4/catalogos`: las subtareas viajan con `id_finca`
+
+`z_subtarea.id_finca` existía y no se estaba usando. Cada finca tiene su propio
+juego: **78 subtareas activas en Bellita y 21 en Pacaritambo**. La app filtra
+por finca — y también las tareas, mostrando solo las que tienen al menos una
+subtarea de esa finca, para que nadie elija una tarea y se encuentre la lista
+de subtareas vacía.
+
+`z_tarea` **no** tiene finca; el corte por finca solo se puede hacer desde la
+subtarea hacia arriba.
+
 ### `POST /v4/sync` con `tipo: pm` — el PM CIERRA un AM (2026-09-01)
 
 Decisión de Kevin: **"NO se pueden crear PM, un PM solo es el reflejo de un

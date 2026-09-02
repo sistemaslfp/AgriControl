@@ -80,8 +80,8 @@ export class CatalogService {
         }
         for (const s of data.subtareas) {
           await db.run(
-            'INSERT INTO cat_subtarea (id, codigo, nombre, tarea_id, unidad_labor_id, tipo_pago_id) VALUES (?, ?, ?, ?, ?, ?);',
-            [s.id, s.codigo, s.nombre, s.tarea_id, s.unidad_labor_id, s.tipo_pago_id], false);
+            'INSERT INTO cat_subtarea (id, codigo, nombre, tarea_id, id_finca, unidad_labor_id, tipo_pago_id) VALUES (?, ?, ?, ?, ?, ?, ?);',
+            [s.id, s.codigo, s.nombre, s.tarea_id, s.id_finca, s.unidad_labor_id, s.tipo_pago_id], false);
         }
         for (const u of data.ulabores) {
           await db.run('INSERT INTO cat_ulabor (id, nombre) VALUES (?, ?);',

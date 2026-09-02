@@ -76,7 +76,13 @@ Acordeón: `Horario de Ingreso`, `Restricción de Finca`, `Cosecha de Cacao`,
   **Riesgo real**: nada impide borrar registros PENDIENTES no sincronizados.
   Corrección: bloquear el borrado si hay pendientes de ese tipo, con el conteo
   a la vista, y exigir confirmación escrita.
-- **Restricción de Finca** — sin captura. **[CONFIRMAR]** qué hace.
+- **Valores por defecto** (2026-09-02) — `Finca` y `Cultivo`. Un equipo se
+  queda en la misma finca y el mismo cultivo toda la temporada: fijarlos acá
+  los deja pre-elegidos en AM y en PM, ahorra dos toques por tarea y sobre todo
+  evita el error de cargar en la finca equivocada. Se pueden vaciar con la ✕ y
+  se pueden cambiar dentro de cada registro.
+  Esto es, con mucha probabilidad, lo que era la **"Restricción de Finca"** de
+  la app vieja (pendiente #8), de la que no había captura ni explicación.
 
 ---
 
@@ -99,6 +105,16 @@ mezclada con el lote "0", que existe de verdad.
 apagada hasta que haya tarea, y entonces muestra solo las de esa tarea: sin ese
 corte, un cultivo vuelca decenas de subtareas sueltas en una sola lista.
 **Los códigos de tarea y subtarea no se muestran**: son control interno.
+
+**Tareas y subtareas se filtran además por finca** (2026-09-02).
+`z_subtarea.id_finca` existía sin usarse, y cada finca tiene su propio juego:
+78 subtareas en Bellita y 21 en Pacaritambo. Las tareas se filtran a las que
+tienen al menos una subtarea de esa finca — `z_tarea` no tiene finca, así que
+el corte sale desde abajo. Sin esto se puede elegir una tarea y encontrarse la
+lista de subtareas vacía.
+
+**`Módulos` va justo debajo de `Lote`** (2026-09-02): es una subdivisión del
+lote, y leerlo en cualquier otro lugar del formulario no tiene sentido.
 
 - El selector de Responsable/Personal era un **action sheet** con la lista
   completa y `Cancelar`. Con ~1.100 personas eso necesitaba buscador y filtro.

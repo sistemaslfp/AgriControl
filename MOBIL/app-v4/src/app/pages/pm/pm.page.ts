@@ -229,13 +229,23 @@ export class PmPage implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
+    // `config.cargar()` NO es redundante aunque la cola ya lo haya llamado al
+    // arrancar: esa carga es asincrona y esta pantalla puede ganarle la
+    // carrera, leer los valores por defecto todavia en null y no
+    // pre-seleccionar nada. Es idempotente.
+    await this.config.cargar();
     await this.bootstrap.cargar();
     const ahora = this.fechas.ahoraLocal();
     this.fecha.set(ahora.slice(0, 10));
     this.horaCierre.set(ahora.slice(11, 16));
     this.fincas = await this.catalogo.fincas();
-    if (this.fincas.length === 1) {
-      this.finca.set({ id: this.fincas[0].id, nombre: this.fincas[0].nombre });
+    // Finca por defecto de Configuración; si hay una sola, tampoco se pregunta.
+    const porDefecto = this.config.defaultFincaId();
+    const f =
+      (porDefecto !== null ? this.fincas.find((x) => x.id === porDefecto) : undefined) ??
+      (this.fincas.length === 1 ? this.fincas[0] : undefined);
+    if (f) {
+      this.finca.set({ id: f.id, nombre: f.nombre });
     }
     await this.cargarLista();
   }
