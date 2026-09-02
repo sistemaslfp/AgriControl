@@ -73,25 +73,25 @@ export class AsignacionesService {
   private readonly catalogo = inject(CatalogQueryService);
 
   /** Se llama al encolar cada tarea AM, con el guid ya asignado. */
+  /**
+   * Un registro = una persona. El guid identifica a esa persona en esa tarea,
+   * y es el mismo `am_guid` con el que el cierre la va a encontrar.
+   */
   async registrarAm(
     guid: string,
     fecha: string,
     loteId: number,
     subtareaId: number,
-    personalIds: number[],
+    personalId: number,
     moduloIds: number[] = [],
   ): Promise<void> {
     const db = await this.database.abrir();
-    const ahora = new Date().toISOString();
-    const modulos = moduloIds.join(',');
-    for (const pid of new Set(personalIds)) {
-      await db.run(
-        `INSERT OR REPLACE INTO am_persona_local
-           (guid, personal_id, fecha, lote_id, subtarea_id, created_at, modulos)
-         VALUES (?, ?, ?, ?, ?, ?, ?);`,
-        [guid, pid, fecha, loteId, subtareaId, ahora, modulos],
-      );
-    }
+    await db.run(
+      `INSERT OR REPLACE INTO am_persona_local
+         (guid, personal_id, fecha, lote_id, subtarea_id, created_at, modulos)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [guid, personalId, fecha, loteId, subtareaId, new Date().toISOString(), moduloIds.join(',')],
+    );
     await this.database.persistir();
   }
 

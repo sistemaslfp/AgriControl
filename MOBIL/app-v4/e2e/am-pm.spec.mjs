@@ -303,14 +303,19 @@ ok('13 dos tareas AM = dos registros con guid propio', am.length === 2 && am[0].
 const pa = am[0]?.payload ?? {};
 ok(
   '14 el payload AM trae los campos que exige sync_am',
-  ['fecha_proceso', 'finca_id', 'responsable_id', 'cultivo_id', 'lote_id', 'subtarea_id',
-   'modulo_ids', 'personal_ids'].every((k) => k in pa),
+  ['captura_guid', 'fecha_proceso', 'finca_id', 'responsable_id', 'cultivo_id', 'lote_id',
+   'subtarea_id', 'modulo_ids', 'personal_id'].every((k) => k in pa),
   JSON.stringify(Object.keys(pa)),
 );
 ok('15 finca, lote y subtarea viajan como enteros', pa.finca_id === 1 && pa.lote_id === 1 && pa.subtarea_id === 88,
   JSON.stringify({ f: pa.finca_id, l: pa.lote_id, s: pa.subtarea_id }));
-ok('16 personal_ids nunca viaja vacío', Array.isArray(pa.personal_ids) && pa.personal_ids.length > 0,
-  JSON.stringify(pa.personal_ids));
+// Un registro = una persona: personal_id en singular, y nunca vacio.
+ok('16 personal_id viaja en singular', typeof pa.personal_id === 'number' && pa.personal_id > 0,
+  String(pa.personal_id));
+ok('16b las personas de la misma captura comparten captura_guid',
+  am.every((r) => r.payload.captura_guid === am[0].payload.captura_guid) &&
+    !('personal_ids' in pa),
+  JSON.stringify(am.map((r) => r.payload.captura_guid)));
 ok('17 modulo_ids trae el módulo del lote', JSON.stringify(pa.modulo_ids) === '[2]', JSON.stringify(pa.modulo_ids));
 // sync_fecha() hace new DateTime($valor): sin offset lo interpreta en la zona
 // del SERVIDOR y corre la hora de proceso sin que nadie lo note.

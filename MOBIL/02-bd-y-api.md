@@ -766,47 +766,139 @@ Validaciones que la FK sola no puede hacer y el endpoint sí:
 Tope de lote: 200 registros (413 si se pasa). Body ilegible: 400. Todo lo demás
 responde 200 con su `results`.
 
-### Por qué `reg_am_modulo` es una tabla y no una columna con comas
+### Un registro = una PERSONA en una tarea (2026-09-03)
 
-Planteo de Kevin (2026-09-02): una tabla hija para los módulos es redundante y
-desperdicio de recursos, cuando V3 resolvía lo mismo con
-`z_tabla_am.modulos = "2,3"` — y es cierto que una tarea puede tener varios
-módulos y que la coma sirve de separador.
+Dos decisiones de Kevin, en el mismo día:
 
-**El problema no es guardar la lista, es que nada la vigila.** Medido sobre la
-base real, no sobre una opinión:
+1. **"PM se vuelve redundante si lo manejamos como un update para AM."**
+2. **"Cada fila de AM va por persona; la acumulación `Personal(2,5,54)` es del
+   front, no de la base."**
 
-| en `z_tabla_am` (113.410 filas) | cuántas |
+Las dos eran correctas. La objeción que yo había puesto a la primera —que la
+cola es solo-inserción y un UPDATE necesita su propia historia de
+idempotencia— **tiene respuesta y es simple**: el guid del cierre se guarda
+**en la fila que cierra** (`reg_am.cierre_guid`).
+
+- mismo guid → `duplicate`
+- otro guid sobre una fila ya cerrada → `rejected`
+- la programación todavía no llegó → se omite de `results`, queda PENDIENTE y
+  se reintenta
+
+Las mismas garantías que tenía el INSERT. Y el `UPDATE` lleva
+`AND cierre_guid IS NULL` en el `WHERE`: dos equipos cerrando la misma tarea a
+la vez no necesitan transacción — uno actualiza una fila y el otro cero.
+
+Mi objeción a la segunda apuntaba a otra cosa: a meter a las personas en una
+**columna con comas**. Ahí sí se pierden cierres, porque cerrar a una persona
+obliga a reescribir la cadena entera. **Una fila por persona es lo contrario**
+y no tiene ese problema.
+
+| antes | ahora |
 |---|---|
-| filas cuyo CSV apunta a un módulo que **ya no existe** en `z_modulo` | **3.119 (2,75 %)** |
-| filas cuyo módulo existe pero **pertenece a otro lote** | **16** |
-| filas que declaran 8 o 9 módulos, cuando ningún lote tiene más de 7 | 57 |
+| `reg_am` — `reg_am_personal` — `reg_pm` (+ `reg_am_modulo`, `reg_pm_modulo`) | `reg_am`, y nada más |
 
-Los 3.119 no son módulos desactivados: los ids (38, 49, 50, 53–62…) **no están
-en `z_modulo` con ningún estado**. Se borraron, y el `VARCHAR` no tenía cómo
-impedirlo. Con `reg_am_modulo` ese `DELETE` habría fallado contra el FK.
+Es la forma de `z_tabla_am`, que también lleva un `personal_id` por fila. La
+cabecera se repite por persona — 49 copias en la tarea más grande del
+histórico — y está bien: `z_tabla_am` hace exactamente eso con 113.410 filas y
+ocupa 8,7 MB.
 
-Los 16 son la otra mitad: `Riego_model::isValidModule()` existe y comprueba que
-el módulo pertenezca al lote, pero solo lo llama Riego. AM y PM nunca lo
-llamaron. Una regla que vive en un modelo y se aplica en un módulo de tres no
-es una regla.
+`reg_am` gana `personal_id`, `modulos` (lista con comas), las diez columnas del
+cierre, y **`captura_guid`**: el guid del formulario, que comparten las N
+personas capturadas juntas. Sin él no hay forma de saber qué filas salieron de
+la misma captura, que es lo que "Registros Enviados" necesita para mostrar una
+tarjeta y no cinco.
 
-Lo que sí era correcto del reclamo es el **costo**, y se atendió: estas tablas
-no necesitaban un `id` propio — nadie las referencia por id y la pareja ya era
-`UNIQUE`. Al volverla `PRIMARY KEY` desaparece un índice entero.
-`reg_am_modulo` pasó de **80 KB a 48 KB** con las mismas 505 filas (−40 %);
-proyectado a la historia completa (~222.000 filas), de ~34 MB a ~20 MB.
-Migración: `docs/db/migrations/2026-09-02-01-modulos-clave-natural.sql`.
+Migración: `docs/db/migrations/2026-09-03-01-fusion-pm-en-am.sql`. Reemplaza a
+`2026-09-01-01-pm-cierra-am.sql` y a la mitad de
+`2026-09-02-01-modulos-clave-natural.sql`; **las dos ya estaban aplicadas en
+producción, así que parte de ese estado. No se borran del repositorio**: una
+migración aplicada que se borra deja un esquema que ya nadie puede reproducir
+desde cero.
 
-Hoy, con solo la ventana de agosto migrada, la tabla ocupa **48 KB**.
+Corrida contra la copia real, partiendo del mismo estado que producción:
 
-**Dónde el reclamo sigue en pie:** `reg_pm_modulo` quedó redundante desde que
-el PM cierra un AM — sus módulos son derivables por `am_personal_id`. No se
-borra porque las 496 filas migradas de agosto no tienen AM del cual
-derivarlos, y porque el reporte de pago lee `reg_pm` directo: hacerlo pasar por
-tres joins para pintar un módulo es peor negocio que 48 KB. Queda anotado.
+| | |
+|---|---|
+| filas de `reg_am` | 367 AM + 529 asignaciones → **550** |
+| cerradas / abiertas | **495 / 55** |
+| capturas distintas | **367** |
+| programaciones deducidas (`origen='mig-pm'`) | **21** |
+| `vw_reg_reporte_pago` de agosto | **495 filas, 79.298,40 en cantidad, 15.091,66 en total** |
 
-### `GET /v4/catalogos`: las subtareas viajan con `id_finca`
+Ese último renglón es idéntico a lo que devuelve `vw_reporte_pago` desde
+`z_tabla_pm`. **La nómina de agosto no se movió ni un centavo.**
+
+**Los 21 avances sin programación**: se les creó la fila completa, con
+`origen = 'mig-pm'` y un comentario que lo dice. En V3 el PM era prácticamente
+una copia del AM con más datos, así que la mañana se reconstruye del propio
+avance. El modelo queda simétrico desde el 1 de agosto, sin excepciones.
+
+**La primera persona de cada tarea conserva el guid original**; solo las demás
+reciben uno nuevo. Si un teléfono alguna vez reenvía ese guid, sigue siendo
+idempotente contra la fila que le corresponde.
+
+Contrato de `POST /v4/sync`, ahora:
+
+```json
+{ "tipo": "am",
+  "payload": { "captura_guid": "…", "fecha_proceso": "…", "finca_id": 1,
+               "responsable_id": 26, "cultivo_id": 1, "lote_id": 2,
+               "subtarea_id": 65, "modulo_ids": [3,8,25],
+               "personal_id": 4, "comentario": "" } }
+
+{ "tipo": "pm",
+  "payload": { "am_guid": "…", "trabajador_id": 4, "responsable_id": 26,
+               "cantidad": 2.5, "hora_cierre": "…", "comentario": "" } }
+```
+
+`trabajador_id` en el cierre es redundante —la fila ya sabe de quién es— pero
+si viene tiene que coincidir: es la red que atrapa un `am_guid` mal copiado
+antes de escribir el avance en la persona equivocada.
+
+Probado con `curl` contra la base real, partiendo del estado de producción:
+
+| caso | resultado |
+|---|---|
+| captura de 2 personas | 2 `created`, mismo `captura_guid`, `modulos` = `3,8,25` |
+| AM sin `personal_id` | `rejected` |
+| AM con un módulo de otro lote | `rejected` |
+| cierre válido | `created` |
+| el mismo guid otra vez | `duplicate` |
+| otro guid sobre la misma tarea | `rejected` |
+| `trabajador_id` que no es el de la fila | `rejected` |
+| `am_guid` que el servidor no conoce | **omitido** → sigue PENDIENTE |
+| cierre de la segunda persona de la misma captura | `created`, **no pisa a la primera** |
+
+Cero filas fantasma tras los rechazos, y el cuadre de agosto intacto.
+
+### Los módulos pasan a ser una columna (2026-09-03)
+
+`reg_am_modulo` desaparece; `reg_am.modulos` es una lista separada por comas,
+ordenada y sin repetidos (`3,8,25`), igual que `z_tabla_am.modulos`.
+
+El argumento con el que yo defendía la tabla era real: **3.119 filas de
+`z_tabla_am` (2,75 %) apuntan a módulos que ya no existen** en `z_modulo` con
+ningún estado, y 16 apuntan a un módulo de otro lote. Pero el diagnóstico
+estaba incompleto: eso no lo causa el `VARCHAR`, lo causa que **se podían
+borrar módulos**. `application/controllers/Modulo.php` dejaba borrar al grupo
+admin, aunque la tabla ya tiene `estado` Activo/Inactivo. **Se quitó el borrado
+para todos** — la baja se hace desactivando.
+
+Con eso, y con `sync_am` validando en la escritura que cada módulo pertenezca
+al lote declarado (que cubre las otras 16), la columna queda tan sana como la
+tabla para datos nuevos.
+
+Lo que se resigna, dicho sin adornos: un `DELETE` por SQL directo sigue
+pudiendo dejar ids colgando, y una FK lo habría impedido. En este servidor eso
+no es teórico — había un Adminer expuesto por HTTP hasta el 28 de agosto.
+
+**Corrección de una cifra que di mal:** dije que 57 filas declaraban 8 o 9
+módulos "cuando ningún lote tiene más de 7", como si fuera un tercer problema.
+No lo es. Los valores son `40,3,8,12,17,21,25,28` (lote 2) y
+`41,51,4,9,13,18,22,26,29` (lote 3): los 7 módulos reales del lote **más los
+ids borrados**. Es el mismo caso de los 3.119, contado dos veces.
+
+### `GET /v4/catalogos`: las subtareas viajan con `id_finca`### `GET /v4/catalogos`: las subtareas viajan con `id_finca`### `GET /v4/catalogos`: las subtareas viajan con `id_finca`
 
 `z_subtarea.id_finca` existía y no se estaba usando. Cada finca tiene su propio
 juego: **78 subtareas activas en Bellita y 21 en Pacaritambo**. La app filtra
@@ -842,7 +934,9 @@ PM con un lote distinto al del AM y nadie se enteraba.
 programó. Si falta, se hereda del AM.
 
 **La regla que hace que esto funcione offline: si el AM todavía no llegó al
-servidor, el guid del PM se OMITE de `results`.** El teléfono lo deja
+servidor, el guid del PM se OMITE de `results`.** (Desde el 2026-09-03 el PM
+no inserta nada: actualiza la fila de `reg_asignacion`. El contrato del payload
+no cambió.) El teléfono lo deja
 PENDIENTE y lo reintenta solo. Es el mismo mecanismo del guid omitido, sin
 nada nuevo, y pasa siempre que el AM y su PM viajan en lotes distintos.
 

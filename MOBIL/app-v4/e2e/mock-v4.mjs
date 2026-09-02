@@ -58,8 +58,9 @@ const server = http.createServer((req, res) => {
     let n = 1;
     for (const [guid, am] of amRecibidos) {
       if (!String(am.payload.fecha_proceso).startsWith(fecha)) continue;
-      for (const pid of am.payload.personal_ids ?? []) {
-        if (cerradas.has(`${guid}|${pid}`)) continue;
+      // Un registro = una persona: el AM ya trae personal_id en singular.
+      for (const pid of [am.payload.personal_id]) {
+        if (!pid || cerradas.has(`${guid}|${pid}`)) continue;
         asignaciones.push({
           am_personal_id: n++, am_guid: guid, am_id: am.id,
           fecha_proceso: am.payload.fecha_proceso,
@@ -158,7 +159,7 @@ const server = http.createServer((req, res) => {
           // regla del servidor de verdad.
           const am = r.payload?.am_guid ? amRecibidos.get(r.payload.am_guid) : null;
           if (!am) continue;
-          const k = `${r.payload.am_guid}|${r.payload.trabajador_id}`;
+          const k = `${r.payload.am_guid}|${am.payload.personal_id}`;
           if (cerradas.has(k)) {
             rs.push({ guid: r.guid, status: 'rejected', reason: 'esa asignacion AM ya fue cerrada' });
             continue;

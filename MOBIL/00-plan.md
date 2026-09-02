@@ -143,7 +143,44 @@ razonablemente era: **valores por defecto de Finca y Cultivo en Configuración**
 que quedan pre-elegidos en AM y PM y se pueden cambiar en cada registro. Si
 aparece que la original hacía otra cosa, se revisa.
 
-**#Módulos (2026-09-02, Kevin planteó, se sostuvo con datos).** Kevin propuso
+**#Modelo (2026-09-03, Kevin). Un registro = una PERSONA en una tarea.**
+`reg_am` es la única tabla: lleva la programación de la mañana, la persona, y
+el cierre de la tarde en la misma fila. Desaparecen `reg_am_personal`,
+`reg_pm`, `reg_pm_modulo` y `reg_am_modulo`. Es la forma de `z_tabla_am`.
+
+- **La objeción que yo había puesto al PM-como-UPDATE tenía respuesta**: el
+  guid del cierre se guarda en la fila que cierra (`cierre_guid`), y el UPDATE
+  lleva `AND cierre_guid IS NULL`. Mismas garantías que el INSERT, y dos
+  equipos cerrando a la vez no se pisan.
+- Mi objeción a "personas en una columna" seguía en pie —cerrar a una persona
+  obligaría a reescribir la cadena y se perderían avances— pero **una fila por
+  persona es lo contrario de eso** y no tiene el problema.
+- `captura_guid` conserva qué filas salieron del mismo formulario, que es lo
+  que "Enviados" necesita.
+- Migración `2026-09-03-01-fusion-pm-en-am.sql`, corrida contra la copia real
+  desde el estado de producción: 550 filas, 495 cerradas, 21 programaciones
+  deducidas de avances sin AM, y **`vw_reg_reporte_pago` de agosto da 495
+  filas / 79.298,40 / 15.091,66 — idéntico a `vw_reporte_pago` desde
+  `z_tabla_pm`.**
+- Las migraciones ya aplicadas **no se borran**: la nueva las reemplaza y parte
+  de ese estado. Borrar una migración aplicada deja un esquema que nadie puede
+  reproducir desde cero.
+
+**#Módulos (2026-09-02→03, Kevin planteó, se resolvió con el diagnóstico
+correcto).** `reg_am_modulo` desaparece: los módulos son una columna con comas.
+Mi defensa de la tabla se apoyaba en 3.119 filas rotas de `z_tabla_am`, y el
+dato era cierto pero el diagnóstico incompleto: **eso no lo causa el VARCHAR,
+lo causa que se podían borrar módulos**. `Modulo.php` dejaba borrar al grupo
+admin aunque la tabla ya tiene `estado` Activo/Inactivo; **se quitó el borrado
+para todos**. Con eso más la validación de `sync_am` (módulo ∈ lote, que cubre
+las otras 16 filas), la columna queda tan sana como la tabla. Queda resignado
+que un `DELETE` por SQL directo pueda dejar ids colgando.
+
+**Corrección:** dije que 57 filas declaraban "8 o 9 módulos cuando ningún lote
+tiene más de 7", como si fuera un problema aparte. No lo es: son los 7 módulos
+reales del lote más los ids ya borrados. El mismo caso de los 3.119.
+
+**#Módulos, el reclamo del costo (2026-09-02).** Kevin propuso
 reemplazar `reg_am_modulo` por una columna con comas, como `z_tabla_am.modulos`.
 **Se mantiene la tabla**, con esta evidencia sobre la base real: **3.119 filas
 de `z_tabla_am` (2,75 %) apuntan a módulos que ya no existen** en `z_modulo` con

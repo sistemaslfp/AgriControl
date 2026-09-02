@@ -629,37 +629,50 @@ export class AmPage implements OnInit {
     }
 
     this.guardando.set(true);
+    // El guid de la captura: lo comparten todos los registros de este
+    // formulario. Es lo único que permite volver a juntarlos después, en
+    // "Enviados", para mostrar una tarjeta y no una por persona.
+    const capturaGuid = crypto.randomUUID();
     const guids: string[] = [];
     try {
       for (const t of this.tareas()) {
-        const payload = {
-          fecha_proceso: this.fechas.conOffset(this.fechaLocal()),
-          finca_id: this.finca()!.id,
-          responsable_id: this.responsable()!.id,
-          cultivo_id: t.cultivo!.id,
-          lote_id: t.lote!.id,
-          subtarea_id: t.subtarea!.id,
-          modulo_ids: t.modulos.map((m) => m.id),
-          personal_ids: t.personal.map((p) => p.id),
-          comentario: this.comentarioFinal(t.comentario),
-        };
-        const guid = await this.cola.enqueue('am', payload);
-        guids.push(guid);
-        await this.asignaciones.registrarAm(
-          guid,
-          fecha,
-          t.lote!.id,
-          t.subtarea!.id,
-          t.personal.map((p) => p.id),
-          t.modulos.map((m) => m.id),
-        );
+        // **Un registro por PERSONA**, no por tarea. Cada uno viaja con su
+        // propio guid y recibe su propio ACK: si el servidor rechaza a una
+        // persona, las demás entran igual. La acumulación de personal es de
+        // esta pantalla; en la base cada una es su propia fila.
+        for (const persona of t.personal) {
+          const payload = {
+            captura_guid: capturaGuid,
+            fecha_proceso: this.fechas.conOffset(this.fechaLocal()),
+            finca_id: this.finca()!.id,
+            responsable_id: this.responsable()!.id,
+            cultivo_id: t.cultivo!.id,
+            lote_id: t.lote!.id,
+            subtarea_id: t.subtarea!.id,
+            modulo_ids: t.modulos.map((m) => m.id),
+            personal_id: persona.id,
+            comentario: this.comentarioFinal(t.comentario),
+          };
+          const guid = await this.cola.enqueue('am', payload);
+          guids.push(guid);
+          await this.asignaciones.registrarAm(
+            guid,
+            fecha,
+            t.lote!.id,
+            t.subtarea!.id,
+            persona.id,
+            t.modulos.map((m) => m.id),
+          );
+        }
       }
     } finally {
       this.guardando.set(false);
     }
 
     await this.aviso(
-      `${guids.length} tarea(s) AM guardada(s) en el equipo. Se envían solas cuando haya red.`,
+      `${guids.length} registro(s) guardado(s) en el equipo ` +
+        `(${this.tareas().length} tarea(s), ${this.totalPersonas()} persona(s)). ` +
+        'Se envían solos cuando haya red.',
     );
     await this.router.navigateByUrl('/menu');
   }

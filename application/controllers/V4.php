@@ -163,27 +163,26 @@ class V4 extends RestController
             // `nombre_subtarea` y z_ulabor en `ulabor_nombre`, no en `nombre`.
             // z_cultivo si usa `nombre`. La convencion esta mezclada en toda
             // la base; verificado contra el esquema real.
-            $db->select('ap.id AS am_personal_id, am.guid AS am_guid, am.id AS am_id,
+            $db->select('am.id AS am_personal_id, am.guid AS am_guid, am.id AS am_id,
                          am.fecha_proceso, am.finca_id, am.responsable_id,
                          am.cultivo_id, am.lote_id, am.subtarea_id,
-                         ap.personal_id, per.nombre AS trabajador,
+                         am.personal_id, per.nombre AS trabajador,
                          l.lote, c.nombre AS cultivo,
                          st.nombre_subtarea AS subtarea,
                          st.unidad_labor_id, u.ulabor_nombre AS unidad_labor,
                          (SELECT GROUP_CONCAT(zm.modulo ORDER BY zm.modulo SEPARATOR ", ")
-                            FROM reg_am_modulo ram
-                            JOIN z_modulo zm ON zm.id = ram.modulo_id
-                           WHERE ram.am_id = am.id) AS modulos', FALSE)
-               ->from('reg_am_personal ap')
-               ->join('reg_am am', 'am.id = ap.am_id')
-               ->join('z_personal per', 'per.id = ap.personal_id')
+                            FROM z_modulo zm
+                           WHERE FIND_IN_SET(zm.id, am.modulos)) AS modulos', FALSE)
+               ->from('reg_am am')
+               ->join('z_personal per', 'per.id = am.personal_id')
                ->join('z_lote l', 'l.id = am.lote_id', 'left')
                ->join('z_cultivo c', 'c.id = am.cultivo_id', 'left')
                ->join('z_subtarea st', 'st.id = am.subtarea_id', 'left')
                ->join('z_ulabor u', 'u.id = st.unidad_labor_id', 'left')
                ->where('DATE(am.fecha_proceso)', $fecha)
-               // La asignacion esta ABIERTA si nadie la cerro todavia.
-               ->where('NOT EXISTS (SELECT 1 FROM reg_pm pm WHERE pm.am_personal_id = ap.id)', NULL, FALSE);
+               // Abierta = todavia sin cierre. Ya no hace falta salir a otra
+               // tabla a preguntarlo: el cierre vive en la misma fila.
+               ->where('am.cierre_guid IS NULL', NULL, FALSE);
             if ($finca_id !== NULL) {
                 $db->where('am.finca_id', $finca_id);
             }
@@ -406,11 +405,18 @@ class V4 extends RestController
         if (!in_array($tipo, self::$SYNC_TIPOS, TRUE)) {
             return NULL;   // se queda PENDIENTE hasta que exista el tipo
         }
-        $tabla = ($tipo === 'am') ? 'reg_am' : 'reg_pm';
+        // El PM ya no es una tabla: es el cierre de la MISMA fila de reg_am, y
+        // su guid vive ahi, en `cierre_guid`. Eso es lo que vuelve al UPDATE
+        // tan idempotente como era el INSERT.
+        // Un registro = una persona en una tarea. La programacion de la
+        // manana y el cierre de la tarde son la MISMA fila de reg_am; lo que
+        // cambia es en que columna vive el guid.
+        $tabla    = 'reg_am';
+        $col_guid = ($tipo === 'am') ? 'guid' : 'cierre_guid';
 
-        // Idempotencia: el guid ya recibido no se vuelve a insertar.
+        // Idempotencia: el guid ya recibido no se vuelve a aplicar.
         try {
-            $ya = $db->select('id')->from($tabla)->where('guid', $guid)->limit(1)->get();
+            $ya = $db->select('id')->from($tabla)->where($col_guid, $guid)->limit(1)->get();
         } catch (Throwable $e) {
             return NULL;   // la base no responde: PENDIENTE, no rechazado
         }
@@ -500,8 +506,11 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, 'fecha_proceso ausente o no es ISO-8601');
         }
 
+        // `personal_id` en singular: cada persona es su propio registro, con
+        // su propio guid y su propio ACK. La pantalla acumula varias personas
+        // y manda N registros; eso es del front, no del modelo.
         $ids = array();
-        foreach (array('finca_id', 'responsable_id', 'cultivo_id', 'lote_id', 'subtarea_id') as $campo) {
+        foreach (array('finca_id', 'responsable_id', 'cultivo_id', 'lote_id', 'subtarea_id', 'personal_id') as $campo) {
             $v = $this->sync_int($p, $campo);
             if ($v === NULL) {
                 return $this->sync_rechazo($guid, $campo . ' ausente o no es un entero positivo');
@@ -513,29 +522,28 @@ class V4 extends RestController
         if ($err !== NULL) {
             return $this->sync_rechazo($guid, $err);
         }
-
-        $personas = $this->sync_lista_ids($p, 'personal_ids');
-        if ($personas === NULL) {
-            return $this->sync_rechazo($guid, 'personal_ids debe ser una lista de enteros positivos');
-        }
-        if (empty($personas)) {
-            return $this->sync_rechazo($guid, 'personal_ids vacio: un AM sin personas no es una programacion');
-        }
-        foreach ($personas as $pid) {
-            if (!$this->sync_personal_activo($db, $pid)) {
-                return $this->sync_rechazo($guid, 'personal ' . $pid . ' inexistente o inactivo');
-            }
+        if (!$this->sync_personal_activo($db, $ids['personal_id'])) {
+            return $this->sync_rechazo($guid, 'personal ' . $ids['personal_id'] . ' inexistente o inactivo');
         }
 
         $modulos = $this->sync_lista_ids($p, 'modulo_ids');
         if ($modulos === NULL) {
             return $this->sync_rechazo($guid, 'modulo_ids debe ser una lista de enteros positivos');
         }
+        // Este chequeo es lo que sostiene la integridad de la columna `modulos`
+        // ahora que no hay FK: sin el, se puede guardar el modulo de otro lote,
+        // que es lo que paso 16 veces en z_tabla_am.
         foreach ($modulos as $mid) {
             if (!$this->sync_modulo_de_lote($db, $mid, $ids['lote_id'])) {
                 return $this->sync_rechazo($guid, 'modulo ' . $mid . ' inexistente, inactivo o no pertenece al lote ' . $ids['lote_id']);
             }
         }
+
+        // El guid de la captura: lo comparten las N personas del mismo
+        // formulario. Es lo unico que permite volver a juntarlas despues.
+        $captura = isset($p['captura_guid']) && is_string($p['captura_guid'])
+            && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', trim($p['captura_guid']))
+            ? trim($p['captura_guid']) : NULL;
 
         // I1: unico rechazo duro por fecha.
         if ($fecha->getTimestamp() > $ahora + 7200) {
@@ -544,12 +552,15 @@ class V4 extends RestController
 
         $ok = $db->insert('reg_am', array(
             'guid'                => $guid,
+            'captura_guid'        => $captura,
             'fecha_proceso'       => $fecha->format('Y-m-d H:i:s'),
             'finca_id'            => $ids['finca_id'],
             'responsable_id'      => $ids['responsable_id'],
             'cultivo_id'          => $ids['cultivo_id'],
             'lote_id'             => $ids['lote_id'],
+            'modulos'             => $this->sync_modulos_csv($modulos),
             'subtarea_id'         => $ids['subtarea_id'],
+            'personal_id'         => $ids['personal_id'],
             'comentario'          => $this->sync_texto($p, 'comentario', 255),
             'device_alias'        => $alias,
             'created_at_device'   => $cad->format('Y-m-d H:i:s'),
@@ -561,17 +572,6 @@ class V4 extends RestController
             return $this->sync_error_insert($db, $guid, 'reg_am');
         }
         $id = (int) $db->insert_id();
-
-        foreach (array_unique($personas) as $pid) {
-            if ($db->insert('reg_am_personal', array('am_id' => $id, 'personal_id' => $pid)) === FALSE) {
-                return NULL;
-            }
-        }
-        foreach (array_unique($modulos) as $mid) {
-            if ($db->insert('reg_am_modulo', array('am_id' => $id, 'modulo_id' => $mid)) === FALSE) {
-                return NULL;
-            }
-        }
 
         $flags = $this->sync_flags($fecha, $cad, $ahora, 'am');
         $this->sync_guarda_flags($db, 'reg_am', $id, $guid, $flags, $ahora);
@@ -610,56 +610,42 @@ class V4 extends RestController
     {
         $am_guid = isset($p['am_guid']) && is_string($p['am_guid']) ? trim($p['am_guid']) : '';
         if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $am_guid)) {
-            // Rechazo duro: reenviar no lo arregla. Un PM sin AM no existe.
-            return $this->sync_rechazo($guid, 'am_guid ausente o ilegible: un PM cierra una tarea AM');
+            // Rechazo duro: reenviar no lo arregla. Un cierre sin programacion
+            // no existe.
+            return $this->sync_rechazo($guid, 'am_guid ausente o ilegible: el PM cierra una tarea AM');
         }
 
-        $trabajador_id = $this->sync_int($p, 'trabajador_id');
-        if ($trabajador_id === NULL) {
-            return $this->sync_rechazo($guid, 'trabajador_id ausente o no es un entero positivo');
-        }
-
-        $q = $db->select('id, fecha_proceso, finca_id, responsable_id, cultivo_id, lote_id, subtarea_id')
+        $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid')
                 ->from('reg_am')->where('guid', $am_guid)->limit(1)->get();
         if ($q === FALSE) {
             return NULL;   // la base no responde: PENDIENTE
         }
         $am = $q->row();
         if (!$am) {
-            // El AM todavia no llego (otro lote, o trabado por red). PENDIENTE:
-            // la cola lo reintenta sola cuando el AM entre.
+            // La programacion todavia no llego (otro lote, o trabada por red).
+            // PENDIENTE: la cola lo reintenta sola cuando entre. Es la misma
+            // regla del guid omitido, y es lo que hace que este UPDATE sea tan
+            // seguro offline como lo era un INSERT.
             return NULL;
         }
 
-        // El trabajador tiene que estar EN esa tarea AM. Si no esta, reenviar
-        // no lo arregla.
-        $q = $db->select('id')->from('reg_am_personal')
-                ->where('am_id', (int) $am->id)->where('personal_id', $trabajador_id)
-                ->limit(1)->get();
-        if ($q === FALSE) {
-            return NULL;
-        }
-        $asignacion = $q->row();
-        if (!$asignacion) {
+        // El trabajador es redundante -- la fila ya sabe de quien es -- pero
+        // si viene tiene que coincidir. Es la red que atrapa un am_guid mal
+        // copiado antes de escribir el avance en la persona equivocada.
+        $trabajador_id = $this->sync_int($p, 'trabajador_id');
+        if ($trabajador_id !== NULL && $trabajador_id !== (int) $am->personal_id) {
             return $this->sync_rechazo(
                 $guid,
-                'el trabajador ' . $trabajador_id . ' no esta en la tarea AM ' . $am_guid
+                'la tarea AM ' . $am_guid . ' no es del trabajador ' . $trabajador_id
             );
         }
-        $am_personal_id = (int) $asignacion->id;
 
-        // Una asignacion se cierra UNA vez. El mismo guid ya se filtro antes
-        // (idempotencia); llegar aca con otro guid es un cierre repetido.
-        $q = $db->select('id, guid')->from('reg_pm')
-                ->where('am_personal_id', $am_personal_id)->limit(1)->get();
-        if ($q === FALSE) {
-            return NULL;
-        }
-        $ya = $q->row();
-        if ($ya) {
+        if ($am->cierre_guid !== NULL) {
+            // El mismo guid ya se filtro antes (idempotencia). Llegar aca con
+            // otro es un segundo cierre de la misma tarea.
             return $this->sync_rechazo(
                 $guid,
-                'esa asignacion AM ya fue cerrada por el PM ' . $ya->guid
+                'esa tarea AM ya fue cerrada por el PM ' . $am->cierre_guid
             );
         }
 
@@ -675,18 +661,16 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, 'responsable ' . $responsable_id . ' inexistente o inactivo');
         }
 
-        // La fecha y la hora de inicio SALEN DEL AM: son la programacion de
-        // la manana, no algo que el PM pueda redefinir.
+        // La hora de inicio SALE de la programacion: el cierre no la redefine.
         $inicio = $this->sync_fecha($am->fecha_proceso);
         if ($inicio === NULL) {
             return NULL;
         }
-        $fecha = clone $inicio;
 
-        // hora_cierre es lo unico temporal que aporta el PM. Sin ella se usa
-        // el momento de captura, que es lo que hacia la app vieja -- y por eso
-        // todos los tiempos salian en cero.
-        $cierre = $this->sync_hora($p, 'hora_cierre', $fecha);
+        // hora_cierre es lo unico temporal que aporta el cierre. Sin ella se
+        // usa el momento de captura, que es lo que hacia la app vieja -- y por
+        // eso todos los tiempos salian en cero.
+        $cierre = $this->sync_hora($p, 'hora_cierre', $inicio);
         if ($cierre === NULL) {
             $cierre = clone $cad;
         }
@@ -694,52 +678,41 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, 'hora_cierre anterior a la hora de la tarea AM');
         }
 
-        // pm_year/pm_week SIEMPRE los calcula el servidor, y con 'o' (ano ISO)
-        // y no 'Y' (ano calendario). V3 usa 'Y'.'W' y eso guardo 181 filas del
-        // 29-31 de diciembre de 2025 como (2025, semana 1), mezclandolas con
-        // la primera semana de enero de 2025 en el reporte de pago. Vuelve a
-        // pasar en diciembre de 2029. No copiar el bug de V3.
-        $ok = $db->insert('reg_pm', array(
-            'guid'                => $guid,
-            'fecha_proceso'       => $fecha->format('Y-m-d'),
-            'hora_inicio'         => $inicio->format('Y-m-d H:i:s'),
-            'hora_cierre'         => $cierre->format('Y-m-d H:i:s'),
-            'pm_year'             => (int) $fecha->format('o'),
-            'pm_week'             => (int) $fecha->format('W'),
-            'finca_id'            => (int) $am->finca_id,
-            'responsable_id'      => $responsable_id,
-            'trabajador_id'       => $trabajador_id,
-            'am_personal_id'      => $am_personal_id,
-            'cultivo_id'          => (int) $am->cultivo_id,
-            'lote_id'             => (int) $am->lote_id,
-            'subtarea_id'         => (int) $am->subtarea_id,
-            'cantidad'            => (float) $p['cantidad'],
-            'comentario'          => $this->sync_texto($p, 'comentario', 255),
-            'device_alias'        => $alias,
-            'created_at_device'   => $cad->format('Y-m-d H:i:s'),
-            'received_at_server'  => date('Y-m-d H:i:s', $ahora),
-            'device_clock_offset' => $offset,
-            'origen'              => 'app',
-        ));
+        // `cierre_guid IS NULL` dentro del WHERE hace el cierre atomico sin
+        // transaccion: si dos equipos cierran la misma tarea a la vez, uno
+        // actualiza una fila y el otro cero.
+        $ok = $db->set(array(
+                'cantidad'                 => (float) $p['cantidad'],
+                'hora_cierre'              => $cierre->format('Y-m-d H:i:s'),
+                'comentario_cierre'        => $this->sync_texto($p, 'comentario', 255),
+                'responsable_cierre_id'    => $responsable_id,
+                'cierre_guid'              => $guid,
+                'cierre_device_alias'      => $alias,
+                'cierre_created_at_device' => $cad->format('Y-m-d H:i:s'),
+                'cierre_received_at'       => date('Y-m-d H:i:s', $ahora),
+                'cierre_offset'            => $offset,
+                'cierre_origen'            => 'app',
+            ))
+            ->where('id', (int) $am->id)
+            ->where('cierre_guid IS NULL', NULL, FALSE)
+            ->update('reg_am');
         if ($ok === FALSE) {
-            return $this->sync_error_insert($db, $guid, 'reg_pm');
+            return NULL;   // fallo de base: PENDIENTE, reenviar si lo arregla
         }
-        $id = (int) $db->insert_id();
-
-        // Los modulos del PM se heredan del AM: es la misma tarea.
-        $q = $db->select('modulo_id')->from('reg_am_modulo')->where('am_id', (int) $am->id)->get();
-        if ($q !== FALSE) {
-            foreach ($q->result() as $m) {
-                if ($db->insert('reg_pm_modulo', array('pm_id' => $id, 'modulo_id' => (int) $m->modulo_id)) === FALSE) {
-                    return NULL;
-                }
-            }
+        if ($db->affected_rows() === 0) {
+            // Alguien gano la carrera entre el SELECT y el UPDATE.
+            return $this->sync_rechazo($guid, 'esa tarea AM ya fue cerrada');
         }
 
+        // El ano y la semana de pago NO se guardan: se derivan de
+        // fecha_proceso en vw_reg_reporte_pago, con WEEK(...,3) que es el ISO.
+        // V3 los guardaba calculados con 'Y'.'W' y por eso 181 filas del 29 al
+        // 31 de diciembre de 2025 quedaron como (2025, semana 1). Un valor que
+        // se deriva no puede quedar mal guardado.
         $flags = $this->sync_flags($cierre, $cad, $ahora, 'pm');
-        $this->sync_guarda_flags($db, 'reg_pm', $id, $guid, $flags, $ahora);
+        $this->sync_guarda_flags($db, 'reg_am', (int) $am->id, $guid, $flags, $ahora);
 
-        $out = array('guid' => $guid, 'status' => 'created', 'id' => $id);
+        $out = array('guid' => $guid, 'status' => 'created', 'id' => (int) $am->id);
         if (!empty($flags)) {
             $out['flags'] = $flags;
         }
@@ -926,6 +899,23 @@ class V4 extends RestController
             $out[] = (int) $v;
         }
         return $out;
+    }
+
+    /**
+     * La lista de modulos, ordenada y sin repetidos.
+     *
+     * Ordenada a proposito: asi dos AM con los mismos modulos guardan la misma
+     * cadena y se pueden comparar sin parsear. Es la misma forma que dejo la
+     * migracion, que usa GROUP_CONCAT ... ORDER BY.
+     */
+    private function sync_modulos_csv($modulos)
+    {
+        $ids = array_values(array_unique(array_map('intval', $modulos)));
+        if (empty($ids)) {
+            return NULL;
+        }
+        sort($ids, SORT_NUMERIC);
+        return implode(',', $ids);
     }
 
     private function sync_texto($p, $campo, $max)

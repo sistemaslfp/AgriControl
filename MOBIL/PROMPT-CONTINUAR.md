@@ -1,4 +1,4 @@
-# Continuar el trabajo — estado al 2026-09-02
+# Continuar el trabajo — estado al 2026-09-03
 
 Texto para abrir una sesión nueva. Lee esto primero, después
 `00-plan.md`, y sólo entonces el documento del tema que toque.
@@ -24,24 +24,29 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
   asignaciones AM abiertas de la fecha y solo carga el avance. Columna nueva
   `reg_pm.am_personal_id` + `GET /v4/am_abiertos`. Probado con `curl` contra la
   base real ya migrada.
-- **Verificación:** `e2e/am-pm.spec.mjs` 59 comprobaciones y
+- **Verificación:** `e2e/am-pm.spec.mjs` 60 comprobaciones y
   `e2e/cola.spec.mjs` 22, **todas en verde**; y 8 casos de `sync_pm` con `curl`
   contra la copia real de la base, con cero filas fantasma.
 
 ## Lo siguiente, en orden
 
-1. **Correr en el servidor de verdad las dos migraciones nuevas:**
-   `2026-09-01-01-pm-cierra-am.sql` y `2026-09-02-01-modulos-clave-natural.sql`.
-   Las dos están probadas contra una copia, ninguna aplicada en producción.
-2. **Pendientes / Enviados** con los tres estados reales (PENDIENTE, ENVIANDO,
+1. **Correr `2026-09-03-01-fusion-pm-en-am.sql` en el servidor.** Las dos
+   anteriores (`2026-09-01-01` y `2026-09-02-01`) ya están aplicadas; esta parte
+   de ese estado y las reemplaza. Probada contra una copia real, con el cuadre
+   de la nómina de agosto verificado.
+2. **Repuntar `vw_reporte_am`, `vw_reporte_pm` y las demás vistas** a
+   `reg_am` para el período desde agosto. Solo se hizo `vw_reg_reporte_pago`,
+   que es la nómina. `vw_reporte_pago` y las viejas **no se tocan**: los
+   endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
+3. **Pendientes / Enviados** con los tres estados reales (PENDIENTE, ENVIANDO,
    RECHAZADO con el motivo a la vista). Hoy el menú manda a un aviso.
-3. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
+4. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
    metida dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255:
    el motivo queda mezclado con texto libre y no se puede consultar aparte.
-4. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
+5. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
    (lista en `docker/php/Dockerfile`): guardado real desde Grocery CRUD, campos
    de archivo, login POST de ion_auth, y `Operations/PM`.
-5. Después: Cosecha, Postcosecha, Riego, y el corte.
+6. Después: Cosecha, Postcosecha, Riego, y el corte.
 
 ## Las decisiones cerradas que no hay que volver a discutir
 
@@ -62,6 +67,14 @@ tablas nuevas y una API V4; **nada de lo viejo se apaga**.
 - App nueva: **v0.1.1**, autoría **Life Food Products**.
 - **Vocabulario: "Finca" y "Responsable"**, en toda la app. Coinciden con la
   base. "Hacienda" y "Supervisor" no se usan más.
+- **UN REGISTRO = UNA PERSONA EN UNA TAREA.** `reg_am` es la única tabla:
+  programación de la mañana + persona + cierre de la tarde en la misma fila,
+  como `z_tabla_am`. No existen `reg_am_personal`, `reg_pm`, `reg_pm_modulo`
+  ni `reg_am_modulo`. Los módulos son una columna con comas; las personas son
+  filas (una columna con comas perdería cierres). `captura_guid` dice qué filas
+  salieron del mismo formulario.
+- **El cierre es un UPDATE y es idempotente** porque su guid vive en la fila
+  (`cierre_guid`), y el UPDATE lleva `AND cierre_guid IS NULL`.
 - **El PM no crea nada: cierra una tarea AM.** Lote, subtarea, cultivo, finca
   y hora de inicio los deriva el servidor del AM; el teléfono manda `am_guid`,
   trabajador, avance, hora de cierre y quién cerró. Se descartó fundir el PM

@@ -146,12 +146,12 @@ lote, y leerlo en cualquier otro lugar del formulario no tiene sentido.
     sin explicación; no borrarlo nunca dejaba pasar un responsable de la otra
     finca, que el servidor no rechaza pero es un dato equivocado.
 - `Módulo` sólo se pide si `lote.tiene_modulos = true` (ver `02-bd-y-api.md` §3).
-- **OJO, esta nota describía V3 y ya no aplica.** En `z_tabla_am` un AM con N
-  personas eran N filas. En V4 **las personas son tabla hija** (`reg_am_personal`),
-  así que una tarea con N personas es **una** fila de `reg_am`. Lo que sí
-  genera varias filas son varias TAREAS: **una tarea = un guid = una fila**.
+- **Sigue siendo cierto, y volvió a serlo el 2026-09-03.** Un AM con N
+  personas son N filas, como en `z_tabla_am`: **un registro = una persona en
+  una tarea**, con su propio guid y su propio ACK. La acumulación de personal
+  es de esta pantalla, no del modelo. Las N comparten `captura_guid`.
   Consecuencia que la pantalla tiene que decir y dice: el ACK es por registro,
-  así que un AM de tres tareas puede terminar con dos `created` y una
+  así que una captura de tres personas puede terminar con dos `created` y una
   `rejected`. La revisión no promete atomicidad, porque el servidor no la da.
 - Falta un resumen antes de guardar: hoy se guarda a ciegas. Agregar página
   final "Revisar y enviar" con el conteo de tareas y de personal.

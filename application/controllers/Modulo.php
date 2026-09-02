@@ -54,10 +54,20 @@ class Modulo extends Public_controller {
 			
 			$group = $this->ion_auth->get_users_groups()->row()->id;
 
-		
-			if ($group != 1 ) {
-				$crud->unset_delete();
-			}
+			// BORRAR UN MODULO NO SE PERMITE, NI SIQUIERA AL ADMIN.
+			//
+			// Antes solo se le quitaba al grupo != 1, y el resultado esta en
+			// los datos: 3.119 filas de z_tabla_am (2,75%) apuntan a modulos
+			// que ya no existen -- se borraron y la columna `modulos`, que es
+			// texto separado por comas, no tenia como impedirlo. Lo mismo vale
+			// ahora para reg_am.modulos.
+			//
+			// La baja se hace con `estado` = Inactivo, que ya existe en esta
+			// misma pantalla: el modulo desaparece de los catalogos que sirve
+			// /v4/catalogos y de los selectores de la app, pero los registros
+			// historicos siguen apuntando a algo.
+			$crud->unset_delete();
+			unset($group);
 
 			if ($group != 1 && $group != 2) {
 				redirect('/', 'refresh');
