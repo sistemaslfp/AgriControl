@@ -36,6 +36,27 @@ export interface RegistroCola {
   acked_at: string | null;
 }
 
+/**
+ * Una fila de la cola YA PARSEADA, como la consumen las pantallas.
+ *
+ * `RegistroCola` es la fila cruda de SQLite: `payload` y `flags` vienen como
+ * texto JSON. Esta es la version util para dibujar: el parseo con su try/catch
+ * se hace una sola vez, en el servicio, y no en cada pantalla.
+ */
+export interface RegistroColaVista {
+  guid: string;
+  tipo: TipoRegistro;
+  estado: EstadoRegistro;
+  payload: Record<string, unknown>;
+  createdAtDevice: string;
+  intentos: number;
+  ultimoError: string | null;
+  serverId: number | null;
+  motivoRechazo: string | null;
+  flags: string[];
+  ackedAt: string | null;
+}
+
 /** Un registro dentro del body de POST /v4/sync. */
 export interface SyncRecord {
   guid: string;

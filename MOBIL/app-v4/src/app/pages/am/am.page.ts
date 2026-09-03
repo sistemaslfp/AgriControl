@@ -629,13 +629,23 @@ export class AmPage implements OnInit {
     }
 
     this.guardando.set(true);
-    // El guid de la captura: lo comparten todos los registros de este
-    // formulario. Es lo único que permite volver a juntarlos después, en
-    // "Enviados", para mostrar una tarjeta y no una por persona.
-    const capturaGuid = crypto.randomUUID();
     const guids: string[] = [];
     try {
       for (const t of this.tareas()) {
+        // UN captura_guid POR TAREA, no por envío del formulario.
+        //
+        // Estuvo mal hasta el 2026-09-02: se generaba UNO SOLO antes de este
+        // bucle, así que un AM con tres tareas mandaba las tres con el mismo
+        // guid. La migración de agosto, en cambio, lo asignó por tarea, y el
+        // campo terminó significando dos cosas segun de donde viniera la fila.
+        //
+        // Por tarea es lo correcto: el guid tiene que juntar las N PERSONAS de
+        // una tarea --que es lo que las pantallas PM y "Enviados" muestran como
+        // una tarjeta-- y no mezclar lotes ni subtareas distintos. Sobre agosto,
+        // el 26 % de los envíos llevaba más de una tarea y el mayor tenía 27
+        // registros de lotes y subtareas distintos: una sola tarjeta con eso
+        // adentro no la puede leer nadie.
+        const capturaGuid = crypto.randomUUID();
         // **Un registro por PERSONA**, no por tarea. Cada uno viaja con su
         // propio guid y recibe su propio ACK: si el servidor rechaza a una
         // persona, las demás entran igual. La acumulación de personal es de

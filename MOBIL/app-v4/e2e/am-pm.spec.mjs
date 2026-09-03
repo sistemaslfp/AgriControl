@@ -312,8 +312,15 @@ ok('15 finca, lote y subtarea viajan como enteros', pa.finca_id === 1 && pa.lote
 // Un registro = una persona: personal_id en singular, y nunca vacio.
 ok('16 personal_id viaja en singular', typeof pa.personal_id === 'number' && pa.personal_id > 0,
   String(pa.personal_id));
-ok('16b las personas de la misma captura comparten captura_guid',
-  am.every((r) => r.payload.captura_guid === am[0].payload.captura_guid) &&
+// captura_guid es POR TAREA, no por envio del formulario. Estos dos registros
+// son DOS TAREAS distintas del mismo AM (lotes y subtareas distintos), asi que
+// tienen que llevar guid DISTINTO. Hasta el 2026-09-02 llevaban el mismo, y
+// esta misma prueba lo afirmaba al reves: la pantalla PM y "Enviados" agrupan
+// por ese guid, y con uno solo por formulario habrian fundido dos tareas en
+// una tarjeta con lotes y subtareas mezclados.
+ok('16b dos TAREAS del mismo formulario llevan captura_guid distinto',
+  am[0].payload.captura_guid !== am[1].payload.captura_guid &&
+    am.every((r) => typeof r.payload.captura_guid === 'string') &&
     !('personal_ids' in pa),
   JSON.stringify(am.map((r) => r.payload.captura_guid)));
 ok('17 modulo_ids trae el módulo del lote', JSON.stringify(pa.modulo_ids) === '[2]', JSON.stringify(pa.modulo_ids));
@@ -367,12 +374,21 @@ await p.goto(`${APP}/pm`, { waitUntil: 'networkidle' });
 await t(2500);
 ok('23 la pantalla PM abre', await p.locator('ion-title', { hasText: 'Reporte PM' }).isVisible());
 
-// Tres asignaciones quedaron abiertas: ALAVA en dos AM (lote 1 y lote 5) y
-// BRIONES en uno. La lista agrupa POR TAREA, no por persona: ALAVA y BRIONES
-// comparten la segunda tarea, asi que son DOS tarjetas para tres personas.
+// Tres asignaciones abiertas en DOS trabajos: dos personas en
+// (Lote 1, Mod. 02, COSECHA CACAO) y una en (Lote 5, COSECHA CACAO).
+//
+// Se agrupa por el TRABAJO --lote, subtarea y modulos--, no por captura_guid.
+// Con el guid salian tres tarjetas y dos eran IDENTICAS palabra por palabra,
+// porque las dos personas del primer trabajo se habian cargado como dos tareas
+// distintas del formulario. Indistinguibles en pantalla, que es justo lo que
+// esta agrupacion venia a evitar.
 const tareas = p.locator(`${raiz} ion-item.tarea-am`);
-ok('24 la primera pantalla lista las tareas AM abiertas, agrupadas',
+ok('24 la primera pantalla lista los trabajos AM abiertos, agrupados',
   (await tareas.count()) === 2, `tarjetas=${await tareas.count()}`);
+// Ninguna tarjeta puede repetirse: dos identicas no se pueden distinguir.
+const textos = await tareas.allInnerTexts();
+ok('24c no hay dos tarjetas iguales',
+  new Set(textos).size === textos.length, JSON.stringify(textos));
 ok('24b ninguna tarjeta nombra a una persona: el nombre vive en la ventana',
   !(await tareas.first().innerText()).includes('ALAVA'),
   await tareas.first().innerText());
@@ -407,10 +423,23 @@ const conModulo = p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód.' });
 ok('26d la tarjeta muestra el módulo junto al lote',
   (await conModulo.count()) >= 1, `tarjetas con módulo=${await conModulo.count()}`);
 
+// Se apunta al trabajo por lote + modulo, que ahora lo identifica sin
+// ambiguedad. Antes se usaba `.first()` sobre "Mód." con dos tarjetas iguales
+// detras, y la prueba pasaba o fallaba segun la corrida: eso destapo que el
+// orden desempataba por el captura_guid, que es aleatorio.
+const tareaConDos = p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód. 02' });
+ok('26d-bis el trabajo con módulo se identifica sin ambigüedad',
+  (await tareaConDos.count()) === 1, `tarjetas Mód. 02=${await tareaConDos.count()}`);
+
 // Al tocar la tarea se abre la ventana flotante con SU personal.
-await conModulo.first().click();
+await tareaConDos.click();
 await t(600);
-ok('26e tocar la tarea abre la ventana con el personal de esa tarea',
+// La ventana lista EXACTAMENTE el personal de esa tarea, no el de las demas.
+// Esta tarea la trabaja BRIONES solo; ALAVA esta en otras dos y no tiene por
+// que aparecer aca.
+// Las DOS personas de ese trabajo, aunque se hayan cargado como dos tareas
+// distintas del formulario: es el mismo trabajo y se cierra junto.
+ok('26e la ventana lista el personal de ESE trabajo',
   (await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()) === 1 &&
   (await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()) === 1,
   `en la ventana: BRIONES=${await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()}` +
@@ -422,8 +451,8 @@ await t(300);
 await cerrarTocandoFuera();
 await t(700);
 ok('26f la tarjeta resume a quién se eligió, sin abrirla',
-  (await conModulo.first().innerText()).includes('BRIONES'),
-  await conModulo.first().innerText());
+  (await tareaConDos.innerText()).includes('BRIONES'),
+  await tareaConDos.innerText());
 await flecha('siguiente').click();
 await t(700);
 
@@ -467,17 +496,19 @@ await p.goto(`${APP}/menu`, { waitUntil: 'networkidle' });
 await t(1200);
 await p.goto(`${APP}/pm`, { waitUntil: 'networkidle' });
 await t(2500);
-// BRIONES se cerro, pero ALAVA sigue abierta en esa MISMA tarea: la tarjeta
+// BRIONES se cerro, pero ALAVA sigue abierta en ESE MISMO trabajo: la tarjeta
 // no desaparece, se queda con una persona. Es la razon por la que dice
 // "por cerrar" y no "personas".
-ok('35 la persona cerrada ya no aparece, y su tarea sigue con el resto',
+ok('35 la tarjeta no desaparece: queda la persona que falta cerrar',
   (await p.locator(`${raiz} ion-item.tarea-am`).count()) === 2,
   `tarjetas=${await p.locator(`${raiz} ion-item.tarea-am`).count()}`);
-await p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód.' }).first().click();
+await p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód. 02' }).click();
 await t(600);
-ok('35b la ventana de esa tarea ya no ofrece a la persona cerrada',
+ok('35b la ventana de ese trabajo ya no ofrece a la persona cerrada',
   (await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()) === 0 &&
-  (await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()) === 1);
+  (await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()) === 1,
+  `BRIONES=${await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).count()}` +
+  ` ALAVA=${await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).count()}`);
 await cerrarTocandoFuera();
 await t(400);
 

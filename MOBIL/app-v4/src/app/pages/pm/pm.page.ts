@@ -318,12 +318,19 @@ export class PmPage implements OnInit {
     // Se ordena por tarea y, dentro de cada tarea, por nombre. El orden plano
     // por nombre mezclaba personas de tareas distintas: quien despues revisaba
     // el PM no podia saber cuales se habian programado juntas.
+    //
+    // El desempate NO puede ser la clave del grupo: es un UUID aleatorio, asi
+    // que dos tareas del mismo lote y subtarea salian en orden distinto en cada
+    // recarga y las tarjetas saltaban de lugar. Se desempata por hora de
+    // proceso --que es lo que de verdad distingue dos tareas iguales del mismo
+    // dia-- y despues por el guid de la primera asignacion, que es estable.
     const lista = [...mapa.values()].sort(
       (a, b) =>
         a.lote.localeCompare(b.lote) ||
         a.subtarea.localeCompare(b.subtarea) ||
-        this.claveGrupo(a).localeCompare(this.claveGrupo(b)) ||
-        a.trabajador.localeCompare(b.trabajador),
+        a.fechaProceso.localeCompare(b.fechaProceso) ||
+        a.trabajador.localeCompare(b.trabajador) ||
+        a.amGuid.localeCompare(b.amGuid),
     );
     this.disponibles.set(lista);
 
@@ -340,29 +347,28 @@ export class PmPage implements OnInit {
   /**
    * Identidad de la TAREA a la que pertenece una asignacion.
    *
-   * Es `captura_guid` MAS la tarea (lote, subtarea, modulos), y las dos partes
-   * hacen falta:
+   * Es el TRABAJO --lote, subtarea y modulos--, no el `captura_guid`.
    *
-   * - **`captura_guid` solo no alcanza**, porque NO identifica una tarea sino
-   *   un envio del formulario: `am.page.ts` genera un guid antes del bucle de
-   *   tareas, asi que un AM con dos tareas manda las dos con el mismo
-   *   captura_guid. Agrupar solo por el fundiria dos tareas distintas en una
-   *   tarjeta. (La migracion de agosto, en cambio, lo asigno POR TAREA: hoy el
-   *   campo significa dos cosas segun de donde venga la fila. Anotado en
-   *   02-bd-y-api.md.)
-   * - **La tarea sola tampoco**, porque es una heuristica: dos formularios
-   *   distintos que programen la misma subtarea en el mismo lote se verian
-   *   como una sola tarea.
+   * Se probo primero con `captura_guid` y estaba mal: dos personas puestas en
+   * la misma subtarea del mismo lote pero cargadas como dos tareas del
+   * formulario salian como DOS TARJETAS IDENTICAS
+   * ("Lote 1 · Mod. 02 · COSECHA CACAO · 1 persona por cerrar", dos veces).
+   * El supervisor no las puede distinguir, que es exactamente la ilegibilidad
+   * que esta pantalla venia a arreglar. Son el mismo trabajo: se cierran juntas.
    *
-   * Juntas funcionan con las dos semanticas y no pueden fundir lo que no va
-   * junto. Sin captura_guid --las filas migradas con origen 'mig-pm', que no
-   * salieron de ningun formulario-- la asignacion es su propio grupo.
+   * `captura_guid` responde otra pregunta --que filas salieron del mismo
+   * formulario-- y sirve para rastrear, no para agrupar trabajo. Sobre los
+   * datos reales de agosto las dos claves dan el mismo resultado (367 tarjetas,
+   * 29 abiertas), porque la migracion construyo el guid a partir de esta misma
+   * identidad; la diferencia solo aparece en lo que captura la app.
+   *
+   * NO lleva fecha ni finca a proposito: la lista ya viene filtrada por las dos
+   * (`GET /v4/am_abiertos?fecha&finca_id`). Agregarlas ademas romperia el
+   * agrupamiento cuando una misma tarea tiene filas del servidor --que traen la
+   * hora-- y filas del espejo local, que solo guarda la fecha.
    */
   claveGrupo(a: AsignacionAmLocal): string {
-    if (a.capturaGuid === null) {
-      return `sola:${a.amGuid}`;
-    }
-    return `${a.capturaGuid}|${a.loteId}|${a.subtareaId}|${a.modulos}`;
+    return `${a.loteId}|${a.subtareaId}|${a.modulos}`;
   }
 
   /**

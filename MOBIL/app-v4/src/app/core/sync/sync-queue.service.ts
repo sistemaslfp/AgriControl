@@ -9,7 +9,9 @@ import { DatabaseService } from '../db/database.service';
 import {
   CONTEO_VACIO,
   ConteoCola,
+  EstadoRegistro,
   RegistroCola,
+  RegistroColaVista,
   SyncRecord,
   SyncResponse,
   TipoRegistro,
@@ -382,6 +384,141 @@ export class SyncQueueService {
     await this.database.persistir();
     await this.refrescarConteo();
     return { borrados };
+  }
+
+
+  // ------------------------------------------------------------------
+  // Lectura para las pantallas Pendientes / Enviados
+  // ------------------------------------------------------------------
+
+  /**
+   * Los registros de la cola en los estados pedidos, mas nuevos primero.
+   *
+   * Devuelve el `payload` ya parseado: la pantalla necesita mirarlo adentro
+   * para armar la tarjeta (captura_guid, lote, subtarea, persona) y no tiene
+   * sentido que cada llamador repita el JSON.parse con su try/catch.
+   */
+  async listar(estados: EstadoRegistro[]): Promise<RegistroColaVista[]> {
+    await this.inicializado;
+    if (estados.length === 0) {
+      return [];
+    }
+    const db = await this.database.abrir();
+    const marcas = estados.map(() => '?').join(',');
+    const r = await db.query(
+      `SELECT guid, tipo, payload, estado, created_at_device, intentos,
+              ultimo_error, server_id, motivo_rechazo, flags, acked_at
+         FROM sync_queue
+        WHERE estado IN (${marcas})
+        ORDER BY created_at_device DESC;`,
+      estados,
+    );
+    const salida: RegistroColaVista[] = [];
+    for (const f of (r.values ?? []) as Record<string, unknown>[]) {
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(String(f['payload'] ?? '{}')) as Record<string, unknown>;
+      } catch {
+        // Un payload ilegible no puede tumbar la lista entera: la tarjeta se
+        // dibuja con lo que hay en las columnas y el detalle avisa.
+        payload = {};
+      }
+      let flags: string[] = [];
+      try {
+        const crudo = f['flags'] == null ? [] : JSON.parse(String(f['flags']));
+        flags = Array.isArray(crudo) ? crudo.map((x) => String(x)) : [];
+      } catch {
+        flags = [];
+      }
+      salida.push({
+        guid: String(f['guid']),
+        tipo: String(f['tipo']) as TipoRegistro,
+        estado: String(f['estado']) as EstadoRegistro,
+        payload,
+        createdAtDevice: String(f['created_at_device']),
+        intentos: Number(f['intentos'] ?? 0),
+        ultimoError: f['ultimo_error'] == null ? null : String(f['ultimo_error']),
+        serverId: f['server_id'] == null ? null : Number(f['server_id']),
+        motivoRechazo: f['motivo_rechazo'] == null ? null : String(f['motivo_rechazo']),
+        flags,
+        ackedAt: f['acked_at'] == null ? null : String(f['acked_at']),
+      });
+    }
+    return salida;
+  }
+
+  /**
+   * Descarta un registro que NUNCA llego al servidor.
+   *
+   * Solo PENDIENTE, y se revalida en el propio DELETE con
+   * `estado = 'PENDIENTE' AND acked_at IS NULL`: entre que la pantalla dibujo
+   * la lista y el usuario confirmo, el envio automatico pudo haberlo mandado.
+   * Sin esa condicion se borraria de la cola un registro que ya esta en el
+   * servidor, y el telefono perderia el unico rastro de que existio.
+   *
+   * Queda asentado en `sync_audit` con el payload completo: si despues falta un
+   * avance en la nomina, tiene que poder distinguirse "nunca se cargo" de
+   * "alguien lo descarto".
+   */
+  async descartarPendiente(guid: string): Promise<{ ok: true } | { error: string }> {
+    await this.inicializado;
+    const db = await this.database.abrir();
+
+    const q = await db.query(
+      `SELECT tipo, payload FROM sync_queue
+        WHERE guid = ? AND estado = 'PENDIENTE' AND acked_at IS NULL LIMIT 1;`,
+      [guid],
+    );
+    const fila = (q.values ?? [])[0] as Record<string, unknown> | undefined;
+    if (!fila) {
+      return { error: 'Ese registro ya no esta pendiente: puede que se haya enviado recien.' };
+    }
+
+    // El asiento va ANTES del borrado: si el DELETE falla no sobra un asiento,
+    // pero si el asiento fallara despues de borrar, el registro se perderia sin
+    // rastro. El orden importa y es este.
+    await this.auditar(
+      'DESCARTE_PENDIENTE',
+      guid,
+      `tipo=${String(fila['tipo'])} payload=${String(fila['payload'])}`,
+    );
+
+    const r = await db.run(
+      `DELETE FROM sync_queue WHERE guid = ? AND estado = 'PENDIENTE' AND acked_at IS NULL;`,
+      [guid],
+    );
+    if ((r.changes?.changes ?? 0) === 0) {
+      return { error: 'Ese registro ya no esta pendiente: puede que se haya enviado recien.' };
+    }
+    await this.database.persistir();
+    await this.refrescarConteo();
+    return { ok: true };
+  }
+
+  /**
+   * Ultimos asientos de `sync_audit`, mas nuevos primero.
+   *
+   * Se expone en vez del handle de la base porque la auditoria es lo unico de
+   * ahi que alguien de afuera necesita leer: los descartes, las purgas y los
+   * fallos de envio. Devolver la conexion entera para eso seria abrir todo el
+   * esquema local a cualquier pantalla.
+   */
+  async auditoriaReciente(limite = 50): Promise<
+    { evento: string; guid: string | null; detalle: string | null; createdAt: string }[]
+  > {
+    await this.inicializado;
+    const db = await this.database.abrir();
+    const r = await db.query(
+      `SELECT evento, guid, detalle, created_at FROM sync_audit
+        ORDER BY id DESC LIMIT ?;`,
+      [limite],
+    );
+    return ((r.values ?? []) as Record<string, unknown>[]).map((f) => ({
+      evento: String(f['evento']),
+      guid: f['guid'] == null ? null : String(f['guid']),
+      detalle: f['detalle'] == null ? null : String(f['detalle']),
+      createdAt: String(f['created_at']),
+    }));
   }
 
   // ------------------------------------------------------------------

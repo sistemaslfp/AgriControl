@@ -120,7 +120,10 @@ export class MenuPage implements OnInit {
         break;
       case 'pendientes':
       case 'enviados':
-        await this.aviso('Esta pantalla llega en el paso 4 del plan.');
+        // Las dos celdas abren la MISMA pantalla, en la pestaña que
+        // corresponde. Se conservan las dos entradas porque es el vocabulario
+        // que el supervisor ya conoce de la app vieja.
+        await this.router.navigate(['/registros'], { queryParams: { vista: celda.accion } });
         break;
       case 'modulo':
         // Sin catálogos no hay nada que elegir: los selectores saldrían

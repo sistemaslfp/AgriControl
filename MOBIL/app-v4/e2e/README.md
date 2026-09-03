@@ -13,6 +13,14 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   63 comprobaciones.
   Se corre cuando se tocan las pantallas de captura.
 
+- **`registros.spec.mjs`** — `MOBIL/03-pantallas.md` §Registros: las tarjetas
+  agrupadas por trabajo, los tres estados con tres indicadores, el motivo del
+  rechazo a la vista, el botón que fuerza el envío, y el descarte de un
+  PENDIENTE con su asiento en `sync_audit`. Verifica además que un ENVIADO o un
+  RECHAZADO **no** ofrezcan descartar.
+  31 comprobaciones.
+  Se corre cuando se toca `registros.page.*` o `sync-queue.service.ts`.
+
 No corren en CI ni hacen falta para desarrollar.
 
 ```bash
@@ -26,6 +34,7 @@ node e2e/mock-v4.mjs
 # 3. las pruebas (necesita playwright: npm i -D playwright && npx playwright install chromium)
 node e2e/cola.spec.mjs
 node e2e/am-pm.spec.mjs
+node e2e/registros.spec.mjs
 ```
 
 Si el entorno ya tiene un Chromium instalado y no se quiere descargar otro,
@@ -61,6 +70,19 @@ Dos cosas que cuestan tiempo si no se saben, y que estas pruebas ya resuelven:
   termina interceptando los toques y las opciones dejan de ser clicables. El
   selector usa altura fija por eso.
 
+- **El "Guardar" de Configuración no es decorativo.** Sin él la URL no se
+  persiste, y eso se paga dos veces: no bajan los catálogos —la pantalla muestra
+  `#301` y "Sin datos de catálogo"— y la cola no tiene a dónde enviar. Parecen
+  dos bugs distintos y es un `.click()` que falta en el setup.
+- **No usar `.first()` sobre un locator que puede matchear varias cosas.** Costó
+  una prueba intermitente que pasaba o fallaba según la corrida — y destapó un
+  bug real: la lista del PM desempataba el orden por el `captura_guid`, que es
+  un UUID aleatorio, así que las tarjetas cambiaban de lugar en cada recarga.
+  Una prueba que falla a veces es peor que una que falla siempre.
+- **El estado de un `ion-segment` se lee del componente, no del DOM.**
+  `aria-selected` y `ng-reflect-*` no están en un build sin debug: una prueba
+  que los mire pasa o falla según cómo se compiló, no según lo que hace la
+  pantalla. Va por `window.ng.getComponent(...)`.
 - **`pkill` devuelve exit 144 y se lleva el resto del comando.** Matar el mock o
   el servidor de la app y relanzarlos tiene que ser en dos pasos, o el
   `node e2e/...` que va después nunca corre y parece que la suite fallo.

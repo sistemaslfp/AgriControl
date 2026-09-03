@@ -58,3 +58,50 @@
   width: 18px;
   height: 18px;
 }
+
+/* --- Pantalla Registros (Pendientes / Enviados) --- */
+.chips-tipo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px 0;
+}
+
+.tarjeta-registro .fecha {
+  font-size: 0.78rem;
+  color: var(--ion-color-medium);
+}
+
+/* El motivo del rechazo tiene que leerse, no adivinarse. */
+.tarjeta-registro .motivo-rechazo {
+  color: var(--ion-color-danger);
+  font-size: 0.82rem;
+  white-space: normal;
+}
+
+/* La tarea da el contexto que la subtarea sola no tiene. */
+.tarjeta-registro .labor {
+  font-size: 0.86rem;
+}
+
+/* El chip lleva las dos cuentas: pendientes / enviados. Se distinguen por
+   color, no por posicion: "3/12" sin color obliga a recordar cual es cual. */
+.chip-modulo .cuenta {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chip-modulo .cuenta.pend {
+  color: var(--ion-color-warning-shade, #b8860b);
+}
+.chip-modulo .cuenta.env {
+  color: var(--ion-color-success-shade, #1a7f37);
+}
+/* Un cero no es una alerta: se apaga para que resalte lo que si tiene algo. */
+.chip-modulo .cuenta.cero {
+  color: var(--ion-color-medium);
+  font-weight: 400;
+}
+.chip-modulo .barra {
+  color: var(--ion-color-medium);
+  margin: 0 1px;
+}

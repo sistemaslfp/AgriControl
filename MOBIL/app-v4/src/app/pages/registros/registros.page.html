@@ -1,0 +1,162 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Registros</ion-title>
+    <ion-buttons slot="end">
+      <!--
+        Fuerza el envío de la cola, no sólo recarga la lista. En la app vieja
+        este icono solo refrescaba la grilla y no había forma de empujar la
+        sincronización a mano.
+      -->
+      <!-- La clase es para las pruebas: `ion-button` se come el aria-label en
+           su shadow DOM y no se lo puede localizar por ahi. El aria-label se
+           mantiene igual, que es lo que lee un lector de pantalla. -->
+      <ion-button
+        class="sincronizar"
+        (click)="sincronizar()"
+        [disabled]="enviando()"
+        aria-label="Sincronizar ahora"
+      >
+        @if (enviando()) {
+          <ion-spinner name="crescent"></ion-spinner>
+        } @else {
+          <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
+        }
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+
+  <ion-toolbar>
+    <ion-segment
+      [value]="vista()"
+      (ionChange)="cambiarVista($any($event.detail.value))"
+    >
+      <ion-segment-button value="pendientes">
+        <ion-label>Pendientes ({{ conteo().pendientes + conteo().enviando }})</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="enviados">
+        <ion-label>Enviados ({{ conteo().enviados }})</ion-label>
+      </ion-segment-button>
+    </ion-segment>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <!--
+    El estado real de la cola, en una frase. La app vieja mostraba
+    "Próxima Sincronización: 09:05:48" a las 11:54 — una hora fija no puede
+    decir la verdad cuando el temporizador se cuelga.
+  -->
+  <div class="banner" [class.aviso]="!online()" [class.info]="online()">
+    {{ estadoCola() }}
+    @if (ultimoError()) {
+      <p class="pendiente">Último error: {{ ultimoError() }}</p>
+    }
+  </div>
+
+  <!--
+    Un chip por módulo con las DOS cuentas: pendientes / enviados. Como las dos
+    mitades comparten ventana, el chip comparte las dos cuentas y se ve dónde
+    falta trabajo sin cambiar de pestaña.
+  -->
+  @if (chips().length > 0) {
+    <div class="chips-tipo">
+      @for (c of chips(); track c.tipo) {
+        <ion-chip
+          class="chip-modulo"
+          [outline]="filtroTipo() !== c.tipo"
+          (click)="filtrar(c.tipo)"
+          [attr.aria-pressed]="filtroTipo() === c.tipo"
+          [attr.aria-label]="
+            c.etiqueta + ': ' + c.pendientes + ' pendientes, ' + c.enviados + ' enviados'
+          "
+        >
+          <ion-label>
+            {{ c.etiqueta }}
+            <span class="cuenta pend" [class.cero]="c.pendientes === 0">{{ c.pendientes }}</span
+            ><span class="barra">/</span
+            ><span class="cuenta env" [class.cero]="c.enviados === 0">{{ c.enviados }}</span>
+          </ion-label>
+        </ion-chip>
+      }
+    </div>
+  }
+
+  @if (cargando()) {
+    <div class="banner info"><ion-spinner name="crescent"></ion-spinner> Cargando…</div>
+  } @else if (visibles().length === 0) {
+    <div class="banner info sin-registros">
+      @if (vista() === 'pendientes') {
+        No hay nada esperando para enviarse. Todo lo capturado llegó al servidor.
+      } @else {
+        Todavía no hay registros enviados. Se conservan 30 días desde el ACK.
+      }
+    </div>
+  } @else {
+    <ion-list inset="true">
+      @for (t of visibles(); track t.clave) {
+        <ion-item class="tarjeta-registro" lines="full">
+          <ion-icon
+            slot="start"
+            [name]="iconoDe(t.estado)"
+            [color]="colorDe(t.estado)"
+            [attr.aria-label]="textoDe(t.estado)"
+          ></ion-icon>
+          <ion-label>
+            <strong>{{ t.titulo }} · {{ t.lote }}</strong>
+            @if (t.labor) {
+              <p class="labor">{{ t.labor }}</p>
+            }
+            @if (t.personas) {
+              <p>{{ t.personas }}</p>
+            }
+            <p class="fecha">{{ t.fecha }}</p>
+
+            <p [style.color]="'var(--ion-color-' + colorDe(t.estado) + ')'">
+              {{ textoDe(t.estado) }}
+              @if (t.registros.length > 1) {
+                · {{ t.registros.length }} registros
+              }
+              @if (t.estado === 'PENDIENTE' && t.registros[0].intentos > 0) {
+                · {{ t.registros[0].intentos }} intento(s)
+              }
+            </p>
+
+            <!-- El motivo del rechazo va A LA VISTA, no detrás de un detalle:
+                 es lo único que le dice al supervisor qué corregir. -->
+            @if (t.motivo) {
+              <p class="motivo-rechazo">{{ t.motivo }}</p>
+            }
+
+            <!-- El UUID no va acá: no le dice nada a quien mira la lista. Sigue
+                 siendo la única forma de rastrear un registro entre el teléfono
+                 y el servidor, así que vive en Detalle Registro. -->
+          </ion-label>
+
+          @if (t.estado === 'PENDIENTE') {
+            <ion-button
+              slot="end"
+              fill="clear"
+              color="danger"
+              class="descartar"
+              (click)="descartar(t)"
+              [attr.aria-label]="'Descartar ' + t.lote + ' ' + t.labor"
+            >
+              <ion-icon slot="icon-only" name="trash-outline"></ion-icon>
+            </ion-button>
+          }
+        </ion-item>
+      }
+    </ion-list>
+  }
+
+  @if (vista() === 'pendientes' && visibles().length > 0) {
+    <div class="banner info">
+      Un registro pendiente se reintenta solo, sin límite. Descartarlo sólo
+      tiene sentido si se cargó mal: nunca llegó al servidor, así que no queda
+      en ningún lado.
+    </div>
+  }
+</ion-content>

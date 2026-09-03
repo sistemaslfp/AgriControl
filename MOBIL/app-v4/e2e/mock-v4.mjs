@@ -151,7 +151,10 @@ const server = http.createServer((req, res) => {
       let rs = [];
       for (const [i, r] of records.entries()) {
         if (modo === 'rechaza' && i === 0) {
-          rs.push({ guid: r.guid, status: 'rejected', reason: 'subtarea 88 inactiva' });
+          // El texto imita al del servidor real: nombres, sin ids ni jerga.
+          // Verificado con curl contra V4.php el 2026-09-02.
+          rs.push({ guid: r.guid, status: 'rejected',
+                    reason: 'la subtarea COSECHA CACAO no existe o esta inactiva' });
           continue;
         }
         if (r.tipo === 'pm') {
