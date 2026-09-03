@@ -21,7 +21,7 @@ al día al **2026-09-02**.
 | 2 | **DDL** de las tablas nuevas + verificar que la web V3 no cambió | **HECHO** — `docs/db/migrations/02-tablas-v4.sql`, 13 tablas |
 | 3 | **AM y PM** — el 80 % del uso diario | **HECHO** — `POST /v4/sync` y las pantallas `/am` y `/pm` |
 | 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
-| 5 | **Cosecha de Cacao** | pendiente |
+| 5 | **Cosecha de Cacao** | **servidor HECHO** (`tipo: cosecha` en `/v4/sync`); falta la pantalla |
 | 6 | **Postcosecha** — máquina de estados + fotos. El más caro | pendiente |
 | 7 | **Riego** — al final por decisión; faltan capturas para especificarlo | pendiente |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
@@ -238,8 +238,15 @@ con una bandera.
 | # | Pendiente | Dónde |
 |---|---|---|
 | 1 | Las cinco ventanas de retroactividad (AM/PM 3 d, Cosecha 7 d, Riego 7 d, Postcosecha 30 d) | 01 §Integridad de fechas |
-| 7 | ¿Qué hace el botón `ADICIONAL` en Cosecha? | 03 §Cosecha |
 | 9 | Capturas de pantalla del módulo Riego | 03 §Riego |
+
+## Cerrados con datos
+
+- **#7 — el botón `ADICIONAL` de Cosecha agrega otro trabajador al mismo
+  encabezado** (2026-09-03). **2.710 de los 3.641 encabezados de
+  `z_cosecha_cacao` (74 %) tienen más de un trabajador, con un máximo de 21.**
+  Por eso `reg_cosecha` ganó `captura_guid` y el modelo es el mismo de AM: un
+  registro = un trabajador.
 
 ## Trabajo identificado, sin decisión que tomar
 

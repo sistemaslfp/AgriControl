@@ -25,6 +25,10 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   **pantallas AM y PM** en la app (`/am`, `/pm`, habilitadas desde el menú).
   El 2026-09-02 la lista del PM pasó a **agruparse por tarea**, con ventana
   flotante para elegir el personal (55 filas → 29 tarjetas en agosto).
+- **Paso 5 — servidor HECHO (2026-09-03).** `tipo: cosecha` en `POST /v4/sync`:
+  `reg_cosecha` + `reg_cosecha_saco`, totales recalculados por el servidor,
+  `captura_guid` para los N trabajadores del mismo encabezado. **Falta la
+  pantalla `/cosecha` en la app.**
 - **Migración de la ventana de agosto — HECHA y verificada.**
   `docs/db/migrations/03-migracion-agosto.sql`.
 - **Migraciones consolidadas — HECHO (2026-09-02).** De seis archivos a cuatro
@@ -54,20 +58,23 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 
 ## Lo siguiente, en orden
 
-1. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
+1. **Pantalla `/cosecha`** (paso 5): el servidor ya la espera. Encabezado +
+   lista de trabajadores con sus sacos, `ADICIONAL` agrega trabajador.
+2. **Paso 6 — Postcosecha**: máquina de estados por lote + fotos. El más caro.
+3. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
    con el UUID. Es lo único que quedó fuera del paso 4.
-2. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
+4. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
    demás) a `reg_am` para el período desde agosto. Sólo se hizo
    `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
    endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
-3. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
+5. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
    dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255.
-4. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
+6. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
    (`z_personal.id_finca`, `z_subtarea.id_finca`) y el servidor no las compara.
-5. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
+7. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
    (lista en `docker/php/Dockerfile`): guardado real desde Grocery CRUD, campos
    de archivo, login POST de ion_auth, y `Operations/PM`.
-6. Después: Cosecha, Postcosecha, Riego, y el corte.
+8. Después: Riego y el corte.
 
 Las decisiones cerradas —las que no hay que volver a discutir— están en
 **`00-plan.md`**, una conclusión por tema. No se repiten acá.

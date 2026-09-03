@@ -320,17 +320,16 @@ class V4 extends RestController
     //
     // Un guid que NO aparece en `results` se queda PENDIENTE en el teléfono y
     // se reintenta. Eso es deliberado y se usa en dos casos: los tipos que
-    // este paso todavía no implementa (cosecha, riego, postcosecha) y los
-    // errores de base. Un error de base nunca es `rejected`: reenviar sí lo
-    // arregla.
+    // todavía no se implementan (riego, postcosecha) y los errores de base.
+    // Un error de base nunca es `rejected`: reenviar sí lo arregla.
     //
-    // Paso 3 implementa `am` y `pm`. Los demás tipos se omiten en silencio.
+    // Implementados: `am`, `pm` y `cosecha`.
 
     /** Tope de registros por lote. Uno más grande se rechaza entero con 413. */
     const SYNC_MAX_RECORDS = 200;
 
-    /** Tipos que este paso sabe recibir. El resto se omite de `results`. */
-    private static $SYNC_TIPOS = array('am', 'pm');
+    /** Tipos que se saben recibir. El resto se omite de `results`. */
+    private static $SYNC_TIPOS = array('am', 'pm', 'cosecha');
 
     public function sync_post()
     {
@@ -424,10 +423,19 @@ class V4 extends RestController
         } elseif ($res['status'] === 'rejected') {
             $this->reg_flag($db, $tipo, 'rechazado', $guid, NULL,
                 $res['reason'], $rec, $alias, $ahora);
-        } elseif (isset($res['_duplicado'])) {
-            $this->reg_flag($db, $tipo, 'duplicado', $guid, $res['id'],
-                $res['_duplicado'], $rec, $alias, $ahora);
-            unset($res['_duplicado']);
+        } else {
+            // Un registro puede traer las dos marcas: totales descuadrados y
+            // ademas ser un duplicado.
+            if (isset($res['_error'])) {
+                $this->reg_flag($db, $tipo, 'error', $guid, $res['id'],
+                    $res['_error'], $rec, $alias, $ahora);
+                unset($res['_error']);
+            }
+            if (isset($res['_duplicado'])) {
+                $this->reg_flag($db, $tipo, 'duplicado', $guid, $res['id'],
+                    $res['_duplicado'], $rec, $alias, $ahora);
+                unset($res['_duplicado']);
+            }
         }
         // `duplicate` NO se marca: es el mismo guid llegando dos veces, o sea
         // la app reintentando porque se perdio el ACK. Es el protocolo
@@ -443,8 +451,8 @@ class V4 extends RestController
         // Un registro = una persona en una tarea. La programacion de la
         // manana y el cierre de la tarde son la MISMA fila de reg_am; lo que
         // cambia es en que columna vive el guid.
-        $tabla    = 'reg_am';
-        $col_guid = ($tipo === 'am') ? 'guid' : 'cierre_guid';
+        $tabla    = ($tipo === 'cosecha') ? 'reg_cosecha' : 'reg_am';
+        $col_guid = ($tipo === 'pm') ? 'cierre_guid' : 'guid';
 
         // Idempotencia: el guid ya recibido no se vuelve a aplicar.
         try {
@@ -479,9 +487,13 @@ class V4 extends RestController
         // producción (pendiente #5 de 00-plan.md).
         try {
             $db->trans_begin();
-            $res = ($tipo === 'am')
-                ? $this->sync_am($db, $guid, $payload, $cad, $alias, $offset, $ahora)
-                : $this->sync_pm($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            if ($tipo === 'am') {
+                $res = $this->sync_am($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            } elseif ($tipo === 'pm') {
+                $res = $this->sync_pm($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            } else {
+                $res = $this->sync_cosecha($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            }
         } catch (Throwable $e) {
             $db->trans_rollback();
             return $this->sync_excepcion($db, $guid, $tabla, $e);
@@ -788,6 +800,208 @@ class V4 extends RestController
     // Helpers de sync
     // -----------------------------------------------------------------
 
+    // -----------------------------------------------------------------
+    // COSECHA DE CACAO
+    // -----------------------------------------------------------------
+
+    /**
+     * Un registro = UN trabajador, igual que en AM. Los N trabajadores del
+     * mismo encabezado comparten `captura_guid` y viajan como N registros con
+     * su propio guid y su propio ACK.
+     *
+     * Es lo que hace la app vieja sin decirlo: 2.710 de los 3.641 encabezados
+     * de z_cosecha_cacao tienen mas de un trabajador (hasta 21). El boton
+     * ADICIONAL de la pantalla es esto.
+     *
+     * Los sacos van en `reg_cosecha_saco`, no en 15 columnas fijas.
+     */
+    private function sync_cosecha($db, $guid, $p, $cad, $alias, $offset, $ahora)
+    {
+        $fecha = $this->sync_fecha(isset($p['fecha_proceso']) ? $p['fecha_proceso'] : NULL);
+        if ($fecha === NULL) {
+            return $this->sync_rechazo($guid, 'fecha_proceso ausente o no es ISO-8601');
+        }
+        if ($fecha->getTimestamp() > $ahora + 7200) {
+            return $this->sync_rechazo($guid,
+                'la fecha de cosecha es futura: no se puede registrar trabajo que todavia no ocurrio');
+        }
+
+        $ids = array();
+        foreach (array('finca_id', 'supervisor_id', 'subtarea_id', 'trabajador_id', 'lote_id') as $campo) {
+            $v = $this->sync_int($p, $campo);
+            if ($v === NULL) {
+                return $this->sync_rechazo($guid, $campo . ' ausente o no es un entero positivo');
+            }
+            $ids[$campo] = $v;
+        }
+
+        // El supervisor entra como `responsable_id` porque es el mismo chequeo.
+        $err = $this->sync_valida_catalogos($db, array(
+            'finca_id'       => $ids['finca_id'],
+            'subtarea_id'    => $ids['subtarea_id'],
+            'lote_id'        => $ids['lote_id'],
+            'responsable_id' => $ids['supervisor_id'],
+        ));
+        if ($err !== NULL) {
+            return $this->sync_rechazo($guid, str_replace('el responsable', 'el supervisor', $err));
+        }
+        if (!$this->sync_personal_activo($db, $ids['trabajador_id'])) {
+            return $this->sync_rechazo($guid,
+                'el trabajador ' . $this->sync_nombre($db, 'z_personal', 'nombre', $ids['trabajador_id'])
+                . ' no existe o esta dado de baja');
+        }
+
+        // Un modulo, no una lista: z_riego y z_cosecha_cacao nunca guardaron
+        // mas de uno. Opcional porque hay lotes sin modulos.
+        $modulo_id = $this->sync_int($p, 'modulo_id');
+        if ($modulo_id !== NULL && !$this->sync_modulo_de_lote($db, $modulo_id, $ids['lote_id'])) {
+            return $this->sync_rechazo($guid,
+                $this->sync_motivo_modulo($db, $modulo_id, $ids['lote_id']));
+        }
+
+        $sacos = $this->sync_sacos($p);
+        if ($sacos === NULL) {
+            return $this->sync_rechazo($guid,
+                'sacos debe ser una lista de {numero, libras} con numeros distintos y libras positivas');
+        }
+        if (empty($sacos)) {
+            return $this->sync_rechazo($guid, 'una cosecha sin sacos no es un registro de cosecha');
+        }
+
+        $captura = isset($p['captura_guid']) && is_string($p['captura_guid'])
+            && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', trim($p['captura_guid']))
+            ? trim($p['captura_guid']) : NULL;
+
+        // Los totales los pone el SERVIDOR. Lo que mando el telefono sirve
+        // solo para comparar: si no cuadra, se marca y gana el servidor.
+        $total_sacos = count($sacos);
+        $total_peso  = 0.0;
+        foreach ($sacos as $sc) {
+            $total_peso += $sc['libras'];
+        }
+        $total_peso = round($total_peso, 2);
+
+        $jornales = isset($p['jornales']) && is_numeric($p['jornales'])
+            ? round((float) $p['jornales'], 2) : 1;
+
+        $ok = $db->insert('reg_cosecha', array(
+            'guid'                => $guid,
+            'captura_guid'        => $captura,
+            'fecha_proceso'       => $fecha->format('Y-m-d H:i:s'),
+            'finca_id'            => $ids['finca_id'],
+            'supervisor_id'       => $ids['supervisor_id'],
+            'subtarea_id'         => $ids['subtarea_id'],
+            'trabajador_id'       => $ids['trabajador_id'],
+            'lote_id'             => $ids['lote_id'],
+            'modulo_id'           => $modulo_id,
+            'jornales'            => $jornales,
+            'total_sacos'         => $total_sacos,
+            'total_peso'          => $total_peso,
+            'observaciones'       => $this->sync_texto($p, 'observaciones', 500),
+            'device_alias'        => $alias,
+            'created_at_device'   => $cad->format('Y-m-d H:i:s'),
+            'received_at_server'  => date('Y-m-d H:i:s', $ahora),
+            'device_clock_offset' => $offset,
+            'origen'              => 'app',
+        ));
+        if ($ok === FALSE) {
+            return $this->sync_error_insert($db, $guid, 'reg_cosecha');
+        }
+        $id = (int) $db->insert_id();
+
+        foreach ($sacos as $sc) {
+            $ok = $db->insert('reg_cosecha_saco', array(
+                'cosecha_id' => $id,
+                'numero'     => $sc['numero'],
+                'libras'     => $sc['libras'],
+            ));
+            if ($ok === FALSE) {
+                return $this->sync_error_insert($db, $guid, 'reg_cosecha');
+            }
+        }
+
+        $out = array('guid' => $guid, 'status' => 'created', 'id' => $id);
+        $desc = $this->sync_cosecha_descuadre($p, $total_sacos, $total_peso);
+        if ($desc !== NULL) {
+            $out['_error'] = $desc;
+        }
+        $dup = $this->sync_cosecha_duplicado($db, $ids, $fecha, $id);
+        if ($dup !== NULL) {
+            $out['_duplicado'] = $dup;
+        }
+        return $out;
+    }
+
+    /** Lista de {numero, libras}. NULL si viene mal, array() si no viene. */
+    private function sync_sacos($p)
+    {
+        if (!isset($p['sacos'])) {
+            return array();
+        }
+        if (!is_array($p['sacos'])) {
+            return NULL;
+        }
+        $out = array();
+        $vistos = array();
+        foreach ($p['sacos'] as $sc) {
+            if (!is_array($sc) || !isset($sc['numero'], $sc['libras'])
+                || !is_numeric($sc['numero']) || !is_numeric($sc['libras'])) {
+                return NULL;
+            }
+            $n = (int) $sc['numero'];
+            $l = round((float) $sc['libras'], 2);
+            // Un saco de 0 libras no se pesa: es una celda vacia de la grilla
+            // vieja, no un saco. La unicidad la exige uq_saco, pero rechazarlo
+            // aca da un motivo legible en vez de un 1062.
+            if ($n <= 0 || $l <= 0 || isset($vistos[$n])) {
+                return NULL;
+            }
+            $vistos[$n] = TRUE;
+            $out[] = array('numero' => $n, 'libras' => $l);
+        }
+        return $out;
+    }
+
+    /** Los totales del telefono contra los del servidor. Gana el servidor. */
+    private function sync_cosecha_descuadre($p, $total_sacos, $total_peso)
+    {
+        $partes = array();
+        if (isset($p['total_sacos']) && is_numeric($p['total_sacos'])
+            && (int) $p['total_sacos'] !== $total_sacos) {
+            $partes[] = 'sacos ' . (int) $p['total_sacos'] . ' vs ' . $total_sacos;
+        }
+        if (isset($p['total_peso']) && is_numeric($p['total_peso'])
+            && abs(round((float) $p['total_peso'], 2) - $total_peso) > 0.01) {
+            $partes[] = 'peso ' . round((float) $p['total_peso'], 2) . ' vs ' . $total_peso;
+        }
+        return empty($partes)
+            ? NULL
+            : ('los totales del telefono no cuadran con los sacos (' . implode('; ', $partes) . ')');
+    }
+
+    /** El mismo trabajador, la misma subtarea y el mismo dia, otra vez. */
+    private function sync_cosecha_duplicado($db, $ids, $fecha, $id)
+    {
+        $dia = $fecha->format('Y-m-d');
+        try {
+            $q = $db->select('id')->from('reg_cosecha')
+                    ->where('trabajador_id', $ids['trabajador_id'])
+                    ->where('subtarea_id', $ids['subtarea_id'])
+                    ->where('finca_id', $ids['finca_id'])
+                    ->where('fecha_proceso >=', $dia . ' 00:00:00')
+                    ->where('fecha_proceso <=', $dia . ' 23:59:59')
+                    ->where('id !=', $id)
+                    ->order_by('id', 'ASC')->limit(1)->get();
+        } catch (Throwable $e) {
+            return NULL;
+        }
+        $fila = ($q === FALSE) ? NULL : $q->row();
+        return $fila
+            ? ('ya existe la cosecha #' . (int) $fila->id
+               . ' del mismo trabajador en la misma subtarea el ' . $dia)
+            : NULL;
+    }
+
     /**
      * Un INSERT que falla puede ser una carrera por el mismo guid (1062, y
      * entonces es `duplicate`) o cualquier otra cosa (y entonces es PENDIENTE,
@@ -829,7 +1043,8 @@ class V4 extends RestController
             return 'la finca ' . $this->sync_nombre($db, 'z_finca', 'nombre', $ids['finca_id'])
                  . ' no existe o esta inactiva';
         }
-        if (!$this->sync_existe($db, 'z_cultivo', $ids['cultivo_id'], "estado IN ('1','A')")) {
+        if (isset($ids['cultivo_id'])
+            && !$this->sync_existe($db, 'z_cultivo', $ids['cultivo_id'], "estado IN ('1','A')")) {
             return 'el cultivo ' . $this->sync_nombre($db, 'z_cultivo', 'nombre', $ids['cultivo_id'])
                  . ' no existe o esta inactivo';
         }
@@ -837,7 +1052,8 @@ class V4 extends RestController
             return 'la subtarea ' . $this->sync_nombre($db, 'z_subtarea', 'nombre_subtarea', $ids['subtarea_id'])
                  . ' no existe o esta inactiva';
         }
-        if (!$this->sync_personal_activo($db, $ids['responsable_id'])) {
+        if (isset($ids['responsable_id'])
+            && !$this->sync_personal_activo($db, $ids['responsable_id'])) {
             return 'el responsable ' . $this->sync_nombre($db, 'z_personal', 'nombre', $ids['responsable_id'])
                  . ' no existe o esta dado de baja';
         }

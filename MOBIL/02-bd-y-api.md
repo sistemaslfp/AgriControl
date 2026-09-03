@@ -208,6 +208,7 @@ Enviados" necesita para mostrar una tarjeta y no cinco.
 CREATE TABLE reg_cosecha (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   guid          CHAR(36)      NOT NULL,
+  captura_guid  CHAR(36)      NULL,             -- los N trabajadores del mismo encabezado
   fecha_proceso DATETIME      NOT NULL,
   finca_id      INT           NOT NULL,
   supervisor_id INT           NOT NULL,
@@ -224,7 +225,8 @@ CREATE TABLE reg_cosecha (
   received_at_server  DATETIME    NOT NULL,
   device_clock_offset INT         NULL,
   origen        VARCHAR(10)   NOT NULL DEFAULT 'app',
-  UNIQUE KEY uq_cosecha_guid (guid)
+  UNIQUE KEY uq_cosecha_guid (guid),
+  KEY idx_cosecha_captura (captura_guid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 CREATE TABLE reg_cosecha_saco (
@@ -237,9 +239,16 @@ CREATE TABLE reg_cosecha_saco (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 ```
 
+**Un registro = UN trabajador, como en AM.** Los N trabajadores del mismo
+encabezado comparten `captura_guid` y viajan como N registros con su propio guid
+y su propio ACK. No es una suposición: **2.710 de los 3.641 encabezados de
+`z_cosecha_cacao` (74 %) tienen más de un trabajador, con un máximo de 21**
+(medido el 2026-09-03 sobre 12.559 filas). Eso es lo que hace el botón
+`ADICIONAL` de la pantalla vieja — cierra el pendiente #7 con datos.
+
 `total_sacos` y `total_peso` los **recalcula el servidor** desde el detalle. El
-teléfono los manda para mostrarlos; si no cuadran, el servidor usa los suyos y
-dejaría un flag `total_descuadrado` — **pendiente**: ese código no existe todavía, se implementa junto con la pantalla de Cosecha.
+teléfono los manda para mostrarlos; si no cuadran, gana el servidor y queda una
+marca `error` en `reg_flag` con los dos valores.
 
 ### Riego
 
@@ -806,7 +815,7 @@ Respuesta (ver `01-sincronizacion.md` para la definición del ACK):
 
 `tipo` ∈ `am | pm | cosecha | riego | pc_lote | pc_etapa | pc_calidad`.
 
-### Estado: `am` y `pm` IMPLEMENTADOS y probados (2026-08-31)
+### Estado: `am`, `pm` y `cosecha` IMPLEMENTADOS y probados
 
 `V4::sync_post()` ya no devuelve 501. Probado con `curl` contra CodeIgniter
 levantado sobre la copia real de la base (receta en la memoria del proyecto).
@@ -815,9 +824,9 @@ levantado sobre la copia real de la base (receta en la memoria del proyecto).
 se queda PENDIENTE en el teléfono y se reintenta.** Eso se usa a propósito en
 tres casos:
 
-1. **Tipos todavía no implementados** (`cosecha`, `riego`, `pc_*`): se omiten en
-   silencio. El día que existan, la cola los reenvía sola. Nadie tiene que
-   tocar el teléfono.
+1. **Tipos todavía no implementados** (`riego`, `pc_*`): se omiten en silencio.
+   El día que existan, la cola los reenvía sola. Nadie tiene que tocar el
+   teléfono.
 2. **Errores de base.** Un fallo al guardar NUNCA es `rejected`: reenviar sí lo
    arregla.
 3. **`guid` ilegible**: sin guid no hay a qué acusar recibo.
@@ -853,6 +862,15 @@ y lo que se probó.
 { "tipo": "pm",
   "payload": { "am_guid": "…", "trabajador_id": 4, "responsable_id": 26,
                "cantidad": 2.5, "hora_cierre": "…", "comentario": "" } }
+
+{ "tipo": "cosecha",
+  "payload": { "captura_guid": "…", "fecha_proceso": "…", "finca_id": 1,
+               "supervisor_id": 1, "subtarea_id": 81, "trabajador_id": 3,
+               "lote_id": 1, "modulo_id": 2, "jornales": 1,
+               "sacos": [ {"numero": 1, "libras": 50.5},
+                          {"numero": 2, "libras": 48.25} ],
+               "total_sacos": 2, "total_peso": 98.75,
+               "observaciones": "" } }
 ```
 
 `personal_id` va **en singular**: cada persona es su propio registro, con su
@@ -882,6 +900,22 @@ programación de la mañana, que era el agujero real.
 | cierre de la segunda persona de la misma captura | `created`, **no pisa a la primera** |
 
 Cero filas fantasma tras los rechazos, y el cuadre de agosto intacto.
+
+**Cosecha, probado con `curl` contra la base real (2026-09-03):**
+
+| caso | resultado |
+|---|---|
+| encabezado con 2 trabajadores | 2 `created`, mismo `captura_guid`, sacos en `reg_cosecha_saco` |
+| totales del teléfono descuadrados | `created` con los del servidor + marca `error` en `reg_flag` |
+| mismo trabajador y subtarea el mismo día | `created` + marca `duplicado` |
+| `modulo_id` inexistente | `rejected` |
+| `sacos: []` | `rejected` |
+| dos sacos con el mismo número | `rejected` |
+| el mismo lote otra vez | 3 `duplicate`, ni una fila ni un saco nuevos |
+
+`jornales` es opcional y vale 1 por defecto: en `z_cosecha_cacao` es 1 en 12.432
+de 12.559 filas y la pantalla nunca lo mostró. Un saco de 0 libras se rechaza —
+es una celda vacía de la grilla de 15, no un saco.
 
 ### La migración, y el cuadre que la valida
 

@@ -217,6 +217,11 @@ CREATE TABLE IF NOT EXISTS reg_am (
 CREATE TABLE IF NOT EXISTS reg_cosecha (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   guid                CHAR(36)      NOT NULL,
+  -- Lo comparten los N trabajadores del mismo encabezado, igual que en reg_am.
+  -- No es teorico: 2.710 de los 3.641 encabezados de z_cosecha_cacao (74 %)
+  -- tienen mas de un trabajador, con un maximo de 21. Sin esto no hay forma de
+  -- volver a juntarlos, y "Registros Enviados" mostraria 21 tarjetas.
+  captura_guid        CHAR(36)      NULL,
   fecha_proceso       DATETIME      NOT NULL,
   finca_id            INT           NOT NULL,
   supervisor_id       INT           NOT NULL,
@@ -226,7 +231,8 @@ CREATE TABLE IF NOT EXISTS reg_cosecha (
   modulo_id           INT           NULL,
   jornales            DECIMAL(5,2)  NOT NULL DEFAULT 0,
   -- Derivados: el servidor los recalcula desde reg_cosecha_saco. Si no cuadran
-  -- con lo que mandó el teléfono, gana el servidor y deja flag total_descuadrado.
+  -- con lo que mandó el teléfono, gana el servidor y deja una marca `error` en
+  -- reg_flag.
   total_sacos         SMALLINT      NOT NULL DEFAULT 0,
   total_peso          DECIMAL(11,2) NOT NULL DEFAULT 0,
   observaciones       VARCHAR(500)  NULL,
@@ -236,6 +242,7 @@ CREATE TABLE IF NOT EXISTS reg_cosecha (
   device_clock_offset INT           NULL,
   origen              VARCHAR(10)   NOT NULL DEFAULT 'app',
   UNIQUE KEY uq_cosecha_guid (guid),
+  KEY idx_cosecha_captura (captura_guid),
   KEY idx_cosecha_natural (finca_id, fecha_proceso, trabajador_id),
   CONSTRAINT fk_cos_finca      FOREIGN KEY (finca_id)      REFERENCES z_finca(id),
   CONSTRAINT fk_cos_lote       FOREIGN KEY (lote_id)       REFERENCES z_lote(id),

@@ -317,8 +317,10 @@ Total Libras, grilla `Saco 01..15`, Observaciones, `ADICIONAL`, `GUARDAR`.
   campos entren en una lista vertical con teclado numérico y avance automático.
 - `Total Libras` se calcula; falta mostrar **`Total Sacos`** al lado, que sí se
   persiste (`total_sacos`).
-- `ADICIONAL` (gris) — **[CONFIRMAR]** qué hace. Presumiblemente agrega otro
-  trabajador al mismo encabezado.
+- `ADICIONAL` (gris) — **agrega otro trabajador al mismo encabezado**, cerrado
+  con datos el 2026-09-03: 2.710 de los 3.641 encabezados de `z_cosecha_cacao`
+  (74 %) tienen más de uno, con un máximo de 21. En la app nueva cada trabajador
+  es su propio registro y los N comparten `captura_guid`, igual que en AM.
 
 ---
 
