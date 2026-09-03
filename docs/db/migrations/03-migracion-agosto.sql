@@ -202,50 +202,78 @@ WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.cierre_guid = f.cierre_guid)
   AND NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.guid       = f.guid);
 
 -- ---------------------------------------------------------------------------
--- 2. Cosecha (+ sacos)
+-- 2. Cosecha (+ sacos) — se CUELGA del AM, no es una fila suelta
 -- ---------------------------------------------------------------------------
--- Auditoría: 14 filas de agosto traen finca = 0 (la columna tiene DEFAULT 0 y la
--- app vieja no siempre la manda). Se deriva del lote, que sí la tiene, y se deja
--- constancia. No se inventa nada: z_lote.finca_id es dato, no suposición.
-INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
-SELECT 'z_cosecha_cacao', c.id, 'finca_derivada_del_lote', c.id,
-       JSON_OBJECT('id',c.id,'fecha',c.fecha,'finca_original',c.finca,'lote',c.lote,
-                   'finca_derivada',l.finca_id,'total_peso',c.total_peso), NOW()
-FROM z_cosecha_cacao c JOIN z_lote l ON l.id=c.lote
-WHERE c.fecha >= '2026-08-01' AND c.finca = 0
-  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
-                    AND d.id_origen=c.id AND d.motivo='finca_derivada_del_lote');
+-- Desde el 2026-09-03 una cosecha es el CIERRE de una tarea AM: `reg_cosecha`
+-- no repite finca, supervisor, subtarea, trabajador, lote ni fecha, y su guid
+-- ES `reg_am.cierre_guid`.
+--
+-- Las 60 filas de agosto de z_cosecha_cacao emparejan con **exactamente un**
+-- reg_am cada una por (trabajador, subtarea, día) — verificado: ninguna con 0
+-- ni con 2.
+--
+-- **No se cierra ningún AM acá.** 15 de esas 60 cuelgan de un AM que quedó
+-- abierto porque V3 tampoco tuvo PM para él; cerrarlos ahora haría que V4
+-- pagara 15 filas que V3 no paga, y el criterio de aceptación es que la nómina
+-- de agosto dé idéntica. Esas 15 quedan en `mig_descarte` con su payload y
+-- siguen enteras en `z_cosecha_cacao`.
 
-INSERT INTO reg_cosecha (guid, fecha_proceso, finca_id, supervisor_id, subtarea_id, trabajador_id,
-                         lote_id, modulo_id, jornales, total_sacos, total_peso, observaciones,
-                         created_at_device, received_at_server, origen)
-SELECT LOWER(CONCAT(SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),9,4),
-              '-5',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),18,3),
-              '-',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),21,12))),
-       STR_TO_DATE(CONCAT(c.fecha,' ',LPAD(c.hora,5,'0'),':00'),'%Y-%m-%d %H:%i:%s'),
-       COALESCE(NULLIF(c.finca,0), l.finca_id), c.supervisor, c.subtarea, c.trabajador, c.lote,
-       NULLIF(c.modulo,0), c.jornales, c.total_sacos, c.total_peso,
-       NULLIF(LEFT(c.observaciones,500),''), c.created_at, NOW(), 'migracion'
+INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
+SELECT 'z_cosecha_cacao', c.id, 'cosecha_sin_cierre_am', a.id,
+       JSON_OBJECT('fecha',c.fecha,'trabajador',c.trabajador,'subtarea',c.subtarea,
+                   'total_sacos',c.total_sacos,'total_peso',c.total_peso,'reg_am_id',a.id), NOW()
 FROM z_cosecha_cacao c
-JOIN z_lote l ON l.id = c.lote
-WHERE c.fecha >= '2026-08-01'
-  AND NOT EXISTS (SELECT 1 FROM reg_cosecha r WHERE r.guid = LOWER(CONCAT(
-        SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),9,4),
-        '-5',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),18,3),
-        '-',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),21,12))));
+JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+             AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
+WHERE c.fecha >= '2026-08-01' AND a.cierre_guid IS NULL
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=c.id AND d.motivo='cosecha_sin_cierre_am');
+
+-- El avance que cerró el PM contra la suma de los sacos. Cuadra en 41 de 45;
+-- las 4 que no son ruido de V3 (dos avances cruzados entre dos personas y dos
+-- AM deducidos de un PM con cantidad 1). No se corrige nada: se deja constancia.
+INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
+SELECT 'z_cosecha_cacao', c.id, 'cosecha_total_no_cuadra', a.id,
+       JSON_OBJECT('cantidad_am',a.cantidad,'total_peso',c.total_peso,'origen_am',a.origen), NOW()
+FROM z_cosecha_cacao c
+JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+             AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
+WHERE c.fecha >= '2026-08-01' AND a.cierre_guid IS NOT NULL
+  AND ABS(a.cantidad - c.total_peso) >= 0.01
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=c.id AND d.motivo='cosecha_total_no_cuadra');
+
+-- El guid es el del cierre: una cosecha ES el cierre de esa tarea. Así el
+-- invariante `reg_cosecha.guid = reg_am.cierre_guid` vale también para lo
+-- migrado, y no hace falta inventar un guid nuevo.
+--
+-- Se AGRUPA por AM: 8 de las 50 tareas tienen más de una fila en
+-- z_cosecha_cacao (7 con dos, 1 con cuatro) — la misma persona pesando en dos
+-- tandas. Una tarea se cosecha una vez, así que las tandas se suman y los
+-- sacos se renumeran corridos.
+INSERT INTO reg_cosecha (guid, reg_am_id, total_sacos, total_peso, observaciones,
+                         created_at_device, received_at_server, origen)
+SELECT a.cierre_guid, a.id, SUM(c.total_sacos), SUM(c.total_peso),
+       NULLIF(LEFT(GROUP_CONCAT(NULLIF(c.observaciones,'') SEPARATOR ' | '),500),''),
+       MIN(c.created_at), NOW(), 'migracion'
+FROM z_cosecha_cacao c
+JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+             AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
+WHERE c.fecha >= '2026-08-01' AND a.cierre_guid IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM reg_cosecha r WHERE r.reg_am_id = a.id)
+GROUP BY a.id, a.cierre_guid;
 
 INSERT IGNORE INTO reg_cosecha_saco (cosecha_id, numero, libras)
-SELECT r.id, n.numero,
+SELECT r.id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY c.id, n.numero),
        CASE n.numero
         WHEN 1 THEN c.saco1 WHEN 2 THEN c.saco2 WHEN 3 THEN c.saco3 WHEN 4 THEN c.saco4 WHEN 5 THEN c.saco5
         WHEN 6 THEN c.saco6 WHEN 7 THEN c.saco7 WHEN 8 THEN c.saco8 WHEN 9 THEN c.saco9 WHEN 10 THEN c.saco10
         WHEN 11 THEN c.saco11 WHEN 12 THEN c.saco12 WHEN 13 THEN c.saco13 WHEN 14 THEN c.saco14
         WHEN 15 THEN c.saco15 END
 FROM z_cosecha_cacao c
-JOIN reg_cosecha r ON r.guid = LOWER(CONCAT(
-       SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),9,4),
-       '-5',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),18,3),
-       '-',SUBSTR(MD5(CONCAT('z_cosecha_cacao:',c.id)),21,12)))
+JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+             AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
+JOIN reg_cosecha r ON r.reg_am_id = a.id
 JOIN (SELECT 1 numero UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
       UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
       UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15) n
@@ -255,6 +283,13 @@ WHERE c.fecha >= '2026-08-01'
         WHEN 6 THEN c.saco6 WHEN 7 THEN c.saco7 WHEN 8 THEN c.saco8 WHEN 9 THEN c.saco9 WHEN 10 THEN c.saco10
         WHEN 11 THEN c.saco11 WHEN 12 THEN c.saco12 WHEN 13 THEN c.saco13 WHEN 14 THEN c.saco14
         WHEN 15 THEN c.saco15 END > 0;
+
+-- Los totales se REDERIVAN de los sacos, la misma regla que aplica el servidor
+-- en sync_cosecha: lo que manda es el detalle, no el número que traía la fila.
+UPDATE reg_cosecha r
+   SET r.total_sacos = (SELECT COUNT(*)               FROM reg_cosecha_saco s WHERE s.cosecha_id = r.id),
+       r.total_peso  = (SELECT COALESCE(SUM(s.libras),0) FROM reg_cosecha_saco s WHERE s.cosecha_id = r.id)
+ WHERE r.origen = 'migracion';
 
 -- ---------------------------------------------------------------------------
 -- 3. Riego
@@ -343,7 +378,10 @@ JOIN pc_proceso pp ON pp.guid = LOWER(CONCAT(
        SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),1,8),'-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),9,4),
        '-5',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),14,3),'-a',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),18,3),
        '-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),21,12)))
-JOIN reg_cosecha rc ON DATE(rc.fecha_proceso) = h.lot_date
+-- reg_cosecha ya no tiene fecha propia: cuelga del AM, y la fecha del trabajo
+-- es la de esa tarea.
+JOIN reg_cosecha rc ON TRUE
+JOIN reg_am ra ON ra.id = rc.reg_am_id AND DATE(ra.fecha_proceso) = h.lot_date
 WHERE w.created_at >= '2026-08-01';
 
 -- Etapas: cinco tablas casi idénticas -> una

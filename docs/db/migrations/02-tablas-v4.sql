@@ -211,28 +211,30 @@ CREATE TABLE IF NOT EXISTS reg_am (
 -- la FK comprueba que el id exista, no que pertenezca a la finca correcta.
 
 -- =========================================================================
--- COSECHA — se acabó el techo de 15 sacos de z_cosecha_cacao.saco1..saco15
+-- COSECHA — el detalle de sacos de un AM ya programado
+--
+-- Cosecha NO crea tareas: CIERRA una tarea AM, igual que el PM. Todas las
+-- tareas viven en reg_am; cosecha solo elige una de las que tienen tarea
+-- "Cosecha" y le carga los sacos de cada persona. Por eso esta tabla no
+-- repite finca, supervisor, subtarea, trabajador, lote, modulo ni fecha: todo
+-- eso ES el AM, y el telefono no puede contradecirlo.
+--
+-- LA SUMA DE LAS LIBRAS ES EL AVANCE DE LA TAREA: sync_cosecha escribe
+-- `reg_am.cantidad` con `total_peso`. Medido sobre el historico: de 14.466
+-- pares (PM de cosecha, fila de z_cosecha_cacao) del mismo dia, trabajador y
+-- subtarea, **13.835 tienen pm.cantidad = total_peso (95,6 %) y NINGUNO
+-- coincide con el conteo de sacos**. La unidad de labor de esas subtareas es
+-- Libra, no Saco.
 -- =========================================================================
 
 CREATE TABLE IF NOT EXISTS reg_cosecha (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
+  -- Es el mismo guid que queda en reg_am.cierre_guid: una cosecha ES el
+  -- cierre de esa tarea, no un registro aparte que ademas la cierra.
   guid                CHAR(36)      NOT NULL,
-  -- Lo comparten los N trabajadores del mismo encabezado, igual que en reg_am.
-  -- No es teorico: 2.710 de los 3.641 encabezados de z_cosecha_cacao (74 %)
-  -- tienen mas de un trabajador, con un maximo de 21. Sin esto no hay forma de
-  -- volver a juntarlos, y "Registros Enviados" mostraria 21 tarjetas.
-  captura_guid        CHAR(36)      NULL,
-  fecha_proceso       DATETIME      NOT NULL,
-  finca_id            INT           NOT NULL,
-  supervisor_id       INT           NOT NULL,
-  subtarea_id         INT           NOT NULL,
-  trabajador_id       INT           NOT NULL,
-  lote_id             INT           NOT NULL,
-  modulo_id           INT           NULL,
-  jornales            DECIMAL(5,2)  NOT NULL DEFAULT 0,
-  -- Derivados: el servidor los recalcula desde reg_cosecha_saco. Si no cuadran
-  -- con lo que mandó el teléfono, gana el servidor y deja una marca `error` en
-  -- reg_flag.
+  reg_am_id           INT           NOT NULL,
+  -- Derivados de reg_cosecha_saco. El telefono los manda para comparar; si no
+  -- cuadran gana el servidor y queda una marca `error` en reg_flag.
   total_sacos         SMALLINT      NOT NULL DEFAULT 0,
   total_peso          DECIMAL(11,2) NOT NULL DEFAULT 0,
   observaciones       VARCHAR(500)  NULL,
@@ -242,16 +244,13 @@ CREATE TABLE IF NOT EXISTS reg_cosecha (
   device_clock_offset INT           NULL,
   origen              VARCHAR(10)   NOT NULL DEFAULT 'app',
   UNIQUE KEY uq_cosecha_guid (guid),
-  KEY idx_cosecha_captura (captura_guid),
-  KEY idx_cosecha_natural (finca_id, fecha_proceso, trabajador_id),
-  CONSTRAINT fk_cos_finca      FOREIGN KEY (finca_id)      REFERENCES z_finca(id),
-  CONSTRAINT fk_cos_lote       FOREIGN KEY (lote_id)       REFERENCES z_lote(id),
-  CONSTRAINT fk_cos_modulo     FOREIGN KEY (modulo_id)     REFERENCES z_modulo(id),
-  CONSTRAINT fk_cos_subtarea   FOREIGN KEY (subtarea_id)   REFERENCES z_subtarea(id),
-  CONSTRAINT fk_cos_supervisor FOREIGN KEY (supervisor_id) REFERENCES z_personal(id),
-  CONSTRAINT fk_cos_trabajador FOREIGN KEY (trabajador_id) REFERENCES z_personal(id)
+  -- Una tarea AM se cosecha UNA vez. Es el mismo invariante que
+  -- `cierre_guid IS NULL` sostiene del otro lado.
+  UNIQUE KEY uq_cosecha_am (reg_am_id),
+  CONSTRAINT fk_cosecha_am FOREIGN KEY (reg_am_id) REFERENCES reg_am(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
+-- Se acabo el techo de 15 sacos de z_cosecha_cacao.saco1..saco15.
 CREATE TABLE IF NOT EXISTS reg_cosecha_saco (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   cosecha_id INT          NOT NULL,

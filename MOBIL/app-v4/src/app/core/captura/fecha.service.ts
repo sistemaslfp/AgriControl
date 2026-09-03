@@ -16,7 +16,14 @@ import { ClockService } from '../clock/clock.service';
  *   del usuario manda; el servidor lo anota con `fuera_de_ventana_horaria`.
  */
 
-export type TipoFecha = 'am' | 'pm';
+export type TipoFecha = 'am' | 'pm' | 'cosecha';
+
+/**
+ * Cosecha no tiene ventana horaria: se cosecha cuando se cosecha. Se devuelve
+ * el dia entero en vez de `null` para que `fueraDeVentanaHoraria` siga siendo
+ * un booleano y las pantallas no tengan que preguntar si hay ventana.
+ */
+const SIN_VENTANA = { inicio: '00:00', fin: '23:59' };
 
 export interface EvaluacionFecha {
   /** Rechazo duro: I1 del servidor. La UI no debería llegar acá. */
@@ -62,7 +69,7 @@ export class FechaService {
   }
 
   ventana(tipo: TipoFecha): { inicio: string; fin: string } {
-    return this.bootstrap.datos().ventanas_horarias[tipo];
+    return tipo === 'cosecha' ? SIN_VENTANA : this.bootstrap.datos().ventanas_horarias[tipo];
   }
 
   /** `local` es 'YYYY-MM-DDTHH:mm(:ss)' tal como lo devuelve ion-datetime. */

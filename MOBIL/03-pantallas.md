@@ -303,24 +303,41 @@ siempre por la mañana, que es la conducta que se quiere.
 
 ## Cosecha de Cacao
 
-Pantalla 1: Fecha Cosecha, Finca, Supervisor, Subtarea (filtrada por la
-configuración de "Cosecha de Cacao").
-Pantalla 2: Trabajador, cantidad de sacos (selector 1–15), Módulo,
-Total Libras, grilla `Saco 01..15`, Observaciones, `ADICIONAL`, `GUARDAR`.
+**HECHA** (2026-09-03), ruta `/cosecha`. **Funciona como el PM: CIERRA una
+tarea AM.**
+
+Paso 0 — Fecha, Hora de cierre, Finca, Supervisor, y la lista de **tareas AM de
+cosecha sin cerrar** de esa fecha, agrupadas por trabajo (lote · módulos ·
+subtarea). Tocar una abre la ventana con su personal.
+Pasos 1..N — uno por persona elegida: cantidad de sacos, grilla de sacos,
+Observaciones. La tarea, el lote, los módulos y la subtarea se muestran, no se
+eligen.
+Último paso — revisión y `CERRAR`.
+
+**No hay selector de trabajador**: las personas salen de la tarea AM. Eso es lo
+que reemplaza al botón `ADICIONAL` de la app vieja — la gente ya viene de la
+programación de la mañana, no se vuelve a cargar.
 
 - La grilla de sacos mapeaba a `z_cosecha_cacao.saco1..saco15` — 15 columnas
-  fijas. **Con las tablas nuevas ese techo desaparece**: `reg_cosecha_saco` es
-  una tabla hija (ver `02-bd-y-api.md` §3). La UI muestra una lista dinámica
-  sin límite fijo.
-- La captura muestra los sacos salteados (`01, 04, 07, 10, 13`): es la grilla de
-  tres columnas cortada por el diálogo. Verificar que en la app nueva los 15
-  campos entren en una lista vertical con teclado numérico y avance automático.
-- `Total Libras` se calcula; falta mostrar **`Total Sacos`** al lado, que sí se
-  persiste (`total_sacos`).
-- `ADICIONAL` (gris) — **agrega otro trabajador al mismo encabezado**, cerrado
-  con datos el 2026-09-03: 2.710 de los 3.641 encabezados de `z_cosecha_cacao`
-  (74 %) tienen más de uno, con un máximo de 21. En la app nueva cada trabajador
-  es su propio registro y los N comparten `captura_guid`, igual que en AM.
+  fijas. **Ese techo ya no existe**: `reg_cosecha_saco` es una tabla hija y la
+  lista crece sin límite (probado con 20). El tope de la app es 200, que es
+  protección contra un tecleo, no una regla.
+- Los sacos van en **lista vertical**, uno por fila, con teclado numérico.
+  Quitar uno del medio **renumera**: los números son la posición en la grilla,
+  no una identidad, y un hueco (1, 3, 4) confunde al contar en el campo.
+- Un saco en 0 no viaja: es una celda vacía de la grilla vieja, no un saco. El
+  servidor además lo rechaza.
+- **`Total Sacos` y `Total Libras` se muestran los dos**, por trabajador y en la
+  revisión. Viajan en el payload, pero **los recalcula el servidor** desde los
+  sacos; si no cuadran, gana el servidor y deja una marca en `reg_flag`.
+- `ADICIONAL` (gris) — agregaba otro trabajador al mismo encabezado, cerrado con
+  datos el 2026-09-03: 2.710 de los 3.641 encabezados de `z_cosecha_cacao`
+  (74 %) tienen más de uno, con un máximo de 21. **En la app nueva no hace
+  falta**: las personas ya vienen de la tarea AM.
+- **La suma de las libras queda como el avance de la tarea AM** (`cantidad`).
+  Medido: de 14.466 pares (PM de cosecha, fila de `z_cosecha_cacao`), 13.835
+  tienen `cantidad = total_peso` (95,6 %) y ninguno coincide con el conteo de
+  sacos.
 
 ---
 

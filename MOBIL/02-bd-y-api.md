@@ -204,21 +204,18 @@ Enviados" necesita para mostrar una tarjeta y no cinco.
 
 ### Cosecha
 
+**Cosecha CIERRA una tarea AM, igual que el PM** (Kevin, 2026-09-03). Todas las
+tareas viven en `reg_am`; esta tabla solo agrega el detalle de sacos y **no
+repite** finca, supervisor, subtarea, trabajador, lote, módulo ni fecha: todo
+eso ES el AM.
+
 ```sql
 CREATE TABLE reg_cosecha (
   id            INT AUTO_INCREMENT PRIMARY KEY,
-  guid          CHAR(36)      NOT NULL,
-  captura_guid  CHAR(36)      NULL,             -- los N trabajadores del mismo encabezado
-  fecha_proceso DATETIME      NOT NULL,
-  finca_id      INT           NOT NULL,
-  supervisor_id INT           NOT NULL,
-  subtarea_id   INT           NOT NULL,
-  trabajador_id INT           NOT NULL,
-  lote_id       INT           NOT NULL,
-  modulo_id     INT           NULL,
-  jornales      DECIMAL(5,2)  NOT NULL DEFAULT 0,
-  total_sacos   SMALLINT      NOT NULL DEFAULT 0,   -- derivado, se recalcula en el servidor
-  total_peso    DECIMAL(11,2) NOT NULL DEFAULT 0,   -- derivado, se recalcula en el servidor
+  guid          CHAR(36)      NOT NULL,   -- = reg_am.cierre_guid
+  reg_am_id     INT           NOT NULL,
+  total_sacos   SMALLINT      NOT NULL DEFAULT 0,   -- derivados, los recalcula el servidor
+  total_peso    DECIMAL(11,2) NOT NULL DEFAULT 0,
   observaciones VARCHAR(500)  NULL,
   device_alias        VARCHAR(50) NULL,
   created_at_device   DATETIME    NULL,
@@ -226,8 +223,9 @@ CREATE TABLE reg_cosecha (
   device_clock_offset INT         NULL,
   origen        VARCHAR(10)   NOT NULL DEFAULT 'app',
   UNIQUE KEY uq_cosecha_guid (guid),
-  KEY idx_cosecha_captura (captura_guid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+  UNIQUE KEY uq_cosecha_am (reg_am_id),      -- una tarea se cosecha UNA vez
+  CONSTRAINT fk_cosecha_am FOREIGN KEY (reg_am_id) REFERENCES reg_am(id)
+);
 
 CREATE TABLE reg_cosecha_saco (
   id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -236,19 +234,21 @@ CREATE TABLE reg_cosecha_saco (
   libras     DECIMAL(9,2) NOT NULL,
   UNIQUE KEY uq_saco (cosecha_id, numero),
   CONSTRAINT fk_saco_cosecha FOREIGN KEY (cosecha_id) REFERENCES reg_cosecha(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+);
 ```
 
-**Un registro = UN trabajador, como en AM.** Los N trabajadores del mismo
-encabezado comparten `captura_guid` y viajan como N registros con su propio guid
-y su propio ACK. No es una suposición: **2.710 de los 3.641 encabezados de
-`z_cosecha_cacao` (74 %) tienen más de un trabajador, con un máximo de 21**
-(medido el 2026-09-03 sobre 12.559 filas). Eso es lo que hace el botón
-`ADICIONAL` de la pantalla vieja — cierra el pendiente #7 con datos.
+**LA SUMA DE LAS LIBRAS ES EL AVANCE DE LA TAREA.** `sync_cosecha` escribe
+`reg_am.cantidad` con `total_peso` y marca `cierre_origen = 'cosecha'`. No es
+una interpretación: de **14.466 pares** (PM de cosecha, fila de
+`z_cosecha_cacao`) del mismo día, trabajador y subtarea, **13.835 tienen
+`cantidad = total_peso` (95,6 %) y NINGUNO coincide con el conteo de sacos** —
+la unidad de esas subtareas es Libra, no Saco.
 
-`total_sacos` y `total_peso` los **recalcula el servidor** desde el detalle. El
-teléfono los manda para mostrarlos; si no cuadran, gana el servidor y queda una
-marca `error` en `reg_flag` con los dos valores.
+`guid` es el mismo que queda en `reg_am.cierre_guid`: una cosecha **es** el
+cierre de esa tarea, no un registro aparte que además la cierra. Vale también
+para lo migrado.
+
+El techo de 15 sacos de `z_cosecha_cacao.saco1..saco15` desapareció.
 
 ### Riego
 
@@ -815,6 +815,14 @@ Respuesta (ver `01-sincronizacion.md` para la definición del ACK):
 
 `tipo` ∈ `am | pm | cosecha | riego | pc_lote | pc_etapa | pc_calidad`.
 
+**El PM no cierra cosecha ni poscosecha** (Kevin, 2026-09-03): piden más datos
+que una cantidad y tienen formulario propio. El PM queda para lo administrativo
+y las tareas puntuales. No es un caso de borde — de los **550 AM de agosto, 252
+son de cosecha y 38 de poscosecha**: más de la mitad de la lista del PM no le
+correspondía. Las tareas se identifican por `tarea_cosecha_ids` /
+`tarea_poscosecha_ids` de `application/config/v4.php` (vacías = derivar por el
+nombre de la tarea).
+
 ### Estado: `am`, `pm` y `cosecha` IMPLEMENTADOS y probados
 
 `V4::sync_post()` ya no devuelve 501. Probado con `curl` contra CodeIgniter
@@ -864,9 +872,8 @@ y lo que se probó.
                "cantidad": 2.5, "hora_cierre": "…", "comentario": "" } }
 
 { "tipo": "cosecha",
-  "payload": { "captura_guid": "…", "fecha_proceso": "…", "finca_id": 1,
-               "supervisor_id": 1, "subtarea_id": 81, "trabajador_id": 3,
-               "lote_id": 1, "modulo_id": 2, "jornales": 1,
+  "payload": { "am_guid": "…", "trabajador_id": 4, "responsable_id": 26,
+               "hora_cierre": "…",
                "sacos": [ {"numero": 1, "libras": 50.5},
                           {"numero": 2, "libras": 48.25} ],
                "total_sacos": 2, "total_peso": 98.75,
@@ -901,21 +908,24 @@ programación de la mañana, que era el agujero real.
 
 Cero filas fantasma tras los rechazos, y el cuadre de agosto intacto.
 
-**Cosecha, probado con `curl` contra la base real (2026-09-03):**
+**Cosecha y el reparto con el PM, probado con `curl` contra la base real
+(2026-09-03):**
 
 | caso | resultado |
 |---|---|
-| encabezado con 2 trabajadores | 2 `created`, mismo `captura_guid`, sacos en `reg_cosecha_saco` |
+| cosecha sobre un AM de cosecha abierto | `created` con el id del AM; `reg_am.cantidad` = suma de libras, `cierre_origen = 'cosecha'` |
+| cosecha sobre un AM que NO es de cosecha | `rejected` — "se cierra desde el PM" |
+| **PM sobre un AM de cosecha** | `rejected` — "se cierra desde su propia pantalla" |
+| `trabajador_id` que no es el de la fila | `rejected` |
 | totales del teléfono descuadrados | `created` con los del servidor + marca `error` en `reg_flag` |
-| mismo trabajador y subtarea el mismo día | `created` + marca `duplicado` |
-| `modulo_id` inexistente | `rejected` |
-| `sacos: []` | `rejected` |
-| dos sacos con el mismo número | `rejected` |
-| el mismo lote otra vez | 3 `duplicate`, ni una fila ni un saco nuevos |
+| `sacos: []` / dos sacos con el mismo número | `rejected` |
+| el mismo lote otra vez | `duplicate` con **el id del AM**, sin filas nuevas |
+| `GET /v4/am_abiertos?fecha=2026-08-18` | 25 abiertas → **4** para el PM y **18** para cosecha (3 de poscosecha no salen en ninguna) |
 
-`jornales` es opcional y vale 1 por defecto: en `z_cosecha_cacao` es 1 en 12.432
-de 12.559 filas y la pantalla nunca lo mostró. Un saco de 0 libras se rechaza —
-es una celda vacía de la grilla de 15, no un saco.
+Un saco de 0 libras se rechaza: es una celda vacía de la grilla de 15, no un
+saco. Y el id que vuelve es **siempre el de `reg_am`**, también en `duplicate`:
+antes un mismo guid devolvía el id del AM al crearse y el de `reg_cosecha` al
+reenviarse.
 
 ### La migración, y el cuadre que la valida
 
@@ -983,7 +993,7 @@ horas del mismo momento. Y `pm_week` = 33, igual que `WEEK('2026-08-13', 3)`.
 AM cargado esa mañana. Ahora hay que crear el AM primero.
 
 
-### `GET /v4/am_abiertos?fecha=YYYY-MM-DD[&finca_id=N]`
+### `GET /v4/am_abiertos?fecha=YYYY-MM-DD[&finca_id=N][&modulo=pm|cosecha]`
 
 Una fila por (tarea AM, persona) de esa fecha que todavía no tiene PM. Es lo
 que lista la pantalla PM.

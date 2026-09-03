@@ -149,6 +149,13 @@ class V4 extends RestController
         $finca_id = $this->input->get('finca_id', TRUE);
         $finca_id = is_numeric($finca_id) ? (int) $finca_id : NULL;
 
+        // Que pantalla pregunta. Un solo endpoint para las dos, porque la
+        // consulta es la misma y lo unico que cambia es que tareas entran.
+        //   pm      (por defecto) -> todo MENOS cosecha y poscosecha
+        //   cosecha                -> solo las tareas de cosecha
+        $modulo = $this->input->get('modulo', TRUE);
+        $modulo = ($modulo === 'cosecha') ? 'cosecha' : 'pm';
+
         $db = $this->requireDb();
 
         // db_debug TRUE (el valor fuera de produccion) convierte cualquier
@@ -193,6 +200,22 @@ class V4 extends RestController
             if ($finca_id !== NULL) {
                 $db->where('am.finca_id', $finca_id);
             }
+            // El PM no cierra cosecha ni poscosecha: tienen formulario propio
+            // (Kevin, 2026-09-03). No es un caso de borde -- de los 550 AM de
+            // agosto, 252 son de cosecha y 38 de poscosecha: mas de la mitad
+            // de la lista del PM no le correspondia.
+            if ($modulo === 'cosecha') {
+                $cos = $this->tareas_modulo($db, 'cosecha');
+                // Sin tareas de cosecha configuradas la lista sale vacia, que
+                // es lo correcto: mejor una pantalla sin nada que una que
+                // ofrece cerrar lo que no es suyo.
+                $db->where_in('st.tarea_id', empty($cos) ? array(0) : $cos);
+            } else {
+                $propias = $this->tareas_con_formulario_propio($db);
+                if (!empty($propias)) {
+                    $db->where_not_in('st.tarea_id', $propias);
+                }
+            }
             $q = $db->order_by('am.fecha_proceso, per.nombre')->get();
         } catch (Throwable $e) {
             $db->db_debug = $debug_previo;
@@ -220,8 +243,9 @@ class V4 extends RestController
         ));
 
         $this->response(array(
-            'server_time' => date('c'),
-            'fecha'       => $fecha,
+            'server_time'  => date('c'),
+            'fecha'        => $fecha,
+            'modulo'       => $modulo,
             'asignaciones' => $filas,
         ), 200);
     }
@@ -330,6 +354,9 @@ class V4 extends RestController
 
     /** Tipos que se saben recibir. El resto se omite de `results`. */
     private static $SYNC_TIPOS = array('am', 'pm', 'cosecha');
+
+    /** Cache por request de tareas_modulo(). */
+    private $tareas_cache = array();
 
     public function sync_post()
     {
@@ -451,21 +478,15 @@ class V4 extends RestController
         // Un registro = una persona en una tarea. La programacion de la
         // manana y el cierre de la tarde son la MISMA fila de reg_am; lo que
         // cambia es en que columna vive el guid.
-        $tabla    = ($tipo === 'cosecha') ? 'reg_cosecha' : 'reg_am';
-        $col_guid = ($tipo === 'pm') ? 'cierre_guid' : 'guid';
-
-        // Idempotencia: el guid ya recibido no se vuelve a aplicar.
+        // Idempotencia: el guid ya recibido no se vuelve a aplicar. El id que
+        // vuelve es el de reg_am en los tres tipos.
         try {
-            $ya = $db->select('id')->from($tabla)->where($col_guid, $guid)->limit(1)->get();
+            $ya = $this->sync_id_publico($db, $tipo, $guid);
         } catch (Throwable $e) {
             return NULL;   // la base no responde: PENDIENTE, no rechazado
         }
-        if ($ya === FALSE) {
-            return NULL;
-        }
-        $fila = $ya->row();
-        if ($fila) {
-            return array('guid' => $guid, 'status' => 'duplicate', 'id' => (int) $fila->id);
+        if ($ya !== NULL) {
+            return array('guid' => $guid, 'status' => 'duplicate', 'id' => $ya);
         }
 
         $payload = isset($rec['payload']) && is_array($rec['payload']) ? $rec['payload'] : NULL;
@@ -496,7 +517,7 @@ class V4 extends RestController
             }
         } catch (Throwable $e) {
             $db->trans_rollback();
-            return $this->sync_excepcion($db, $guid, $tabla, $e);
+            return $this->sync_excepcion($db, $guid, $tipo, $e);
         }
 
         if ($res === NULL || $res['status'] !== 'created') {
@@ -517,21 +538,41 @@ class V4 extends RestController
      * `duplicate`. Cualquier otra cosa deja el registro PENDIENTE: nunca
      * `rejected`, porque reenviar sí lo arregla.
      */
-    private function sync_excepcion($db, $guid, $tabla, $e)
+    private function sync_excepcion($db, $guid, $tipo, $e)
     {
         if ((int) $e->getCode() === 1062) {
             try {
-                $q = $db->select('id')->from($tabla)->where('guid', $guid)->limit(1)->get();
-                $fila = ($q === FALSE) ? NULL : $q->row();
-                if ($fila) {
-                    return array('guid' => $guid, 'status' => 'duplicate', 'id' => (int) $fila->id);
+                $id = $this->sync_id_publico($db, $tipo, $guid);
+                if ($id !== NULL) {
+                    return array('guid' => $guid, 'status' => 'duplicate', 'id' => $id);
                 }
             } catch (Throwable $e2) {
                 // se cae al PENDIENTE de abajo
             }
         }
-        log_message('error', 'V4 sync: fallo al guardar ' . $guid . ' en ' . $tabla . ': ' . $e->getMessage());
+        log_message('error', 'V4 sync: fallo al guardar ' . $guid . ' (' . $tipo . '): ' . $e->getMessage());
         return NULL;
+    }
+
+    /**
+     * El id que ve el telefono. SIEMPRE es el de `reg_am`, en los tres tipos.
+     *
+     * No es cosmetico: sin esto un mismo guid devolvia 42 al crearse (el id
+     * del AM) y 1 al reenviarse (el id de reg_cosecha), y la app se guardaba
+     * el segundo encima del primero.
+     */
+    private function sync_id_publico($db, $tipo, $guid)
+    {
+        if ($tipo === 'cosecha') {
+            $q = $db->select('reg_am_id AS id')->from('reg_cosecha')
+                    ->where('guid', $guid)->limit(1)->get();
+        } elseif ($tipo === 'pm') {
+            $q = $db->select('id')->from('reg_am')->where('cierre_guid', $guid)->limit(1)->get();
+        } else {
+            $q = $db->select('id')->from('reg_am')->where('guid', $guid)->limit(1)->get();
+        }
+        $f = ($q === FALSE) ? NULL : $q->row();
+        return $f ? (int) $f->id : NULL;
     }
 
     /** Entrada de `results` para un rechazo duro. */
@@ -620,7 +661,7 @@ class V4 extends RestController
             'origen'              => 'app',
         ));
         if ($ok === FALSE) {
-            return $this->sync_error_insert($db, $guid, 'reg_am');
+            return $this->sync_error_insert($db, $guid, 'am');
         }
         $id = (int) $db->insert_id();
 
@@ -693,7 +734,7 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, 'am_guid ausente o ilegible: el PM cierra una tarea AM');
         }
 
-        $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid')
+        $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid, subtarea_id')
                 ->from('reg_am')->where('guid', $am_guid)->limit(1)->get();
         if ($q === FALSE) {
             return NULL;   // la base no responde: PENDIENTE
@@ -705,6 +746,16 @@ class V4 extends RestController
             // regla del guid omitido, y es lo que hace que este UPDATE sea tan
             // seguro offline como lo era un INSERT.
             return NULL;
+        }
+
+        // Cosecha y poscosecha NO se cierran desde el PM: tienen formulario
+        // propio y el PM solo sabe de una cantidad. Rechazo duro -- reenviar
+        // no lo arregla, hay que cerrarla desde su pantalla.
+        $tarea = $this->tarea_de_subtarea($db, $am->subtarea_id);
+        if ($tarea !== NULL && in_array($tarea, $this->tareas_con_formulario_propio($db), TRUE)) {
+            return $this->sync_rechazo($guid,
+                'esa tarea es de ' . $this->sync_nombre($db, 'z_tarea', 'nombre', $tarea)
+                . ' y se cierra desde su propia pantalla, no desde el PM');
         }
 
         // El trabajador es redundante -- la fila ya sabe de quien es -- pero
@@ -801,62 +852,59 @@ class V4 extends RestController
     // -----------------------------------------------------------------
 
     // -----------------------------------------------------------------
-    // COSECHA DE CACAO
+    // COSECHA DE CACAO — CIERRE de una tarea AM, no un registro suelto
     // -----------------------------------------------------------------
 
     /**
-     * Un registro = UN trabajador, igual que en AM. Los N trabajadores del
-     * mismo encabezado comparten `captura_guid` y viajan como N registros con
-     * su propio guid y su propio ACK.
+     * Decision de Kevin (2026-09-03): cosecha funciona como el PM. Todas las
+     * tareas viven en `reg_am`; cosecha elige una de las que tienen tarea
+     * "Cosecha" y le carga el detalle de sacos de esa persona. NO se vuelve a
+     * elegir trabajador: la tarea ya lo trae.
      *
-     * Es lo que hace la app vieja sin decirlo: 2.710 de los 3.641 encabezados
-     * de z_cosecha_cacao tienen mas de un trabajador (hasta 21). El boton
-     * ADICIONAL de la pantalla es esto.
+     * Por eso el payload se reduce a:
+     *   am_guid, sacos[], [hora_cierre], [responsable_id], [trabajador_id],
+     *   [observaciones]
      *
-     * Los sacos van en `reg_cosecha_saco`, no en 15 columnas fijas.
+     * **La suma de las libras es el avance de la tarea**: este metodo escribe
+     * `reg_am.cantidad` con `total_peso`. No es una interpretacion: de 14.466
+     * pares (PM de cosecha, fila de z_cosecha_cacao) del mismo dia, trabajador
+     * y subtarea, 13.835 tienen `pm.cantidad = total_peso` (95,6 %) y NINGUNO
+     * coincide con el conteo de sacos.
      */
     private function sync_cosecha($db, $guid, $p, $cad, $alias, $offset, $ahora)
     {
-        $fecha = $this->sync_fecha(isset($p['fecha_proceso']) ? $p['fecha_proceso'] : NULL);
-        if ($fecha === NULL) {
-            return $this->sync_rechazo($guid, 'fecha_proceso ausente o no es ISO-8601');
-        }
-        if ($fecha->getTimestamp() > $ahora + 7200) {
+        $am_guid = isset($p['am_guid']) && is_string($p['am_guid']) ? trim($p['am_guid']) : '';
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $am_guid)) {
             return $this->sync_rechazo($guid,
-                'la fecha de cosecha es futura: no se puede registrar trabajo que todavia no ocurrio');
+                'am_guid ausente o ilegible: la cosecha cierra una tarea AM');
         }
 
-        $ids = array();
-        foreach (array('finca_id', 'supervisor_id', 'subtarea_id', 'trabajador_id', 'lote_id') as $campo) {
-            $v = $this->sync_int($p, $campo);
-            if ($v === NULL) {
-                return $this->sync_rechazo($guid, $campo . ' ausente o no es un entero positivo');
-            }
-            $ids[$campo] = $v;
+        $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid, subtarea_id')
+                ->from('reg_am')->where('guid', $am_guid)->limit(1)->get();
+        if ($q === FALSE) {
+            return NULL;
+        }
+        $am = $q->row();
+        if (!$am) {
+            // La programacion todavia no llego: PENDIENTE, la cola reintenta.
+            return NULL;
         }
 
-        // El supervisor entra como `responsable_id` porque es el mismo chequeo.
-        $err = $this->sync_valida_catalogos($db, array(
-            'finca_id'       => $ids['finca_id'],
-            'subtarea_id'    => $ids['subtarea_id'],
-            'lote_id'        => $ids['lote_id'],
-            'responsable_id' => $ids['supervisor_id'],
-        ));
-        if ($err !== NULL) {
-            return $this->sync_rechazo($guid, str_replace('el responsable', 'el supervisor', $err));
-        }
-        if (!$this->sync_personal_activo($db, $ids['trabajador_id'])) {
+        $tarea = $this->tarea_de_subtarea($db, $am->subtarea_id);
+        if ($tarea === NULL || !in_array($tarea, $this->tareas_modulo($db, 'cosecha'), TRUE)) {
             return $this->sync_rechazo($guid,
-                'el trabajador ' . $this->sync_nombre($db, 'z_personal', 'nombre', $ids['trabajador_id'])
-                . ' no existe o esta dado de baja');
+                'esa tarea de la manana no es de cosecha: se cierra desde el PM');
         }
 
-        // Un modulo, no una lista: z_riego y z_cosecha_cacao nunca guardaron
-        // mas de uno. Opcional porque hay lotes sin modulos.
-        $modulo_id = $this->sync_int($p, 'modulo_id');
-        if ($modulo_id !== NULL && !$this->sync_modulo_de_lote($db, $modulo_id, $ids['lote_id'])) {
+        $trabajador_id = $this->sync_int($p, 'trabajador_id');
+        if ($trabajador_id !== NULL && $trabajador_id !== (int) $am->personal_id) {
             return $this->sync_rechazo($guid,
-                $this->sync_motivo_modulo($db, $modulo_id, $ids['lote_id']));
+                'esa tarea de la manana no es de '
+                . $this->sync_nombre($db, 'z_personal', 'nombre', $trabajador_id)
+                . ', es de ' . $this->sync_nombre($db, 'z_personal', 'nombre', (int) $am->personal_id));
+        }
+        if ($am->cierre_guid !== NULL) {
+            return $this->sync_rechazo($guid, 'esa tarea de la manana ya fue cerrada');
         }
 
         $sacos = $this->sync_sacos($p);
@@ -868,12 +916,27 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, 'una cosecha sin sacos no es un registro de cosecha');
         }
 
-        $captura = isset($p['captura_guid']) && is_string($p['captura_guid'])
-            && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', trim($p['captura_guid']))
-            ? trim($p['captura_guid']) : NULL;
+        $responsable_id = $this->sync_int($p, 'responsable_id');
+        if ($responsable_id === NULL) {
+            $responsable_id = (int) $am->responsable_id;
+        } elseif (!$this->sync_personal_activo($db, $responsable_id)) {
+            return $this->sync_rechazo($guid,
+                'el responsable ' . $this->sync_nombre($db, 'z_personal', 'nombre', $responsable_id)
+                . ' no existe o esta dado de baja');
+        }
 
-        // Los totales los pone el SERVIDOR. Lo que mando el telefono sirve
-        // solo para comparar: si no cuadra, se marca y gana el servidor.
+        $inicio = $this->sync_fecha($am->fecha_proceso);
+        if ($inicio === NULL) {
+            return NULL;
+        }
+        $cierre = $this->sync_hora($p, 'hora_cierre', $inicio);
+        if ($cierre === NULL) {
+            $cierre = clone $cad;
+        }
+        if ($cierre->getTimestamp() < $inicio->getTimestamp()) {
+            return $this->sync_rechazo($guid, 'hora_cierre anterior a la hora de la tarea AM');
+        }
+
         $total_sacos = count($sacos);
         $total_peso  = 0.0;
         foreach ($sacos as $sc) {
@@ -881,20 +944,37 @@ class V4 extends RestController
         }
         $total_peso = round($total_peso, 2);
 
-        $jornales = isset($p['jornales']) && is_numeric($p['jornales'])
-            ? round((float) $p['jornales'], 2) : 1;
+        // El UPDATE va PRIMERO y con `cierre_guid IS NULL` adentro: es lo que
+        // hace el cierre atomico sin depender de la transaccion. Si dos
+        // equipos cierran la misma tarea a la vez, uno actualiza una fila y el
+        // otro cero, y recien entonces se escribe el detalle.
+        $ok = $db->set(array(
+                'cantidad'                 => $total_peso,
+                'hora_cierre'              => $cierre->format('Y-m-d H:i:s'),
+                'comentario_cierre'        => $this->sync_texto($p, 'observaciones', 255),
+                'responsable_cierre_id'    => $responsable_id,
+                'cierre_guid'              => $guid,
+                'cierre_device_alias'      => $alias,
+                'cierre_created_at_device' => $cad->format('Y-m-d H:i:s'),
+                'cierre_received_at'       => date('Y-m-d H:i:s', $ahora),
+                'cierre_offset'            => $offset,
+                // No 'app': asi el reporte distingue quien cerro la tarea sin
+                // salir a buscar si hay fila en reg_cosecha.
+                'cierre_origen'            => 'cosecha',
+            ))
+            ->where('id', (int) $am->id)
+            ->where('cierre_guid IS NULL', NULL, FALSE)
+            ->update('reg_am');
+        if ($ok === FALSE) {
+            return NULL;
+        }
+        if ($db->affected_rows() === 0) {
+            return $this->sync_rechazo($guid, 'esa tarea de la manana ya fue cerrada');
+        }
 
         $ok = $db->insert('reg_cosecha', array(
             'guid'                => $guid,
-            'captura_guid'        => $captura,
-            'fecha_proceso'       => $fecha->format('Y-m-d H:i:s'),
-            'finca_id'            => $ids['finca_id'],
-            'supervisor_id'       => $ids['supervisor_id'],
-            'subtarea_id'         => $ids['subtarea_id'],
-            'trabajador_id'       => $ids['trabajador_id'],
-            'lote_id'             => $ids['lote_id'],
-            'modulo_id'           => $modulo_id,
-            'jornales'            => $jornales,
+            'reg_am_id'           => (int) $am->id,
             'total_sacos'         => $total_sacos,
             'total_peso'          => $total_peso,
             'observaciones'       => $this->sync_texto($p, 'observaciones', 500),
@@ -905,29 +985,24 @@ class V4 extends RestController
             'origen'              => 'app',
         ));
         if ($ok === FALSE) {
-            return $this->sync_error_insert($db, $guid, 'reg_cosecha');
+            return $this->sync_error_insert($db, $guid, 'cosecha');
         }
-        $id = (int) $db->insert_id();
+        $cosecha_id = (int) $db->insert_id();
 
         foreach ($sacos as $sc) {
-            $ok = $db->insert('reg_cosecha_saco', array(
-                'cosecha_id' => $id,
-                'numero'     => $sc['numero'],
-                'libras'     => $sc['libras'],
-            ));
-            if ($ok === FALSE) {
-                return $this->sync_error_insert($db, $guid, 'reg_cosecha');
+            if ($db->insert('reg_cosecha_saco', array(
+                    'cosecha_id' => $cosecha_id,
+                    'numero'     => $sc['numero'],
+                    'libras'     => $sc['libras'],
+                )) === FALSE) {
+                return $this->sync_error_insert($db, $guid, 'cosecha');
             }
         }
 
-        $out = array('guid' => $guid, 'status' => 'created', 'id' => $id);
+        $out = array('guid' => $guid, 'status' => 'created', 'id' => (int) $am->id);
         $desc = $this->sync_cosecha_descuadre($p, $total_sacos, $total_peso);
         if ($desc !== NULL) {
             $out['_error'] = $desc;
-        }
-        $dup = $this->sync_cosecha_duplicado($db, $ids, $fecha, $id);
-        if ($dup !== NULL) {
-            $out['_duplicado'] = $dup;
         }
         return $out;
     }
@@ -979,44 +1054,21 @@ class V4 extends RestController
             : ('los totales del telefono no cuadran con los sacos (' . implode('; ', $partes) . ')');
     }
 
-    /** El mismo trabajador, la misma subtarea y el mismo dia, otra vez. */
-    private function sync_cosecha_duplicado($db, $ids, $fecha, $id)
-    {
-        $dia = $fecha->format('Y-m-d');
-        try {
-            $q = $db->select('id')->from('reg_cosecha')
-                    ->where('trabajador_id', $ids['trabajador_id'])
-                    ->where('subtarea_id', $ids['subtarea_id'])
-                    ->where('finca_id', $ids['finca_id'])
-                    ->where('fecha_proceso >=', $dia . ' 00:00:00')
-                    ->where('fecha_proceso <=', $dia . ' 23:59:59')
-                    ->where('id !=', $id)
-                    ->order_by('id', 'ASC')->limit(1)->get();
-        } catch (Throwable $e) {
-            return NULL;
-        }
-        $fila = ($q === FALSE) ? NULL : $q->row();
-        return $fila
-            ? ('ya existe la cosecha #' . (int) $fila->id
-               . ' del mismo trabajador en la misma subtarea el ' . $dia)
-            : NULL;
-    }
 
     /**
      * Un INSERT que falla puede ser una carrera por el mismo guid (1062, y
      * entonces es `duplicate`) o cualquier otra cosa (y entonces es PENDIENTE,
      * nunca `rejected`: reenviar sí lo arregla).
      */
-    private function sync_error_insert($db, $guid, $tabla)
+    private function sync_error_insert($db, $guid, $tipo)
     {
         $e = $db->error();
         if (isset($e['code']) && (int) $e['code'] === 1062) {
             $db->trans_rollback();
             $db->trans_begin();
-            $fila = $db->select('id')->from($tabla)->where('guid', $guid)->limit(1)->get();
-            $fila = ($fila === FALSE) ? NULL : $fila->row();
-            if ($fila) {
-                return array('guid' => $guid, 'status' => 'duplicate', 'id' => (int) $fila->id);
+            $id = $this->sync_id_publico($db, $tipo, $guid);
+            if ($id !== NULL) {
+                return array('guid' => $guid, 'status' => 'duplicate', 'id' => $id);
             }
         }
         return NULL;
@@ -1288,6 +1340,57 @@ class V4 extends RestController
             'CHECKSUM TABLE z_finca, z_lote, z_modulo, z_cultivo, z_tarea, z_subtarea, z_ulabor, z_personal'
         )->result_array();
         return md5(json_encode($rows));
+    }
+
+    /**
+     * Tareas que NO se cierran desde el PM porque tienen formulario propio.
+     *
+     * `$cual` es 'cosecha' o 'poscosecha'. Sale de la configuracion; vacia,
+     * se deriva por el nombre de la tarea. OJO: 'Poscosecha cacao' tambien
+     * contiene 'COSECHA', asi que la de cosecha excluye explicitamente a la
+     * otra -- un LIKE '%COSECHA%' a secas se las lleva a las dos.
+     */
+    private function tareas_modulo($db, $cual)
+    {
+        if (isset($this->tareas_cache[$cual])) {
+            return $this->tareas_cache[$cual];
+        }
+        $clave = $cual === 'cosecha' ? 'tarea_cosecha_ids' : 'tarea_poscosecha_ids';
+        $ids = isset($this->v4cfg[$clave]) ? array_map('intval', (array) $this->v4cfg[$clave]) : array();
+
+        if (empty($ids)) {
+            $pos = "(UPPER(nombre) LIKE '%POSCOSECHA%' OR UPPER(nombre) LIKE '%POSTCOSECHA%')";
+            $where = $cual === 'cosecha'
+                ? "UPPER(nombre) LIKE '%COSECHA%' AND NOT " . $pos
+                : $pos;
+            $q = $db->select('id')->from('z_tarea')
+                    ->where($where, NULL, FALSE)
+                    ->where("estado IN ('1','A')", NULL, FALSE)->get();
+            $ids = array();
+            if ($q !== FALSE) {
+                foreach ($q->result() as $f) {
+                    $ids[] = (int) $f->id;
+                }
+            }
+        }
+        $this->tareas_cache[$cual] = $ids;
+        return $ids;
+    }
+
+    /** Las dos juntas: lo que el PM no debe ver ni cerrar. */
+    private function tareas_con_formulario_propio($db)
+    {
+        return array_merge($this->tareas_modulo($db, 'cosecha'),
+                           $this->tareas_modulo($db, 'poscosecha'));
+    }
+
+    /** La tarea (no la subtarea) de una fila de reg_am. NULL si no se sabe. */
+    private function tarea_de_subtarea($db, $subtarea_id)
+    {
+        $q = $db->select('tarea_id')->from('z_subtarea')
+                ->where('id', (int) $subtarea_id)->limit(1)->get();
+        $f = ($q === FALSE) ? NULL : $q->row();
+        return $f ? (int) $f->tarea_id : NULL;
     }
 
     /**

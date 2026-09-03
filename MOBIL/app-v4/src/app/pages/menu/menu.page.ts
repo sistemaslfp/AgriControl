@@ -79,7 +79,7 @@ export class MenuPage implements OnInit {
   readonly celdas: CeldaMenu[] = [
     { titulo: 'AM', icono: 'sunny-outline', accion: 'modulo', habilitada: true, ruta: '/am' },
     { titulo: 'PM', icono: 'moon-outline', accion: 'modulo', habilitada: true, ruta: '/pm' },
-    { titulo: 'Cosecha', icono: 'leaf-outline', accion: 'modulo', habilitada: false },
+    { titulo: 'Cosecha', icono: 'leaf-outline', accion: 'modulo', habilitada: true, ruta: '/cosecha' },
     { titulo: 'Riego', icono: 'rainy-outline', accion: 'modulo', habilitada: false },
     { titulo: 'Poscosecha', icono: 'time-outline', accion: 'modulo', habilitada: false },
     { titulo: 'Actualizar Maestros', icono: 'cloud-download-outline', accion: 'maestros', habilitada: true },

@@ -230,7 +230,17 @@ ok('05e la subtarea se filtra también por finca',
   !textoSub.includes('PACARITAMBO'), textoSub.replace(/\n/g, ' ').slice(0, 80));
 ok('05d no se muestra el código interno de la subtarea',
   !textoSub.includes('C-01') && !textoSub.includes('M-07'), textoSub.slice(0, 60));
-await enModal('ion-radio', 'COSECHA CACAO').click();
+// A PARTIR DE ACA se usa PODA DE FORMACION y no COSECHA CACAO: desde el
+// 2026-09-03 el PM no cierra tareas de cosecha, y esta suite prueba
+// justamente el cierre por PM. La cascada de arriba sigue verificandose con
+// la tarea COSECHA, que es donde importa.
+await p.mouse.click(8, 8);
+await esperarModalCerrado();
+await t(300);
+await elegirUno('Tarea', 'MANTENIMIENTO');
+await campo('Subtarea').click();
+await t(500);
+await enModal('ion-radio', 'PODA DE FORMACION').click();
 await t(600);
 
 let problemas = await p.locator(`${raiz} .banner.alerta`).first().innerText();
@@ -264,8 +274,8 @@ ok(
   (await campo('Seleccionar personal').innerText()).includes('0 persona'),
 );
 
-await elegirUno('Tarea', 'COSECHA');
-await elegirUno('Subtarea', 'COSECHA CACAO');
+await elegirUno('Tarea', 'MANTENIMIENTO');
+await elegirUno('Subtarea', 'PODA DE FORMACION');
 await elegirVarios('Módulos', ['Módulo 02']);
 await elegirVarios('Seleccionar personal', ['ALAVA']);
 await flecha('siguiente').click();
@@ -315,7 +325,7 @@ ok(
    'subtarea_id', 'modulo_ids', 'personal_id'].every((k) => k in pa),
   JSON.stringify(Object.keys(pa)),
 );
-ok('15 finca, lote y subtarea viajan como enteros', pa.finca_id === 1 && pa.lote_id === 1 && pa.subtarea_id === 88,
+ok('15 finca, lote y subtarea viajan como enteros', pa.finca_id === 1 && pa.lote_id === 1 && pa.subtarea_id === 90,
   JSON.stringify({ f: pa.finca_id, l: pa.lote_id, s: pa.subtarea_id }));
 // Un registro = una persona: personal_id en singular, y nunca vacio.
 ok('16 personal_id viaja en singular', typeof pa.personal_id === 'number' && pa.personal_id > 0,
@@ -351,8 +361,8 @@ await flecha('siguiente').click();
 await t(600);
 await elegirUno('Cultivo', 'CACAO');
 await elegirUno('Lote', 'Lote 5');
-await elegirUno('Tarea', 'COSECHA');
-await elegirUno('Subtarea', 'COSECHA CACAO');
+await elegirUno('Tarea', 'MANTENIMIENTO');
+await elegirUno('Subtarea', 'PODA DE FORMACION');
 await elegirVarios('Seleccionar personal', ['ALAVA']);
 await flecha('siguiente').click();
 await t(700);
@@ -383,7 +393,7 @@ await t(2500);
 ok('23 la pantalla PM abre', await p.locator('ion-title', { hasText: 'Reporte PM' }).isVisible());
 
 // Tres asignaciones abiertas en DOS trabajos: dos personas en
-// (Lote 1, Mod. 02, COSECHA CACAO) y una en (Lote 5, COSECHA CACAO).
+// (Lote 1, Mod. 02, PODA DE FORMACION) y una en (Lote 5, PODA DE FORMACION).
 //
 // Se agrupa por el TRABAJO --lote, subtarea y modulos--, no por captura_guid.
 // Con el guid salian tres tarjetas y dos eran IDENTICAS palabra por palabra,

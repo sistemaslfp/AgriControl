@@ -21,6 +21,24 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   31 comprobaciones.
   Se corre cuando se toca `registros.page.*` o `sync-queue.service.ts`.
 
+- **`cosecha.spec.mjs`** — `MOBIL/03-pantallas.md` §Cosecha: que la pantalla
+  **cierra una tarea AM** y no crea nada, que **no hay selector de trabajador**,
+  que el payload es `{am_guid, sacos[...]}` sin finca ni lote ni subtarea, que
+  los sacos viajan renumerados 1..N, y **el reparto con el PM**: el PM ya no
+  muestra las tareas de cosecha y cosecha no muestra las demás.
+  23 comprobaciones.
+  Se corre cuando se toca `cosecha.page.*`, `pm.page.ts` o el filtro por módulo.
+
+  **Ojo con `hasText: 'Cosecha'`**: Playwright busca subcadena sin distinguir
+  mayúsculas, así que también matchea la celda **Poscosecha** del menú, que
+  sigue gris. Hay que anclar con `/^Cosecha$/`. Para contar filas de saco,
+  `hasText: 'Saco '` cuenta de más: se usa `.numero-saco`.
+
+  **`am-pm.spec.mjs` usa PODA DE FORMACION y no COSECHA CACAO** en las tareas
+  que después cierra el PM, justamente porque el PM ya no cierra cosecha. Y
+  `cola.spec.mjs` encola `riego` donde antes encolaba `cosecha`: ese tipo dejó
+  de ser genérico, el mock lo trata como cierre de un AM.
+
 No corren en CI ni hacen falta para desarrollar.
 
 ```bash
@@ -35,6 +53,7 @@ node e2e/mock-v4.mjs
 node e2e/cola.spec.mjs
 node e2e/am-pm.spec.mjs
 node e2e/registros.spec.mjs
+node e2e/cosecha.spec.mjs
 ```
 
 Si el entorno ya tiene un Chromium instalado y no se quiere descargar otro,

@@ -21,7 +21,7 @@ al día al **2026-09-02**.
 | 2 | **DDL** de las tablas nuevas + verificar que la web V3 no cambió | **HECHO** — `docs/db/migrations/02-tablas-v4.sql`, 13 tablas |
 | 3 | **AM y PM** — el 80 % del uso diario | **HECHO** — `POST /v4/sync` y las pantallas `/am` y `/pm` |
 | 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
-| 5 | **Cosecha de Cacao** | **servidor HECHO** (`tipo: cosecha` en `/v4/sync`); falta la pantalla |
+| 5 | **Cosecha de Cacao** | **HECHO** — cierra una tarea AM: `tipo: cosecha` en `/v4/sync` y la pantalla `/cosecha` |
 | 6 | **Postcosecha** — máquina de estados + fotos. El más caro | pendiente |
 | 7 | **Riego** — al final por decisión; faltan capturas para especificarlo | pendiente |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
@@ -36,6 +36,24 @@ migra desde 2026-08-01, no el histórico.
 
 Una conclusión por tema. Si algo acá contradice al código, **el código gana** y
 se actualiza esto en el mismo commit.
+
+## Qué cierra cada pantalla
+
+**El PM no cierra cosecha ni poscosecha** (Kevin, 2026-09-03). Esas dos piden
+más datos que una cantidad y tienen formulario propio; el PM queda para lo
+administrativo y las tareas puntuales. De los 550 AM de agosto, **252 son de
+cosecha y 38 de poscosecha**: más de la mitad de la lista del PM no le
+correspondía.
+
+**Cosecha funciona como el PM: cierra una tarea AM.** No crea tareas y no vuelve
+a elegir trabajador — las personas ya vienen de la programación de la mañana.
+Solo carga los sacos de cada una, y **la suma de las libras pasa a ser el avance
+de la tarea** (`reg_am.cantidad`). Medido sobre 14.466 pares del histórico:
+95,6 % de los PM de cosecha tienen `cantidad = total_peso` y ninguno coincide
+con el conteo de sacos.
+
+**Poscosecha queda sin quién la cierre hasta el paso 6.** Son 38 AM en agosto,
+unidad Jornal. Es la consecuencia conocida de sacarla del PM.
 
 ## El modelo de datos
 

@@ -23,7 +23,10 @@ let cerradas = new Set();      // `${am_guid}|${personal_id}`
 const NOMBRES = { 214: 'ALAVA TOMALA ERICKA', 301: 'BRIONES MERO JUAN',
                   26: 'HOLGUIN LUIS ALBERTO', 27: 'MENDOZA CARLOS RUBEN',
                   400: 'PACARI PEREZ ANA' };
-const SUBTAREAS = { 88: 'COSECHA CACAO', 90: 'PODA DE FORMACION' };
+const SUBTAREAS = { 88: 'COSECHA CACAO', 90: 'PODA DE FORMACION', 91: 'COSECHA EN PACARITAMBO' };
+// Que modulo cierra cada subtarea. El PM no ve las de cosecha ni las de
+// poscosecha: tienen formulario propio (Kevin, 2026-09-03).
+const MODULO_DE_SUBTAREA = { 88: 'cosecha', 90: 'pm', 91: 'cosecha' };
 const LOTES = { 1: '1', 5: '5', 6: 'Administrativos' };
 const MODULOS = { 2: '02' };
 
@@ -54,11 +57,14 @@ const server = http.createServer((req, res) => {
     if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       return json(400, { error: 'Falta el parametro fecha (YYYY-MM-DD)' });
     }
+    const modulo = u.searchParams.get('modulo') === 'cosecha' ? 'cosecha' : 'pm';
     const asignaciones = [];
     let n = 1;
     for (const [guid, am] of amRecibidos) {
       if (!String(am.payload.fecha_proceso).startsWith(fecha)) continue;
       // Un registro = una persona: el AM ya trae personal_id en singular.
+      const suyo = MODULO_DE_SUBTAREA[am.payload.subtarea_id] ?? 'pm';
+      if (modulo === 'cosecha' ? suyo !== 'cosecha' : suyo !== 'pm') continue;
       for (const pid of [am.payload.personal_id]) {
         if (!pid || cerradas.has(`${guid}|${pid}`)) continue;
         asignaciones.push({
@@ -77,7 +83,7 @@ const server = http.createServer((req, res) => {
         });
       }
     }
-    return json(200, { server_time: new Date().toISOString(), fecha, asignaciones });
+    return json(200, { server_time: new Date().toISOString(), fecha, modulo, asignaciones });
   }
 
   if (req.url === '/v4/hora') return json(200, {
@@ -157,19 +163,31 @@ const server = http.createServer((req, res) => {
                     reason: 'la subtarea COSECHA CACAO no existe o esta inactiva' });
           continue;
         }
-        if (r.tipo === 'pm') {
+        if (r.tipo === 'pm' || r.tipo === 'cosecha') {
           // Un PM cierra un AM. Si el AM todavia no llego, el guid se OMITE de
           // results: el telefono lo deja PENDIENTE y lo reintenta. Es la misma
           // regla del servidor de verdad.
           const am = r.payload?.am_guid ? amRecibidos.get(r.payload.am_guid) : null;
           if (!am) continue;
+          const suyo = MODULO_DE_SUBTAREA[am.payload.subtarea_id] ?? 'pm';
+          if (r.tipo === 'cosecha' && suyo !== 'cosecha') {
+            rs.push({ guid: r.guid, status: 'rejected',
+                      reason: 'esa tarea de la manana no es de cosecha: se cierra desde el PM' });
+            continue;
+          }
+          if (r.tipo === 'pm' && suyo === 'cosecha') {
+            rs.push({ guid: r.guid, status: 'rejected',
+                      reason: 'esa tarea es de Cosecha y se cierra desde su propia pantalla, no desde el PM' });
+            continue;
+          }
           const k = `${r.payload.am_guid}|${am.payload.personal_id}`;
           if (cerradas.has(k)) {
             rs.push({ guid: r.guid, status: 'rejected', reason: 'esa asignacion AM ya fue cerrada' });
             continue;
           }
           cerradas.add(k);
-          rs.push({ guid: r.guid, status: 'created', id: ++contador });
+          // El id que vuelve es SIEMPRE el del AM, tambien en cosecha.
+          rs.push({ guid: r.guid, status: 'created', id: am.id });
           continue;
         }
         const id = ++contador;

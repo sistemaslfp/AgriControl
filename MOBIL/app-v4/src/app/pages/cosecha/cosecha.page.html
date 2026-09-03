@@ -1,0 +1,349 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Cosecha de Cacao</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="cargarLista()" aria-label="Actualizar lista">
+        <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content
+  class="ion-padding"
+  appSwipePasos
+  (swipeSiguiente)="siguiente()"
+  (swipeAnterior)="anterior()"
+>
+  @if (sinHoraVerificada()) {
+    <div class="banner aviso">
+      Este equipo nunca sincronizó la hora con el servidor. Se puede capturar,
+      pero los registros viajan marcados como no verificables.
+    </div>
+  }
+
+  <!-- ============ Paso 0: encabezado + tareas de cosecha ============ -->
+  @if (paso() === 0) {
+    <ion-list inset="true">
+      <ion-item>
+        <ion-label>Fecha de cosecha</ion-label>
+        <ion-datetime-button slot="end" datetime="fechaCos"></ion-datetime-button>
+      </ion-item>
+      <ion-item>
+        <ion-label>Hora de cierre</ion-label>
+        <ion-datetime-button slot="end" datetime="horaCos"></ion-datetime-button>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirFinca()">
+        <ion-label>
+          Finca
+          <p>{{ finca()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirResponsable()">
+        <ion-icon slot="start" name="person-outline"></ion-icon>
+        <ion-label>
+          Supervisor que cierra
+          <p>{{ responsable()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="fechaCos"
+          presentation="date"
+          locale="es-EC"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fecha()"
+          [min]="limites().min"
+          [max]="limites().max"
+          (ionChange)="setFecha($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="horaCos"
+          presentation="time"
+          locale="es-EC"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fecha() + 'T' + horaCierre() + ':00'"
+          (ionChange)="setHoraCierre($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+
+    <div class="cabecera-trabajador">
+      <h2 class="titulo-seccion">Tareas de cosecha sin cerrar</h2>
+      @if (cargandoLista()) {
+        <ion-spinner name="crescent" class="spinner-boton"></ion-spinner>
+      }
+    </div>
+
+    @if (errorLista(); as err) {
+      <div class="banner aviso">
+        <ion-icon name="cloud-offline-outline"></ion-icon>
+        {{ err }}
+      </div>
+    }
+
+    @if (!cargandoLista() && disponibles().length === 0) {
+      <div class="banner info">
+        No hay tareas de cosecha sin cerrar para el {{ fecha() }}.
+        @if (!listaDesdeServidor()) {
+          Solo se está viendo lo cargado en este equipo: con conexión pueden
+          aparecer tareas de otras tablets.
+        }
+      </div>
+    } @else {
+      <ion-list inset="true">
+        @for (g of grupos(); track g.clave) {
+          <ion-item button="true" detail="true" (click)="abrirPersonas(g)" class="tarea-am">
+            <ion-label>
+              <strong>
+                {{ g.lote }}@if (g.modulos) { · Mód. {{ g.modulos }} }
+              </strong>
+              <p>{{ g.subtarea }}</p>
+              <p [class.con-eleccion]="elegidasDe(g).length > 0">
+                {{ resumenPersonas(g) }}
+              </p>
+              @if (g.soloLocal) {
+                <p class="pendiente">Cargada en este equipo, todavía sin enviar</p>
+              }
+            </ion-label>
+            @if (elegidasDe(g).length > 0) {
+              <ion-note slot="end" color="primary">
+                {{ elegidasDe(g).length }}/{{ g.asignaciones.length }}
+              </ion-note>
+            }
+          </ion-item>
+        }
+      </ion-list>
+    }
+
+    <div class="banner info">
+      Cosecha no crea tareas: cierra las que se programaron en el AM. Lote,
+      módulos, subtarea y personal vienen de ahí; acá solo se pesan los sacos.
+      La suma de las libras queda como el avance de la tarea.
+    </div>
+
+    @if (problemasEncabezado().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasEncabezado(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+  }
+
+  <!-- ==================== Sacos por persona ==================== -->
+  @if (paso() > 0 && paso() < indiceRevision()) {
+    @let i = indiceCierre();
+    @let c = elegidas()[i];
+
+    <h2 class="titulo-seccion">{{ c.asignacion.trabajador }}</h2>
+
+    <ion-list inset="true">
+      <ion-item lines="none">
+        <ion-label>
+          <p>Tarea de la mañana</p>
+          <strong>
+            {{ c.asignacion.lote }}@if (c.asignacion.modulos) {
+              · Mód. {{ c.asignacion.modulos }}
+            } · {{ c.asignacion.subtarea }}
+          </strong>
+        </ion-label>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="¿Cuántos sacos?"
+          labelPlacement="stacked"
+          type="number"
+          inputmode="numeric"
+          [value]="c.sacos.length"
+          (ionChange)="setCantidadSacos(i, $any($event.detail).value ?? '')"
+        ></ion-input>
+      </ion-item>
+      @for (s of c.sacos; track s.numero) {
+        <ion-item>
+          <ion-label slot="start" class="numero-saco">
+            Saco {{ s.numero < 10 ? '0' + s.numero : s.numero }}
+          </ion-label>
+          <ion-input
+            class="peso-saco"
+            type="number"
+            inputmode="decimal"
+            placeholder="libras"
+            [value]="s.libras"
+            (ionInput)="setLibras(i, s.numero, $any($event.target).value ?? '')"
+            [attr.aria-label]="'Libras del saco ' + s.numero"
+          ></ion-input>
+          <ion-button
+            slot="end"
+            fill="clear"
+            color="medium"
+            (click)="quitarSaco(i, s.numero)"
+            [attr.aria-label]="'Quitar saco ' + s.numero"
+          >
+            <ion-icon slot="icon-only" name="remove-outline"></ion-icon>
+          </ion-button>
+        </ion-item>
+      }
+    </ion-list>
+
+    <div class="totales">
+      <span class="etiqueta">Total sacos</span>
+      <span class="valor">{{ totalSacos(i) }}</span>
+    </div>
+    <div class="totales">
+      <span class="etiqueta">Total libras</span>
+      <span class="valor">{{ totalPeso(i) }}</span>
+    </div>
+
+    <div class="fila-botones">
+      <ion-button expand="block" fill="outline" (click)="agregarSaco(i)">
+        <ion-icon slot="start" name="add-outline"></ion-icon>
+        Agregar saco
+      </ion-button>
+    </div>
+
+    <ion-list inset="true">
+      <ion-item>
+        <ion-input
+          label="Observaciones"
+          labelPlacement="stacked"
+          placeholder="Opcional"
+          [value]="c.observaciones"
+          (ionInput)="setObservaciones(i, $any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-note>
+          Cierra a las {{ horaCierre() }}, la hora del encabezado. La hora de
+          inicio sale de la tarea AM, y el avance es la suma de estas libras.
+        </ion-note>
+      </ion-item>
+    </ion-list>
+
+    @if (problemasCierre(i).length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasCierre(i); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+  }
+
+  <!-- ==================== Revisión ==================== -->
+  @if (paso() === indiceRevision()) {
+    <h2 class="titulo-seccion">Revisar y enviar</h2>
+
+    <ion-list inset="true">
+      <ion-item lines="none">
+        <ion-label>
+          <p>Fecha y hora de cierre</p>
+          <strong>{{ fecha() }} · {{ horaCierre() }}</strong>
+        </ion-label>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-label>
+          <p>Finca / Supervisor que cierra</p>
+          <strong>{{ finca()?.nombre ?? '—' }} · {{ responsable()?.nombre ?? '—' }}</strong>
+        </ion-label>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-label>
+          <p>Totales</p>
+          <strong>
+            {{ elegidas().length }} tarea(s) ·
+            {{ totalSacosGeneral() }} saco(s) ·
+            {{ totalPesoGeneral() }} lb
+          </strong>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    @for (c of elegidas(); track clave(c.asignacion)) {
+      <ion-list inset="true">
+        <ion-item button="true" detail="true" (click)="irA($index + 1)">
+          <ion-label>
+            <strong>{{ c.asignacion.trabajador }}</strong>
+            <p>
+              {{ c.asignacion.lote }}@if (c.asignacion.modulos) {
+                · Mód. {{ c.asignacion.modulos }}
+              } · {{ c.asignacion.subtarea }}
+            </p>
+            <p>{{ totalSacos($index) }} saco(s) · {{ totalPeso($index) }} lb</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+    }
+
+    <div class="banner info">
+      Cada cierre viaja como un registro propio. Si la tarea AM todavía no llegó
+      al servidor, su cosecha espera en la cola y se reintenta sola: no se
+      pierde nada.
+    </div>
+
+    @if (problemas().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemas(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <div class="fila-botones">
+      <ion-button expand="block" [disabled]="!puedeGuardar()" (click)="guardar()">
+        <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
+        Cerrar {{ elegidas().length }} tarea(s)
+      </ion-button>
+    </div>
+  }
+</ion-content>
+
+<ion-footer>
+  <app-barra-pasos
+    [indice]="paso()"
+    [total]="totalPasos()"
+    [etiqueta]="etiquetaPaso()"
+    (anterior)="anterior()"
+    (siguiente)="siguiente()"
+  ></app-barra-pasos>
+</ion-footer>
+
+<ion-modal
+  class="selector-flotante"
+  [style.--height]="alturaSelector()"
+  [isOpen]="selectorAbierto()"
+  (ionModalDidDismiss)="cerrarSelector()"
+>
+  <ng-template>
+    <app-selector
+      [titulo]="selectorTitulo()"
+      [opciones]="selectorOpciones()"
+      [seleccion]="selectorSeleccion()"
+      [multiple]="selectorMultiple()"
+      [vacioTexto]="selectorVacio()"
+      [conBuscador]="selectorBuscador()"
+      (confirmar)="onSeleccion($event)"
+      (cambio)="onCambio($event)"
+      (cerrar)="cerrarSelector()"
+    ></app-selector>
+  </ng-template>
+</ion-modal>

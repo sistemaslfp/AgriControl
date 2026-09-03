@@ -109,9 +109,19 @@ export class ApiService {
    * Sin guion en la ruta: CodeIgniter mapea el segmento de URI al nombre del
    * metodo y `am-abiertos` no es un identificador PHP valido.
    */
-  amAbiertos(fecha: string, fincaId: number | null): Promise<AmAbiertosResponse> {
+  /**
+   * `modulo` dice que pantalla pregunta: 'pm' (por defecto en el servidor)
+   * trae todo MENOS cosecha y poscosecha, que tienen formulario propio;
+   * 'cosecha' trae solo las tareas de cosecha.
+   */
+  amAbiertos(
+    fecha: string,
+    fincaId: number | null,
+    modulo: 'pm' | 'cosecha' = 'pm',
+  ): Promise<AmAbiertosResponse> {
     const q = `am_abiertos?fecha=${encodeURIComponent(fecha)}` +
-      (fincaId !== null ? `&finca_id=${fincaId}` : '');
+      (fincaId !== null ? `&finca_id=${fincaId}` : '') +
+      `&modulo=${modulo}`;
     return this.get<AmAbiertosResponse>(q);
   }
 

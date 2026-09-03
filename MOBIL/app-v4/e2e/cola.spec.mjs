@@ -97,7 +97,7 @@ ok('13 el resto se envía al recuperarse el servidor', c.pendientes === 0 && c.e
 await limpiar(); await p.waitForTimeout(800);
 
 // ---------- 4. rechazo mezclado con éxitos ----------
-await modo('501'); await encolar(4, 'cosecha'); await p.waitForTimeout(1000);
+await modo('501'); await encolar(4, 'riego'); await p.waitForTimeout(1000);
 await modo('rechaza'); await flush(); await p.waitForTimeout(3500);
 c = await conteo();
 ok('14 rechazado y creados conviven en un lote', c.rechazados === 1 && c.enviados === 3 && c.pendientes === 0, JSON.stringify(c));

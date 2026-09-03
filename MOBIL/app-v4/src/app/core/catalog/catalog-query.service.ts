@@ -215,6 +215,76 @@ export class CatalogQueryService {
     );
   }
 
+  /**
+   * Subtareas del modulo Cosecha. `ids` sale de `/v4/bootstrap`
+   * (`cosecha_subtarea_ids`, que el servidor deriva de las tareas activas
+   * cuyo nombre contiene 'COSECHA' si la configuracion esta vacia).
+   *
+   * Si la lista llega vacia --servidor viejo, o bootstrap nunca traido-- se
+   * cae a filtrar por el nombre de la tarea en el catalogo local: una lista
+   * larga es mejor que una pantalla que no deja avanzar. Es la misma decision
+   * que en `responsables()`.
+   */
+  async subtareasDeCosecha(ids: number[], fincaId: number | null): Promise<Subtarea[]> {
+    const base = `SELECT s.id, s.nombre, s.tarea_id, s.unidad_labor_id,
+                         t.nombre AS tarea_nombre, u.nombre AS ulabor_nombre
+                    FROM cat_subtarea s
+                    JOIN cat_tarea t ON t.id = s.tarea_id
+                    LEFT JOIN cat_ulabor u ON u.id = s.unidad_labor_id`;
+    const filtroFinca = fincaId === null ? '' : ' AND s.id_finca = ?';
+
+    if (ids.length > 0) {
+      const marcas = ids.map(() => '?').join(',');
+      const params = fincaId === null ? [...ids] : [...ids, fincaId];
+      return this.filas(
+        `${base} WHERE s.id IN (${marcas})${filtroFinca} ORDER BY s.nombre;`,
+        params,
+        (f) => this.aSubtarea(f),
+      );
+    }
+    return this.filas(
+      `${base} WHERE UPPER(t.nombre) LIKE '%COSECHA%'${filtroFinca} ORDER BY s.nombre;`,
+      fincaId === null ? [] : [fincaId],
+      (f) => this.aSubtarea(f),
+    );
+  }
+
+  /**
+   * Ids de subtarea que NO se cierran desde el PM porque tienen formulario
+   * propio: las de Cosecha y las de Poscosecha.
+   *
+   * El servidor ya filtra `GET /v4/am_abiertos`, pero el espejo local de este
+   * equipo no pasa por ahi: sin este filtro, un AM de cosecha capturado aca y
+   * todavia sin enviar seguiria apareciendo en la lista del PM.
+   *
+   * OJO: 'Poscosecha cacao' tambien contiene 'COSECHA'. Por eso la de cosecha
+   * excluye explicitamente a la otra.
+   */
+  async subtareasConFormularioPropio(): Promise<Set<number>> {
+    const filas = await this.filas(
+      `SELECT s.id
+         FROM cat_subtarea s JOIN cat_tarea t ON t.id = s.tarea_id
+        WHERE UPPER(t.nombre) LIKE '%COSECHA%';`,
+      [],
+      (f) => Number(f['id']),
+    );
+    return new Set(filas);
+  }
+
+  /** Solo las de Cosecha (sin Poscosecha), para la pantalla de cosecha. */
+  async subtareasSoloCosecha(): Promise<Set<number>> {
+    const filas = await this.filas(
+      `SELECT s.id
+         FROM cat_subtarea s JOIN cat_tarea t ON t.id = s.tarea_id
+        WHERE UPPER(t.nombre) LIKE '%COSECHA%'
+          AND UPPER(t.nombre) NOT LIKE '%POSCOSECHA%'
+          AND UPPER(t.nombre) NOT LIKE '%POSTCOSECHA%';`,
+      [],
+      (f) => Number(f['id']),
+    );
+    return new Set(filas);
+  }
+
   async subtarea(id: number): Promise<Subtarea | null> {
     const r = await this.filas(
       `SELECT s.id, s.nombre, s.tarea_id, s.unidad_labor_id,

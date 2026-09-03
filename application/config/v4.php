@@ -32,6 +32,19 @@ $config['retroactividad_dias'] = array(
     'postcosecha' => 30,
 );
 
+// Tareas cuyos AM NO se cierran desde PM: tienen formulario propio.
+//
+// Cosecha y Postcosecha piden más datos que una cantidad (los sacos, la
+// máquina de estados del lote), así que el PM queda para lo administrativo y
+// las tareas puntuales. Decisión de Kevin, 2026-09-03.
+//
+// Vacío = derivar por el nombre de la tarea: 'POSCOSECHA'/'POSTCOSECHA' para
+// la segunda, y 'COSECHA' que no sea de esas para la primera. En la base de
+// hoy son la 5 (Cosecha) y la 6 (Poscosecha cacao); se dejan explícitas
+// porque un nombre nuevo mal escrito no debería mover una regla de negocio.
+$config['tarea_cosecha_ids']    = array(5);
+$config['tarea_poscosecha_ids'] = array(6);
+
 // Subtareas visibles en el módulo Cosecha de Cacao.
 // Vacío = derivar de las tareas activas cuyo nombre contiene 'COSECHA'.
 // Si el negocio quiere una lista fija, poner los ids aquí.

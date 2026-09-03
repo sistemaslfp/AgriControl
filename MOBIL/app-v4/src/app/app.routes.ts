@@ -14,6 +14,11 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/pm/pm.page').then((m) => m.PmPage),
   },
   {
+    path: 'cosecha',
+    loadComponent: () =>
+      import('./pages/cosecha/cosecha.page').then((m) => m.CosechaPage),
+  },
+  {
     // Una sola pantalla para los dos estados: el menu entra con
     // ?vista=pendientes o ?vista=enviados. Un supervisor que quiere saber si le
     // falta enviar algo no tiene por que abrir cinco pantallas para saberlo.

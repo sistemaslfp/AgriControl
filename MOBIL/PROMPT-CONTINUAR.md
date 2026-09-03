@@ -25,10 +25,15 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   **pantallas AM y PM** en la app (`/am`, `/pm`, habilitadas desde el menú).
   El 2026-09-02 la lista del PM pasó a **agruparse por tarea**, con ventana
   flotante para elegir el personal (55 filas → 29 tarjetas en agosto).
-- **Paso 5 — servidor HECHO (2026-09-03).** `tipo: cosecha` en `POST /v4/sync`:
-  `reg_cosecha` + `reg_cosecha_saco`, totales recalculados por el servidor,
-  `captura_guid` para los N trabajadores del mismo encabezado. **Falta la
-  pantalla `/cosecha` en la app.**
+- **Paso 5 — HECHO (2026-09-03), las dos mitades.** **Cosecha CIERRA una tarea
+  AM, como el PM**: no crea tareas y no elige trabajador. `tipo: cosecha` en
+  `POST /v4/sync` cuelga `reg_cosecha` (+ sacos) del AM y escribe
+  `reg_am.cantidad` con la suma de las libras; la pantalla `/cosecha` lista las
+  tareas AM de cosecha abiertas y solo pesa los sacos de cada persona.
+- **El PM ya no muestra ni cierra cosecha ni poscosecha** (2026-09-03).
+  `GET /v4/am_abiertos` acepta `&modulo=pm|cosecha` y `sync_pm` rechaza una
+  tarea de cosecha con un motivo legible. **Poscosecha queda sin quién la cierre
+  hasta el paso 6**: son 38 AM en agosto, unidad Jornal.
 - **Migración de la ventana de agosto — HECHA y verificada.**
   `docs/db/migrations/03-migracion-agosto.sql`.
 - **Migraciones consolidadas — HECHO (2026-09-02).** De seis archivos a cuatro
@@ -55,26 +60,39 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   compilada y estables en dos corridas seguidas.
 - Los motivos de rechazo de `V4.php`, probados con **curl contra la base real**:
   las suites e2e corren contra el mock y NO los cubren.
+- **Cosecha, las dos puntas**: 23 comprobaciones e2e en `cosecha.spec.mjs` (el
+  reparto PM/cosecha incluido) y el cierre mandado por curl a CI3 contra la base
+  real — `cantidad` = 149,75, `cierre_origen = 'cosecha'`, sacos guardados y
+  cero filas fantasma.
+- **La migración sigue cuadrando con el modelo nuevo**: 550 / 495 / 55 / 21 /
+  367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66, con 41 cosechas y
+  217 sacos colgados de su AM. **No cierra ningún AM**: las 15 cosechas cuyo AM
+  quedó abierto van a `mig_descarte`, porque cerrarlas haría que V4 pagara filas
+  que V3 no paga.
 
 ## Lo siguiente, en orden
 
-1. **Pantalla `/cosecha`** (paso 5): el servidor ya la espera. Encabezado +
-   lista de trabajadores con sus sacos, `ADICIONAL` agrega trabajador.
-2. **Paso 6 — Postcosecha**: máquina de estados por lote + fotos. El más caro.
-3. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
+1. **Paso 6 — Postcosecha** o **paso 7 — Riego**, y el orden del plan no
+   coincide con el uso: en agosto de 2026 hubo **279 filas de riego contra 60
+   de cosecha**, y postcosecha lleva **4 partidas en todo 2026** (77 en 2024).
+   Riego está bloqueado sólo por las capturas de pantalla (pendiente #9) y su
+   tabla `reg_riego` ya existe. Postcosecha es el módulo más caro y el menos
+   usado — y antes de construirlo conviene auditar el DDL de `pc_*` contra los
+   datos reales, que es exactamente lo que le faltó a `reg_cosecha`.
+2. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
    con el UUID. Es lo único que quedó fuera del paso 4.
-4. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
+3. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
    demás) a `reg_am` para el período desde agosto. Sólo se hizo
    `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
    endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
-5. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
+4. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
    dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255.
-6. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
+5. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
    (`z_personal.id_finca`, `z_subtarea.id_finca`) y el servidor no las compara.
-7. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
+6. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
    (lista en `docker/php/Dockerfile`): guardado real desde Grocery CRUD, campos
    de archivo, login POST de ion_auth, y `Operations/PM`.
-8. Después: Riego y el corte.
+7. Después: el corte.
 
 Las decisiones cerradas —las que no hay que volver a discutir— están en
 **`00-plan.md`**, una conclusión por tema. No se repiten acá.
