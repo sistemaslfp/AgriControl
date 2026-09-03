@@ -250,23 +250,35 @@ personas con 2 ya cerradas aparece como tarea de 2. Son las 2 que faltan.
 **Los pasos de captura no cambian**: sigue habiendo una página de avance por
 persona, porque la `cantidad` es de la persona y es lo que se paga.
 
-#### Qué identifica a una tarea, y un problema que esto destapó
+#### Qué identifica a una tarea: el TRABAJO, no el `captura_guid`
 
-La clave del grupo es **`captura_guid` más la tarea** (lote, subtarea, módulos), y
-las dos partes hacen falta:
+La clave del grupo es **lote + subtarea + módulos**. No lleva fecha ni finca
+porque la lista ya viene filtrada por las dos
+(`GET /v4/am_abiertos?fecha&finca_id`).
 
-- **`captura_guid` solo no alcanza, porque no identifica una tarea sino un envío
-  del formulario.** `am.page.ts` genera un guid antes del bucle de tareas, así
-  que un AM con dos tareas manda las dos con el mismo `captura_guid`. Agrupar
-  sólo por él fundiría dos tareas distintas en una tarjeta.
-- **La tarea sola tampoco**, porque es una heurística: dos formularios distintos
-  que programen la misma subtarea en el mismo lote se verían como una sola.
+**Se probó primero con `captura_guid` y estaba mal.** Dos personas puestas en la
+misma subtarea del mismo lote, pero cargadas como dos tareas distintas del
+formulario AM, salían como **dos tarjetas idénticas palabra por palabra**:
+`Lote 1 · Mód. 02 · COSECHA CACAO · 1 persona por cerrar`, dos veces. El
+supervisor no las puede distinguir — que es exactamente la ilegibilidad que
+esta pantalla venía a arreglar. Son el mismo trabajo: se cierran juntas.
 
-**El campo significa dos cosas según de dónde venga la fila:** la app lo asigna
-por envío del formulario, y la migración de agosto lo asignó **por tarea**. La
-clave compuesta funciona con las dos semánticas, pero la ambigüedad sigue ahí y
-va a morder a la pantalla "Registros Enviados" cuando se construya. Está anotado
-en `02-bd-y-api.md`.
+`captura_guid` responde otra pregunta —qué filas salieron del mismo
+formulario— y sirve para rastrear, no para agrupar trabajo. Sobre los datos
+reales de agosto **las dos claves dan el mismo resultado** (367 tarjetas, 29
+abiertas), porque la migración construyó el guid a partir de esta misma
+identidad; la diferencia sólo aparece en lo que captura la app.
+
+**De paso se arregló `am.page.ts`**, que generaba un `captura_guid` por ENVÍO
+del formulario en vez de por tarea. Ya no decide el agrupamiento, pero el campo
+tenía que significar lo mismo en la app que en la migración: un campo que quiere
+decir dos cosas según de dónde venga la fila es una trampa para el que lo use
+después.
+
+**Un bug que esto destapó:** la lista desempataba el orden por la clave del
+grupo, que era un UUID aleatorio, así que dos tareas del mismo lote y subtarea
+salían en distinto orden en cada recarga y las tarjetas saltaban de lugar. Ahora
+desempata por hora de proceso, nombre y `am_guid`, que son estables.
 
 ### Lo que esto arregla del diseño anterior
 
@@ -365,28 +377,121 @@ Correcciones:
 
 ---
 
-## Registros Pendientes / Registros Enviados
+## Registros Pendientes / Registros Enviados — HECHO (paso 4)
 
-Dos grillas espejo: `AM`, `PM`, `COSECHA`, `RIEGO`, `POSCOSECHA` (hoy
-**deshabilitado en ambas** — falta implementar).
+**Una sola pantalla** (`/registros`), con un segmento arriba para las dos
+mitades y chips para filtrar por módulo. El menú conserva sus dos entradas —es
+el vocabulario que el supervisor ya conoce— y cada una abre esta pantalla en la
+pestaña que corresponde (`?vista=pendientes` / `?vista=enviados`).
 
-Cada lista muestra tarjeta con supervisor, hacienda, lote, operador, totales,
-Fecha Operación, Fecha Creación, `VER DETALLE` y un ícono de reloj de arena.
-"Registros Cosecha Pendientes" muestra `Próxima Sincronización: 2026-08-27
-09:05:48`; "Registros AM Enviados" muestra `Última Sincronización`.
+La app vieja tenía dos grillas por módulo, o sea diez pantallas. Un supervisor
+que quiere saber "¿me falta enviar algo?" tenía que abrir cinco para
+responderse.
 
-Correcciones:
+**Una tarjeta = un TRABAJO en un estado**, con la misma clave que la pantalla PM
+(ahí está el porqué), más la fecha y la finca porque esta lista cruza días. Un
+cierre PM no describe un trabajo propio —lo hereda del AM— así que se agrupa por
+el AM al que apunta.
 
-- Habilitar **POSCOSECHA** en pendientes y enviados.
-- El ícono de reloj de arena no distingue PENDIENTE de ENVIANDO de RECHAZADO.
-  Tres estados, tres indicadores, y el motivo visible en los rechazados.
-- `Próxima Sincronización: 09:05:48` mostrada a las 11:54 (ya pasada) delata que
-  el temporizador se cuelga. En la app nueva, ese campo muestra el estado real
-  de la cola: "reintentando en 2 min", "sin conexión", "al día".
-- Botón de sincronización manual en la barra (hoy existe el ícono de refrescar;
-  debe forzar el envío de la cola, no sólo recargar la lista).
-- **Detalle Registro** ya expone el `Registro:` con el UUID — mantenerlo, es la
-  única forma de rastrear un registro entre teléfono y servidor.
+**El estado entra en la clave a propósito.** El ACK es por registro, así que un
+AM de tres personas puede terminar con dos ENVIADOS y una RECHAZADA. Si el
+estado no separara, esa tarjeta tendría que mostrar dos estados a la vez y
+mentiría en cualquiera de los dos.
+
+### Las correcciones de la app vieja, una por una
+
+- **Tres estados, tres indicadores.** El reloj de arena único no distinguía
+  PENDIENTE de ENVIANDO de RECHAZADO. Ahora cada uno tiene ícono, color y la
+  palabra escrita — el ícono solo no le sirve a quien no lo conoce.
+- **Un chip por módulo con las DOS cuentas**, `AM 3/12`: 3 pendientes y 12
+  enviados. Como las dos mitades comparten ventana, el chip comparte las dos
+  cuentas y se ve dónde falta trabajo sin cambiar de pestaña. Las cuentas se
+  distinguen por color, no por posición: `3/12` sin color obliga a recordar cuál
+  es cuál, y un cero se apaga para que resalte lo que sí tiene algo.
+- **La tarjeta habla en nombres, nunca en códigos**: Lote · Módulo, Tarea /
+  Subtarea, y las personas por nombre. La tarea da el contexto que la subtarea
+  sola no tiene, porque una misma subtarea puede colgar de más de una tarea.
+- **El UUID sale de la tarjeta.** No le dice nada a quien mira la lista. Sigue
+  siendo la única forma de rastrear un registro entre teléfono y servidor, así
+  que su lugar es Detalle Registro.
+- **El motivo del rechazo va a la vista**, no detrás de un `VER DETALLE`: es lo
+  único que le dice al supervisor qué corregir. Si las N filas de la tarjeta
+  fallaron por lo mismo, el motivo va una vez; si difieren, se dice cuántos
+  motivos hay, porque esconderlos detrás del primero haría creer que se arregla
+  con un solo cambio.
+- **`Próxima Sincronización: 09:05:48` desaparece.** Mostrada a las 11:54 —ya
+  pasada— delataba que el temporizador se colgaba: una hora fija no puede decir
+  la verdad si el envío se atascó. En su lugar va el estado real de la cola:
+  "Enviando…", "Sin conexión: se reintenta solo al volver.", "Reintentando en
+  2 min.", "Al día.".
+- **El botón de la barra fuerza el envío**, no sólo recarga la lista. En la app
+  vieja el ícono de refrescar no tenía forma de empujar la cola.
+- **POSCOSECHA ya no está deshabilitado**: los chips salen de lo que hay en la
+  lista, así que aparece solo cuando existan registros de ese tipo.
+
+### Los motivos de rechazo se escriben para el supervisor
+
+Los redacta el servidor (`V4.php`, `sync_valida_catalogos` y
+`sync_motivo_modulo`) y **ya no llevan ids**. El texto que vuelve es lo único
+que ve quien tiene que corregir el registro en el campo, y un
+`subtarea 88 inactiva` no le dice nada: no conoce los ids, no los ve en ninguna
+pantalla, y el número no le indica qué tocar.
+
+Se arregló en el servidor y no en la app a propósito: sirve para cualquier
+cliente de la API, y traducir cadenas del lado del cliente se rompe en silencio
+el día que alguien cambia una coma en el mensaje.
+
+Verificado con `curl` contra la base real el 2026-09-02:
+
+| antes | ahora |
+|---|---|
+| `modulo 3 inexistente, inactivo o no pertenece al lote 1` | `el modulo 1 es del lote 2, no del lote 1` |
+| `modulo 9999 inexistente…` | `ese modulo no existe` |
+| `el lote 1 no pertenece a la finca 2` | `el lote 1 no pertenece a la finca Pacaritambo` |
+| `subtarea 99999 inexistente o inactiva` | `la subtarea #99999 no existe o esta inactiva` |
+| `personal 225 inexistente o inactivo` | `el trabajador FERNANDEZ CEPEDA DARIO FELIPE no existe o esta dado de baja` |
+| `fecha_proceso en el futuro (I1)` | `la fecha de proceso es futura: no se puede registrar trabajo que todavia no ocurrio` |
+
+Dos detalles que cuestan poco y se notan:
+
+- **El módulo nombra el lote al que SÍ pertenece.** Los nombres de módulo se
+  repiten entre lotes —cada lote tiene su "1"— así que nombrarlo solo no
+  distingue nada; lo útil es decir de qué lote es, que es lo que hay que
+  corregir. Y separa tres casos que el mensaje único mezclaba: no existe, está
+  inactivo, o es de otro lote. El tercero es el único que el supervisor puede
+  resolver solo, y es el que más pasa (16 filas de `z_tabla_am` lo tienen).
+- **`#99999` aparece sólo cuando el id no existe en la base.** No es un dato del
+  negocio: es un cliente mandando algo que no está. Resolver el nombre cuesta
+  una consulta extra **sólo en el camino de error**; el camino feliz no paga
+  nada.
+
+### Descartar un pendiente (cierra el pendiente #2)
+
+**Se puede descartar un registro PENDIENTE que nunca llegó al servidor**, con
+confirmación que **nombra la tarea** —un guid no le dice nada a nadie y una
+confirmación genérica se acepta sin leer— y asiento en `sync_audit` con el
+payload completo.
+
+Un ENVIADO o un ENVIANDO **no** ofrecen descartar: ya están del otro lado.
+
+Dos cosas que sostienen que esto sea seguro:
+
+- El `DELETE` revalida `estado = 'PENDIENTE' AND acked_at IS NULL` en la propia
+  sentencia. Entre que la pantalla dibujó la lista y el usuario confirmó, el
+  envío automático pudo haberlo mandado; sin esa condición se borraría de la
+  cola un registro que ya está en el servidor.
+- El asiento va **antes** del borrado. Si el DELETE falla sobra un asiento, que
+  es inocuo; al revés, un registro se perdería sin rastro. Si después falta un
+  avance en la nómina, tiene que poder distinguirse "nunca se cargó" de "alguien
+  lo descartó".
+
+### Lo que queda pendiente de esta pantalla
+
+- **Detalle Registro** (tocar la tarjeta y ver el payload campo por campo). Hoy
+  la tarjeta muestra lo que identifica el trabajo, las personas, el estado, el
+  motivo y el UUID; el resto del payload no se puede mirar desde la app.
+- Los tipos `cosecha`, `riego` y `pc_*` no se pueden probar todavía: no existen
+  las pantallas que los generan.
 
 ---
 

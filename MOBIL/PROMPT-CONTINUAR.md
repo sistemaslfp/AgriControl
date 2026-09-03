@@ -17,6 +17,10 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   pantallas Menú y Configuración. `MOBIL/app-v4/`.
 - **Paso 2 — HECHO.** Las 13 tablas `reg_*` / `pc_*` con sus FK.
   `docs/db/migrations/02-tablas-v4.sql`.
+- **Paso 4 — HECHO (2026-09-02).** Pantalla `/registros`: Pendientes | Enviados
+  en una sola pantalla, agrupada por trabajo, con los tres estados
+  diferenciados, el motivo del rechazo a la vista, sincronización manual y
+  descarte de pendientes con asiento en `sync_audit`. Cierra el pendiente #2.
 - **Paso 3 — HECHO, las dos mitades.** `POST /v4/sync` para `am` y `pm`, y las
   **pantallas AM y PM** en la app (`/am`, `/pm`, habilitadas desde el menú).
   El 2026-09-02 la lista del PM pasó a **agruparse por tarea**, con ventana
@@ -42,17 +46,20 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 - Nueve casos de `POST /v4/sync` con `curl` contra la base real, cero filas
   fantasma, incluido el que prueba que cerrar a la segunda persona de una
   captura no pisa a la primera.
-- e2e: **63 comprobaciones** en `app-v4/e2e/am-pm.spec.mjs` y **22** en
-  `cola.spec.mjs`, todas en verde con la app compilada.
+- e2e: **66 comprobaciones** en `app-v4/e2e/am-pm.spec.mjs`, **22** en
+  `cola.spec.mjs` y **31** en `registros.spec.mjs`, todas en verde con la app
+  compilada y estables en dos corridas seguidas.
+- Los motivos de rechazo de `V4.php`, probados con **curl contra la base real**:
+  las suites e2e corren contra el mock y NO los cubren.
 
 ## Lo siguiente, en orden
 
-1. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
+1. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo.
+   Es lo único que quedó fuera del paso 4.
+2. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
    demás) a `reg_am` para el período desde agosto. Sólo se hizo
    `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
    endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
-2. **Pendientes / Enviados** con los tres estados reales (PENDIENTE, ENVIANDO,
-   RECHAZADO con el motivo a la vista). Hoy el menú manda a un aviso.
 3. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
    dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255.
 4. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
@@ -142,14 +149,25 @@ Esta lista vale más que el resto de los documentos juntos.
   `aria-disabled`). Las dos cosas hacen pasar pruebas en falso. El resto de las
   trampas de Ionic, con su detalle, están en `app-v4/e2e/README.md`.
 
+- **`reg_flag` no la lee nadie.** Se escribe en `V4.php` y no hay modelo, vista,
+  reporte ni consulta que la consulte. El "el criterio del usuario queda medido"
+  de `01-sincronizacion.md` es hoy una intención, no un hecho — mismo caso que
+  el `tiene_pm` de V3.
+- **La ventana horaria NO bloquea y no se valida contra el reloj de envío.**
+  Sólo contra la hora de proceso, y sólo como aviso. En campo suben la mañana
+  por la tarde.
+
 ### Herramientas
 
-- **`captura_guid` no identifica una tarea, identifica un ENVÍO del formulario.**
-  `am.page.ts` lo genera antes del bucle de tareas, así que un AM con dos tareas
-  manda las dos con el mismo guid — pero la migración de agosto lo asignó por
-  tarea. Significa dos cosas según de dónde venga la fila. La pantalla PM agrupa
-  por `captura_guid` + lote + subtarea + módulos, que funciona con las dos;
-  "Registros Enviados" va a tener que elegir una semántica.
+- **`captura_guid` NO es lo que agrupa las tarjetas.** Dice qué filas salieron
+  del mismo formulario, y sirve para rastrear. Agrupar por él daba dos tarjetas
+  idénticas cuando dos personas del mismo trabajo se cargaban como dos tareas
+  del formulario. Las pantallas agrupan por la **identidad del trabajo** (lote,
+  subtarea, módulos). Corregido de paso `am.page.ts`, que lo generaba por envío
+  y no por tarea: ahora significa lo mismo que en la migración.
+- **No desempatar un orden por un UUID.** La lista del PM lo hacía y las
+  tarjetas saltaban de lugar en cada recarga. La prueba e2e pasaba o fallaba
+  según la corrida, que es peor que fallar siempre.
 - **`pkill` devuelve exit 144 y se lleva el resto del comando.** Matar el mock y
   relanzarlo tiene que ir en dos llamadas o la suite que sigue nunca corre.
 

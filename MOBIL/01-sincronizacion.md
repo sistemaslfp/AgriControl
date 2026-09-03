@@ -206,9 +206,23 @@ sueltas de cada tabla.
 - **RECHAZADO**: error de validación, no de red. No se reintenta.
 
 **Sin edición en el teléfono.** Un registro guardado es inmutable. Las
-correcciones se hacen en el sistema web. Único borrado permitido: un registro
-PENDIENTE que nunca tuvo ACK, con confirmación explícita, asentado en una tabla
-local `sync_audit`. **[CONFIRMAR]** si se permite ese borrado.
+correcciones se hacen en el sistema web.
+
+**Único borrado permitido: un registro PENDIENTE que nunca tuvo ACK**
+(confirmado por Kevin el 2026-09-02, cierra el pendiente #2). Va con
+confirmación explícita que nombra la tarea y queda asentado en `sync_audit` con
+el payload completo. Un ENVIADO o un ENVIANDO no se borran: ya están del otro
+lado.
+
+Dos detalles que hacen que esto sea seguro y no un agujero:
+
+- El `DELETE` revalida `estado = 'PENDIENTE' AND acked_at IS NULL` **en la
+  propia sentencia**. Entre que la pantalla dibujó la lista y el usuario
+  confirmó, el envío automático pudo haberlo mandado; sin esa condición se
+  borraría de la cola un registro que ya está en el servidor y el teléfono
+  perdería el único rastro de que existió.
+- El asiento va **antes** del borrado. Si el DELETE falla sobra un asiento, que
+  es inocuo; al revés, el registro se perdería sin rastro.
 
 ## Cola de envío
 
@@ -263,9 +277,24 @@ sistema refleja el trabajo de campo, y el campo no se detiene a las 12:00.
 - El servidor **registra** la violación como flag `fuera_de_ventana_horaria` en
   `reg_flag`. No la castiga.
 
-Esto es lo único que separa "confiar en el criterio del usuario" de "no tener
-control": el criterio queda medido. Si un supervisor carga el 40% de sus PM
-fuera de ventana, eso se ve en un reporte en vez de perderse.
+**Reconfirmado el 2026-09-02 (Kevin):** *"en campo pueden y van a subir la info
+de la mañana en la tarde. Dejar el rango de horario como visual únicamente,
+sólo tomarlo en cuenta para análisis, no bloquear."* La ventana AM es un aviso
+en pantalla; la PM ni siquiera se muestra. **Nunca se valida contra el reloj de
+envío**, sólo contra la hora de proceso que el supervisor eligió: una tablet sin
+señal toda la mañana que sincroniza a las 15:00 sube sus AM de las 07:00 sin
+problema.
+
+> **PERO el "queda medido" hoy es falso, y conviene saberlo.** `reg_flag` se
+> escribe en un solo lugar (`V4.php`) y **no la lee nadie**: no hay modelo, ni
+> vista, ni reporte, ni consulta en la web ni en la app. Es el mismo caso que el
+> `tiene_pm` de V3 —un mecanismo que existe y está muerto—. Mientras no haya
+> una pantalla o un reporte que la consulte, "el criterio queda medido" es una
+> intención, no un hecho: los flags se acumulan y nadie los ve.
+>
+> No es urgente ni bloquea nada, pero es una decisión pendiente: o se le hace un
+> reporte, o se acepta explícitamente que la tabla es sólo forense (mirarla a
+> mano cuando algo no cuadra).
 
 Corolario necesario del offline-first: un registro capturado el martes dentro de
 ventana y sincronizado el jueves **se acepta**. El servidor nunca valida horario

@@ -20,7 +20,7 @@ al día al **2026-09-02**.
 | 1 | **Esqueleto**: proyecto Ionic, SQLite, cola, Configuración, catálogos, `/v4/hora`, `/v4/bootstrap` | **HECHO** (2026-08-31) |
 | 2 | **DDL** de las tablas nuevas + verificar que la web V3 no cambió | **HECHO** — `docs/db/migrations/02-tablas-v4.sql`, 13 tablas |
 | 3 | **AM y PM** — el 80 % del uso diario | **HECHO** — `POST /v4/sync` y las pantallas `/am` y `/pm` |
-| 4 | **Pendientes / Enviados** con los tres estados reales | pendiente. Hoy el menú manda a un aviso |
+| 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
 | 5 | **Cosecha de Cacao** | pendiente |
 | 6 | **Postcosecha** — máquina de estados + fotos. El más caro | pendiente |
 | 7 | **Riego** — al final por decisión; faltan capturas para especificarlo | pendiente |
@@ -191,6 +191,17 @@ resuelto con datos)*
   **`eregistro`, no `estado`**: hay 8 personas con `rol = 8` y `estado` no es una
   bandera de baja sino el tipo de contratación (FK a `z_personal_estado`).
   Detalle en `docs/context/99-riesgos.md`.
+- **Un PENDIENTE que nunca llegó al servidor SÍ se puede descartar** (cierra el
+  pendiente #2), con confirmación que nombra la tarea y asiento en `sync_audit`
+  con el payload completo. Un ENVIADO o un ENVIANDO no: ya están del otro lado.
+  El `DELETE` revalida `estado = 'PENDIENTE' AND acked_at IS NULL` en la propia
+  sentencia, porque entre que la pantalla dibujó la lista y el usuario confirmó
+  el envío automático pudo haberlo mandado.
+- **Las tarjetas agrupan por el TRABAJO** (lote, subtarea, módulos), no por
+  `captura_guid`. Ese campo dice qué filas salieron del mismo formulario y sirve
+  para rastrear; agrupar por él daba dos tarjetas idénticas cuando dos personas
+  del mismo trabajo se cargaban como dos tareas. Sobre agosto las dos claves dan
+  el mismo resultado: 367 tarjetas, 29 abiertas.
 - **AM sin personal: no se guarda.** Bloqueo en la app, además del rechazo del
   servidor.
 - **"Una persona, una tarea AM a la vez": bloqueo duro dentro del formulario,
@@ -227,7 +238,6 @@ con una bandera.
 | # | Pendiente | Dónde |
 |---|---|---|
 | 1 | Las cinco ventanas de retroactividad (AM/PM 3 d, Cosecha 7 d, Riego 7 d, Postcosecha 30 d) | 01 §Integridad de fechas |
-| 2 | ¿Se permite borrar un registro PENDIENTE nunca enviado? | 01 §Máquina de estados |
 | 7 | ¿Qué hace el botón `ADICIONAL` en Cosecha? | 03 §Cosecha |
 | 9 | Capturas de pantalla del módulo Riego | 03 §Riego |
 

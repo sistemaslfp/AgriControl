@@ -183,18 +183,23 @@ ocupa 8,7 MB.
 hay forma de saber qué filas fueron una sola captura, que es lo que "Registros
 Enviados" necesita para mostrar una tarjeta y no cinco.
 
-> **Ambigüedad conocida (2026-09-02): el campo significa dos cosas según de
-> dónde venga la fila.** La app lo genera **por envío del formulario**
-> (`am.page.ts` lo crea antes del bucle de tareas, así que un AM con dos tareas
-> manda las dos con el mismo guid), mientras que la migración de agosto lo asignó
-> **por tarea** —una captura por grupo (fecha, hora, finca, responsable, cultivo,
-> lote, módulos, subtarea)—.
+> **Corregido el 2026-09-02.** Hasta esa fecha el campo significaba dos cosas:
+> la app lo generaba **por envío del formulario** (`am.page.ts` lo creaba antes
+> del bucle de tareas, así que un AM con dos tareas mandaba las dos con el mismo
+> guid) y la migración de agosto lo asignó **por tarea**. Ahora la app lo genera
+> dentro del bucle: **un `captura_guid` por tarea**, igual que la migración.
 >
-> No rompe nada hoy: la pantalla PM agrupa por `captura_guid` **más** la tarea, y
-> esa clave compuesta funciona con las dos semánticas. Pero **"Registros
-> Enviados" va a tener que elegir una**, porque ahí el guid ES la tarjeta: con la
-> semántica de la app, un AM de tres tareas es una tarjeta; con la de la
-> migración, tres. Decidirlo antes de construir esa pantalla, no después.
+> **Ninguna pantalla agrupa por este campo.** Se probó y salía mal: dos personas
+> puestas en la misma subtarea del mismo lote, pero cargadas como dos tareas del
+> formulario, daban dos tarjetas idénticas e indistinguibles. Las pantallas PM y
+> Registros agrupan por la **identidad del trabajo** (lote, subtarea, módulos, y
+> además fecha y finca donde la lista las cruza). Sobre los datos de agosto las
+> dos claves dan el mismo resultado —367 tarjetas, 29 abiertas—, porque la
+> migración construyó el guid a partir de esa misma identidad.
+>
+> Para qué sirve entonces: para **rastrear** qué filas salieron del mismo
+> formulario. Viaja en el payload de `sync_am`, se guarda en `reg_am` y lo
+> devuelve `GET /v4/am_abiertos`.
 
 
 ### Cosecha
