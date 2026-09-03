@@ -408,6 +408,17 @@ mentiría en cualquiera de los dos.
   cuentas y se ve dónde falta trabajo sin cambiar de pestaña. Las cuentas se
   distinguen por color, no por posición: `3/12` sin color obliga a recordar cuál
   es cuál, y un cero se apaga para que resalte lo que sí tiene algo.
+- **El menú tiene UNA celda, `Pendientes / Enviados`**, a lo ancho de la grilla.
+  Eran dos celdas que abrían la misma pantalla, o sea que prometían dos lugares
+  distintos. Además estaban en `habilitada: false` desde el paso 1: se veían
+  grises aunque la navegación ya funcionaba.
+- **Las cuentas de las pestañas salen de las MISMAS tarjetas que se muestran.**
+  Antes venían de `cola.conteo()` y el segmento decía `ENVIADOS (0)` mientras el
+  chip decía `0/3`: el contador sumaba sólo `enviados` e ignoraba `rechazados`,
+  que viven en esa misma pestaña. Dos fuentes para la misma cuenta terminan
+  discrepando siempre. Un rechazado cuenta del lado de Enviados —es donde
+  está— pero **se dice aparte**, porque es el único estado que necesita que
+  alguien haga algo.
 - **La tarjeta habla en nombres, nunca en códigos**: Lote · Módulo, Tarea /
   Subtarea, y las personas por nombre. La tarea da el contexto que la subtarea
   sola no tiene, porque una misma subtarea puede colgar de más de una tarea.

@@ -96,7 +96,7 @@ reales, `utf8mb4_spanish_ci`, columnas generadas.
 
 **Servicio**
 
-- `reg_flag` — banderas del servidor (fuera de ventana horaria, retroactivo).
+- `reg_flag` — bitácora de rechazos, duplicados y fallos de base, con el payload.
 - `mig_descarte` — auditoría de la migración, con la fila completa en un
   `payload` JSON.
 

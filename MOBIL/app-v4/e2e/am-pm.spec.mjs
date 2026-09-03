@@ -130,6 +130,14 @@ ok('00 catálogos descargados', await p.locator('button.celda', { hasText: 'AM' 
 // ------------------------------------------------------------------
 // 1. AM — encabezado
 // ------------------------------------------------------------------
+// El menu tiene UNA celda para las dos mitades: eran dos que abrian la misma
+// pantalla, y ademas estaban en `habilitada: false` desde el paso 1 -- grises
+// aunque la navegacion ya funcionaba.
+ok('00b el menú tiene una sola celda Pendientes / Enviados',
+  (await p.locator('button.celda', { hasText: 'Pendientes / Enviados' }).count()) === 1 &&
+  (await p.locator('button.celda.deshabilitada', { hasText: 'Pendientes' }).count()) === 0,
+  `celdas=${await p.locator('button.celda', { hasText: 'Pendientes / Enviados' }).count()}`);
+
 await p.locator('button.celda', { hasText: 'AM' }).first().click();
 await t(1500);
 ok('01 la pantalla AM abre desde el menú', await p.locator('ion-title', { hasText: 'Reporte AM' }).isVisible());

@@ -42,9 +42,7 @@ cada `guid`:
   "results": [
     { "guid": "ad31cfcb-...", "status": "created",   "id": 113442 },
     { "guid": "7f0e2b91-...", "status": "duplicate", "id": 113301 },
-    { "guid": "c4a19d02-...", "status": "rejected",  "reason": "subtarea 88 inactiva" },
-    { "guid": "5b8f1a44-...", "status": "created",   "id": 113443,
-      "flags": ["retroactivo_excedido"] }
+    { "guid": "c4a19d02-...", "status": "rejected",  "reason": "subtarea 88 inactiva" }
   ]
 }
 ```
@@ -62,7 +60,6 @@ queda en PENDIENTE y se reintenta.
 - `rejected` lo pasa a RECHAZADO. No se reintenta. Se muestra el motivo.
 - `guid` ausente del `results`, 5xx, timeout o respuesta ilegible → **todo el
   lote queda PENDIENTE**.
-- `flags` no cambia el estado: el registro entró. Es información para la web.
 
 **No hay confirmación manual en ningún punto.** El supervisor no "acepta" nada;
 la pantalla "Registros Enviados" es lectura del estado, no una acción.
@@ -141,54 +138,49 @@ rastro de quién decidió salirse de la norma.
 | # | Invariante | Si se viola | Acción |
 |---|---|---|---|
 | I1 | `fecha_proceso <= received_at_server + 2h` | Fecha en el futuro | **Rechazo duro** |
-| I2 | `created_at_device <= received_at_server + 5min` | Reloj del teléfono adelantado | Acepta + flag `reloj_adelantado` |
-| I3 | `fecha_proceso <= created_at_device + 2h` | Se fechó hacia adelante en el teléfono | Acepta + flag `fecha_futura_local` |
-| I4 | `created_at_device − fecha_proceso <= ventana(módulo)` | Retroactivo excesivo | Acepta + flag `retroactivo_excedido` |
-| I5 | Postcosecha: `fin >= inicio` y cada etapa arranca después del fin de la anterior | Cadena rota | **Rechazo duro** |
+| I5 | Postcosecha: `fin >= inicio` y cada etapa arranca después del fin de la anterior | Cadena rota | **Rechazo duro** — *pendiente: el módulo no está construido* |
 
-La tolerancia de 2 h en I1 e I3 absorbe el desfase de reloj y el caso de quien
+La tolerancia de 2 h en I1 absorbe el desfase de reloj y el caso de quien
 empieza a registrar antes de que termine la jornada. No es margen para fechar
 mañana.
 
-I1 e I5 son los únicos rechazos duros. Una fecha futura no es criterio del
-usuario: es un error de tecleo o una manipulación. Una cadena de etapas
-invertida hace que el cálculo de tiempo de fermentado dé negativo.
+**Son los únicos dos, y hoy sólo I1 está implementado**; I5 llega con
+Postcosecha. Una fecha futura no es criterio del usuario: es un error de tecleo
+o una manipulación. Una cadena de etapas invertida hace que el cálculo de tiempo
+de fermentado dé negativo.
 
-### Ventanas de retroactividad (propuesta)
+El servidor **no mide nada más**. No compara relojes, no mide atraso de carga y
+no deja banderas por eso: el registro entra o se rechaza. `reg_flag` es otra
+cosa (ver más abajo).
 
-| Módulo | Atrás | Adelante | Razón |
-|---|---|---|---|
-| AM | 3 días | 0 | Es la programación del día |
-| PM | 3 días | 0 | Es el cierre del día |
-| Cosecha | 7 días | 0 | Puede acumularse una semana de pesajes |
-| Riego | 7 días | 0 | Igual |
-| Postcosecha | 30 días | 0 | El proceso completo dura semanas |
+### Ventanas de retroactividad — sólo en la app
 
-**[CONFIRMAR] los cinco números.** Son la única parte de esta sección que
-depende del negocio, no de la técnica.
+| Módulo | Atrás | Adelante |
+|---|---|---|
+| AM | 3 días | 0 |
+| PM | 3 días | 0 |
+| Cosecha | 7 días | 0 |
+| Riego | 7 días | 0 |
+| Postcosecha | 30 días | 0 |
 
-### Cómo se ve en la app
+Llegan en `/v4/bootstrap` y **sólo acotan el selector de fecha**:
+`min = ahora_corregido − ventana`, `max = ahora_corregido`. Hacia adelante no
+hay interruptor: el calendario no ofrece fechas futuras. El servidor acepta lo
+que le llegue mientras cumpla I1.
 
-- El selector de fecha nace acotado: `min = ahora_corregido − ventana`,
-  `max = ahora_corregido`.
-- Para salir de la ventana hacia atrás, el usuario activa un interruptor
-  **"registro retroactivo"** y escribe una justificación obligatoria.
-- Ese registro sale con `flags: ["retroactivo_excedido"]` y la justificación en
-  el comentario. Queda en la web para revisión.
-- Hacia adelante no hay interruptor. El calendario no ofrece fechas futuras.
+**[CONFIRMAR] los cinco números.**
 
-Así queda respetado el criterio del usuario — nunca se le bloquea el registro de
-trabajo que sí ocurrió — pero la decisión queda firmada en vez de invisible.
+### `reg_flag`: la bitácora de lo que no entró
 
-### El servidor revalida
+El servidor deja una fila en `reg_flag` cuando un registro sale `rejected`,
+cuando falla la base, y cuando un AM llega duplicado (misma persona, subtarea,
+finca y día). Guarda el payload completo, porque un rechazo nunca llega a
+existir en `reg_am`.
 
-La app puede estar desactualizada o el teléfono manipulado. El servidor recalcula
-los cinco invariantes contra `received_at_server` y **escribe los flags él
-mismo**, ignorando los que mandó el cliente. El cliente los usa sólo para avisar
-en pantalla antes de guardar.
+**El reenvío del mismo `guid` no se marca**: eso es la app reintentando porque
+se perdió el ACK, o sea el protocolo funcionando.
 
-Los flags viven en `reg_flag` (ver `02-bd-y-api.md` §6), no en columnas
-sueltas de cada tabla.
+Nada de esto cambia la respuesta: se lee desde la base, el usuario no la ve. Ver `02-bd-y-api.md` §Revisión de registros.
 
 ---
 
@@ -274,31 +266,15 @@ sistema refleja el trabajo de campo, y el campo no se detiene a las 12:00.
 - La ventana (AM 06:00–12:00, PM 13:00–18:00) llega en `/v4/bootstrap` y la app
   la valida **localmente**, contra `hora_proceso`, no contra la hora de envío.
 - Fuera de ventana: aviso claro, el usuario decide, el registro se guarda.
-- El servidor **registra** la violación como flag `fuera_de_ventana_horaria` en
-  `reg_flag`. No la castiga.
+- El servidor no la mira ni la registra en ningún lado.
 
 **Reconfirmado el 2026-09-02 (Kevin):** *"en campo pueden y van a subir la info
 de la mañana en la tarde. Dejar el rango de horario como visual únicamente,
 sólo tomarlo en cuenta para análisis, no bloquear."* La ventana AM es un aviso
-en pantalla; la PM ni siquiera se muestra. **Nunca se valida contra el reloj de
-envío**, sólo contra la hora de proceso que el supervisor eligió: una tablet sin
-señal toda la mañana que sincroniza a las 15:00 sube sus AM de las 07:00 sin
-problema.
-
-> **PERO el "queda medido" hoy es falso, y conviene saberlo.** `reg_flag` se
-> escribe en un solo lugar (`V4.php`) y **no la lee nadie**: no hay modelo, ni
-> vista, ni reporte, ni consulta en la web ni en la app. Es el mismo caso que el
-> `tiene_pm` de V3 —un mecanismo que existe y está muerto—. Mientras no haya
-> una pantalla o un reporte que la consulte, "el criterio queda medido" es una
-> intención, no un hecho: los flags se acumulan y nadie los ve.
->
-> No es urgente ni bloquea nada, pero es una decisión pendiente: o se le hace un
-> reporte, o se acepta explícitamente que la tabla es sólo forense (mirarla a
-> mano cuando algo no cuadra).
+en pantalla; la PM ni siquiera se muestra.
 
 Corolario necesario del offline-first: un registro capturado el martes dentro de
-ventana y sincronizado el jueves **se acepta**. El servidor nunca valida horario
-contra su propio reloj — sólo contra `fecha`+`hora` de proceso.
+ventana y sincronizado el jueves **se acepta**. El servidor no valida horario.
 
 La validación de `V3.php` (`am_valid_time_get` / `pm_valid_time_get`, con
 `"23:00:00"` hardcodeado) no se replica en V4.

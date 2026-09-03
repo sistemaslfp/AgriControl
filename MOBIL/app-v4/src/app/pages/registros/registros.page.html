@@ -34,10 +34,19 @@
       (ionChange)="cambiarVista($any($event.detail.value))"
     >
       <ion-segment-button value="pendientes">
-        <ion-label>Pendientes ({{ conteo().pendientes + conteo().enviando }})</ion-label>
+        <ion-label>Pendientes ({{ cuentas().pendientes }})</ion-label>
       </ion-segment-button>
       <ion-segment-button value="enviados">
-        <ion-label>Enviados ({{ conteo().enviados }})</ion-label>
+        <!--
+          Cuenta los RECHAZADOS: viven en esta pestaña. Y si hay alguno se dice
+          aparte, porque es el único estado que necesita que alguien haga algo.
+        -->
+        <ion-label>
+          Enviados ({{ cuentas().enviados }})
+          @if (cuentas().rechazados > 0) {
+            <span class="rechazados-aviso">{{ cuentas().rechazados }} rechazado(s)</span>
+          }
+        </ion-label>
       </ion-segment-button>
     </ion-segment>
   </ion-toolbar>

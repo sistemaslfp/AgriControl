@@ -54,8 +54,8 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 
 ## Lo siguiente, en orden
 
-1. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo.
-   Es lo único que quedó fuera del paso 4.
+1. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
+   con el UUID. Es lo único que quedó fuera del paso 4.
 2. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
    demás) a `reg_am` para el período desde agosto. Sólo se hizo
    `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
@@ -149,13 +149,13 @@ Esta lista vale más que el resto de los documentos juntos.
   `aria-disabled`). Las dos cosas hacen pasar pruebas en falso. El resto de las
   trampas de Ionic, con su detalle, están en `app-v4/e2e/README.md`.
 
-- **`reg_flag` no la lee nadie.** Se escribe en `V4.php` y no hay modelo, vista,
-  reporte ni consulta que la consulte. El "el criterio del usuario queda medido"
-  de `01-sincronizacion.md` es hoy una intención, no un hecho — mismo caso que
-  el `tiene_pm` de V3.
-- **La ventana horaria NO bloquea y no se valida contra el reloj de envío.**
-  Sólo contra la hora de proceso, y sólo como aviso. En campo suben la mañana
-  por la tarde.
+- **`reg_flag` es la bitácora de lo que no entró** (2026-09-03): `rechazado`,
+  `duplicado` y `error`, con el payload completo. La escribe `V4.php` al
+  sincronizar, se lee por `vw_reg_flag` desde la base y el usuario no la ve. Se
+  quitaron las cinco banderas de reloj y ventana: no medían nada útil. **El
+  reenvío del mismo guid no se marca**: es el ACK perdido, no un problema.
+- **La ventana horaria NO bloquea y el servidor no la mira.** Es un aviso en
+  pantalla contra la hora de proceso, nada más.
 
 ### Herramientas
 

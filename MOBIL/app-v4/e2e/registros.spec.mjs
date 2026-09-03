@@ -154,6 +154,14 @@ ok('08c la tarjeta nombra a las personas, no las numera',
 ok('08d la tarjeta muestra el módulo junto al lote',
   textoConDos.includes('Mód.'), textoConDos);
 
+// El contador del segmento y el chip salen de la MISMA fuente: si discrepan,
+// uno de los dos miente. Paso: el segmento decia ENVIADOS (0) con 3 rechazados,
+// porque sumaba solo `enviados` e ignoraba `rechazados`.
+const segPend = await p.locator(`${raiz} ion-segment-button[value="pendientes"]`).innerText();
+const segEnv = await p.locator(`${raiz} ion-segment-button[value="enviados"]`).innerText();
+ok('08g el contador de la pestaña coincide con lo que hay en la lista',
+  segPend.includes('(3)') && segEnv.includes('(0)'), `${segPend} | ${segEnv}`);
+
 // --- el chip: un modulo, las dos cuentas ---
 const chips = p.locator(`${raiz} ion-chip.chip-modulo`);
 ok('08e hay un solo chip por módulo, no uno por pestaña',
@@ -241,6 +249,16 @@ ok('19b el motivo no trae ids ni jerga',
   soloMotivo);
 ok('20 un RECHAZADO tampoco ofrece descartar',
   (await p.locator(`${raiz} ion-item.tarjeta-registro ion-button.descartar`).count()) === 0);
+
+// Un rechazado cuenta del lado de Enviados --es donde esta-- pero se dice
+// aparte: es el unico estado que necesita que alguien haga algo, y esconderlo
+// dentro de "enviados" lo vuelve invisible.
+const segEnv2 = await p.locator(`${raiz} ion-segment-button[value="enviados"]`).innerText();
+// Ionic pone el segmento en MAYUSCULAS por CSS, y innerText devuelve el texto
+// ya transformado: comparar sensible a mayusculas falla por el estilo, no por
+// el contenido.
+ok('20b el rechazado cuenta en Enviados y además se dice aparte',
+  segEnv2.toLowerCase().includes('rechazado'), segEnv2);
 
 // ------------------------------------------------------------------
 // 6. Las personas de UNA MISMA tarea sí comparten tarjeta

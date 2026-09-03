@@ -471,28 +471,35 @@ CREATE TABLE IF NOT EXISTS pc_lot_code_seq (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- =========================================================================
--- FLAGS DE INTEGRIDAD
--- Los escribe el SERVIDOR recalculando contra received_at_server. Los que
--- manda el cliente se descartan. Viven acá y no en columnas sueltas de cada
--- tabla. Polimórfica a propósito (tabla + registro_id): sin FK.
+-- REVISIÓN DE REGISTROS
+-- Lo que la API no pudo guardar bien: rechazos, duplicados y fallos de base.
+-- La escribe V4.php al sincronizar; se lee desde la base por `vw_reg_flag`.
+-- No pasa por el usuario y no hay pantalla.
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS reg_flag (
+-- Se rehace en cada migración: es una bitácora, no un dato de negocio, y el
+-- DROP limpia la forma vieja que trae el dump de docs/db/init/01-schema.sql.
+DROP TABLE IF EXISTS reg_flag;
+
+CREATE TABLE reg_flag (
   id           BIGINT AUTO_INCREMENT PRIMARY KEY,
-  tabla        VARCHAR(40)  NOT NULL,
-  registro_id  INT          NOT NULL,
+  -- am | pm | cosecha | riego | postcosecha. AM y PM son la misma tabla; que
+  -- venga de 'pm' quiere decir que lo que falló fue el UPDATE del cierre.
+  origen       VARCHAR(15)  NOT NULL,
+  -- rechazado | duplicado | error
+  codigo       VARCHAR(15)  NOT NULL,
   guid         CHAR(36)     NOT NULL,
-  -- posible_duplicado | fuera_de_ventana_horaria | retroactivo_excedido |
-  -- reloj_adelantado | fecha_futura_local | sin_offset_reloj | total_descuadrado
-  codigo       VARCHAR(30)  NOT NULL,
+  -- NULL en un rechazo: esa fila nunca llegó a existir en reg_am. Por eso el
+  -- payload no es opcional -- es el único rastro de lo que se intentó cargar.
+  registro_id  INT          NULL,
   detalle      VARCHAR(255) NULL,
-  estado       VARCHAR(1)   NOT NULL DEFAULT '0',   -- '0' abierto, '1' revisado
-  revisado_por INT          NULL,
-  revisado_at  DATETIME     NULL,
+  payload      JSON         NULL,
+  -- De qué equipo salió. No está en el payload: viaja en la cabecera del lote.
+  device_alias VARCHAR(50)  NULL,
   created_at   DATETIME     NOT NULL,
-  KEY idx_flag_guid   (guid),
-  KEY idx_flag_estado (estado, codigo),
-  KEY idx_flag_reg    (tabla, registro_id)
+  KEY idx_flag_codigo (codigo, created_at),
+  KEY idx_flag_guid (guid),
+  KEY idx_flag_registro (registro_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- =========================================================================

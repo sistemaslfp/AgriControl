@@ -412,6 +412,31 @@ class V4 extends RestController
         if (!in_array($tipo, self::$SYNC_TIPOS, TRUE)) {
             return NULL;   // se queda PENDIENTE hasta que exista el tipo
         }
+
+        $res = $this->sync_aplica($db, $rec, $guid, $tipo, $alias, $offset, $ahora);
+
+        // Las marcas se escriben ACA y no adentro: `rejected` hace rollback y
+        // se llevaria el INSERT de reg_flag con el.
+        if ($res === NULL) {
+            $this->reg_flag($db, $tipo, 'error', $guid, NULL,
+                'la base no acepto el registro; queda pendiente en el telefono',
+                $rec, $alias, $ahora);
+        } elseif ($res['status'] === 'rejected') {
+            $this->reg_flag($db, $tipo, 'rechazado', $guid, NULL,
+                $res['reason'], $rec, $alias, $ahora);
+        } elseif (isset($res['_duplicado'])) {
+            $this->reg_flag($db, $tipo, 'duplicado', $guid, $res['id'],
+                $res['_duplicado'], $rec, $alias, $ahora);
+            unset($res['_duplicado']);
+        }
+        // `duplicate` NO se marca: es el mismo guid llegando dos veces, o sea
+        // la app reintentando porque se perdio el ACK. Es el protocolo
+        // funcionando, no un problema.
+        return $res;
+    }
+
+    private function sync_aplica($db, $rec, $guid, $tipo, $alias, $offset, $ahora)
+    {
         // El PM ya no es una tabla: es el cierre de la MISMA fila de reg_am, y
         // su guid vive ahi, en `cierre_guid`. Eso es lo que vuelve al UPDATE
         // tan idempotente como era el INSERT.
@@ -587,14 +612,41 @@ class V4 extends RestController
         }
         $id = (int) $db->insert_id();
 
-        $flags = $this->sync_flags($fecha, $cad, $ahora, 'am');
-        $this->sync_guarda_flags($db, 'reg_am', $id, $guid, $flags, $ahora);
-
         $out = array('guid' => $guid, 'status' => 'created', 'id' => $id);
-        if (!empty($flags)) {
-            $out['flags'] = $flags;
+        $dup = $this->sync_am_duplicado($db, $ids, $fecha, $id);
+        if ($dup !== NULL) {
+            $out['_duplicado'] = $dup;
         }
         return $out;
+    }
+
+    /**
+     * La misma persona en la misma subtarea, finca y dia, otra vez. Se acepta
+     * igual: no se bloquea una captura en campo por esto. Solo se marca.
+     *
+     * Distinta subtarea el mismo dia NO es duplicado: es una reasignacion, y
+     * de los 63 pares (fecha, persona) repetidos de agosto 9 lo eran.
+     */
+    private function sync_am_duplicado($db, $ids, $fecha, $id)
+    {
+        $dia = $fecha->format('Y-m-d');
+        try {
+            $q = $db->select('id')->from('reg_am')
+                    ->where('personal_id', $ids['personal_id'])
+                    ->where('subtarea_id', $ids['subtarea_id'])
+                    ->where('finca_id', $ids['finca_id'])
+                    ->where('fecha_proceso >=', $dia . ' 00:00:00')
+                    ->where('fecha_proceso <=', $dia . ' 23:59:59')
+                    ->where('id !=', $id)
+                    ->order_by('id', 'ASC')->limit(1)->get();
+        } catch (Throwable $e) {
+            return NULL;   // detectar no puede tumbar un registro valido
+        }
+        $fila = ($q === FALSE) ? NULL : $q->row();
+        return $fila
+            ? ('ya existe el registro #' . (int) $fila->id
+               . ' de la misma persona en la misma subtarea el ' . $dia)
+            : NULL;
     }
 
     // -----------------------------------------------------------------
@@ -729,14 +781,7 @@ class V4 extends RestController
         // V3 los guardaba calculados con 'Y'.'W' y por eso 181 filas del 29 al
         // 31 de diciembre de 2025 quedaron como (2025, semana 1). Un valor que
         // se deriva no puede quedar mal guardado.
-        $flags = $this->sync_flags($cierre, $cad, $ahora, 'pm');
-        $this->sync_guarda_flags($db, 'reg_am', (int) $am->id, $guid, $flags, $ahora);
-
-        $out = array('guid' => $guid, 'status' => 'created', 'id' => (int) $am->id);
-        if (!empty($flags)) {
-            $out['flags'] = $flags;
-        }
-        return $out;
+        return array('guid' => $guid, 'status' => 'created', 'id' => (int) $am->id);
     }
 
     // -----------------------------------------------------------------
@@ -911,52 +956,24 @@ class V4 extends RestController
     }
 
     /**
-     * Invariantes blandas: aceptan el registro y dejan bandera.
-     * I1 (rechazo duro) se evalua antes de llegar aca.
+     * Bitacora de lo que no se pudo guardar bien. Best-effort: si falla, el
+     * registro ya se resolvio y no se va a cambiar la respuesta por esto.
      */
-    private function sync_flags($fecha, $cad, $ahora, $tipo)
+    private function reg_flag($db, $origen, $codigo, $guid, $registro_id, $detalle, $rec, $alias, $ahora)
     {
-        $flags = array();
-
-        // I2 — reloj del telefono adelantado mas de 5 min.
-        if ($cad->getTimestamp() > $ahora + 300) {
-            $flags[] = 'reloj_adelantado';
-        }
-        // I3 — se fecho hacia adelante en el telefono.
-        if ($fecha->getTimestamp() > $cad->getTimestamp() + 7200) {
-            $flags[] = 'fecha_futura_local';
-        }
-        // I4 — retroactivo mas alla de la ventana del modulo.
-        $dias = isset($this->v4cfg['retroactividad_dias'][$tipo])
-            ? (int) $this->v4cfg['retroactividad_dias'][$tipo] : 0;
-        if ($cad->getTimestamp() - $fecha->getTimestamp() > $dias * 86400) {
-            $flags[] = 'retroactivo_excedido';
-        }
-        // Ventana horaria: el servidor NO rechaza por esto (decision cerrada,
-        // 01-sincronizacion.md). Sólo lo mide, y contra la hora de PROCESO,
-        // nunca contra la hora de envio.
-        if (isset($this->v4cfg['ventanas_horarias'][$tipo])) {
-            $v = $this->v4cfg['ventanas_horarias'][$tipo];
-            $h = $fecha->format('H:i');
-            if ($h < $v['inicio'] || $h > $v['fin']) {
-                $flags[] = 'fuera_de_ventana_horaria';
-            }
-        }
-        return $flags;
-    }
-
-    private function sync_guarda_flags($db, $tabla, $id, $guid, $flags, $ahora)
-    {
-        foreach ($flags as $codigo) {
+        try {
             $db->insert('reg_flag', array(
-                'tabla'       => $tabla,
-                'registro_id' => $id,
-                'guid'        => $guid,
-                'codigo'      => $codigo,
-                'detalle'     => NULL,
-                'estado'      => '0',
-                'created_at'  => date('Y-m-d H:i:s', $ahora),
+                'origen'       => $origen,
+                'codigo'       => $codigo,
+                'guid'         => $guid,
+                'registro_id'  => $registro_id,
+                'detalle'      => mb_substr((string) $detalle, 0, 255),
+                'payload'      => json_encode($rec, JSON_UNESCAPED_UNICODE),
+                'device_alias' => $alias,
+                'created_at'   => date('Y-m-d H:i:s', $ahora),
             ));
+        } catch (Throwable $e) {
+            log_message('error', 'V4 reg_flag: no se pudo marcar ' . $guid . ': ' . $e->getMessage());
         }
     }
 

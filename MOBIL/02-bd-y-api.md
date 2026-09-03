@@ -239,7 +239,7 @@ CREATE TABLE reg_cosecha_saco (
 
 `total_sacos` y `total_peso` los **recalcula el servidor** desde el detalle. El
 teléfono los manda para mostrarlos; si no cuadran, el servidor usa los suyos y
-deja el flag `total_descuadrado`.
+dejaría un flag `total_descuadrado` — **pendiente**: ese código no existe todavía, se implementa junto con la pantalla de Cosecha.
 
 ### Riego
 
@@ -326,38 +326,61 @@ Los porcentajes de fermentación **no se guardan**: se calculan desde
 `buena/ligera/violeta`. Guardar un porcentaje derivado es guardarse una
 inconsistencia futura.
 
-### Flags de integridad
+### Revisión de registros — `reg_flag`
+
+La bitácora de lo que `POST /v4/sync` **no pudo guardar bien**. La escribe el
+servidor en el momento; se lee desde la base. No la ve el usuario, no hay
+pantalla y no influye en el ACK.
 
 ```sql
 CREATE TABLE reg_flag (
   id           BIGINT AUTO_INCREMENT PRIMARY KEY,
-  tabla        VARCHAR(40)  NOT NULL,
-  registro_id  INT          NOT NULL,
+  origen       VARCHAR(15)  NOT NULL,   -- am | pm | cosecha | riego | postcosecha
+  codigo       VARCHAR(15)  NOT NULL,   -- rechazado | duplicado | error
   guid         CHAR(36)     NOT NULL,
-  codigo       VARCHAR(30)  NOT NULL,
+  registro_id  INT          NULL,       -- la fila de reg_am, cuando existe
   detalle      VARCHAR(255) NULL,
-  estado       VARCHAR(1)   NOT NULL DEFAULT '0',   -- '0' abierto, '1' revisado
-  revisado_por INT          NULL,
-  revisado_at  DATETIME     NULL,
-  created_at   DATETIME     NOT NULL,
-  KEY idx_flag_guid   (guid),
-  KEY idx_flag_estado (estado, codigo),
-  KEY idx_flag_reg    (tabla, registro_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+  payload      JSON         NULL,       -- el registro completo, como llegó
+  device_alias VARCHAR(50)  NULL,
+  created_at   DATETIME     NOT NULL
+);
 ```
 
-| Código | Origen |
-|---|---|
-| `posible_duplicado` | Choque con el índice natural |
-| `fuera_de_ventana_horaria` | `hora_proceso` fuera de la ventana AM/PM |
-| `retroactivo_excedido` | `created_at_device − fecha_proceso` > ventana del módulo |
-| `reloj_adelantado` | `created_at_device > received_at_server + 5min` |
-| `fecha_futura_local` | `fecha_proceso > created_at_device + 2h` |
-| `sin_offset_reloj` | El dispositivo nunca sincronizó hora |
-| `total_descuadrado` | Totales del teléfono ≠ totales recalculados |
+**`registro_id` es nullable y por eso el `payload` no es opcional.** Un rechazo
+nunca llega a existir en `reg_am`: si no se guarda el payload, la marca queda
+como "el guid X falló por Y" y no hay forma de reconstruir qué se intentó
+cargar. Es el mismo patrón de `mig_descarte`.
 
-Los escribe **el servidor**, recalculando contra `received_at_server`. Los que
-manda el cliente se ignoran.
+**`origen` es el módulo, no la tabla.** AM y PM son la misma fila de `reg_am`;
+que la marca venga de `pm` significa que lo que falló fue el **UPDATE del
+cierre**, no un alta. `device_alias` va aparte porque viaja en la cabecera del
+lote, no en el payload.
+
+#### Los tres códigos
+
+| Código | Cuándo | `registro_id` |
+|---|---|---|
+| `rechazado` | El registro salió `rejected`. `detalle` es el mismo `reason` que recibió el teléfono | NULL |
+| `duplicado` | Se aceptó un AM de una persona que ya tenía otro en la misma subtarea, finca y día | el nuevo |
+| `error` | Fallo de base: el registro queda PENDIENTE y hoy sólo aparecía en el log de PHP | NULL |
+
+**El reenvío del mismo `guid` NO se marca.** Devuelve `duplicate` porque la app
+reintenta cuando se pierde el ACK — wifi cortado, portal cautivo. Es el
+protocolo funcionando; marcarlo llenaría la tabla de ruido normal y enterraría
+el duplicado real.
+
+**Distinta subtarea el mismo día tampoco es duplicado**: es una reasignación.
+De los 63 pares (fecha, persona) repetidos de agosto, 9 lo eran.
+
+#### Cómo se lee
+
+`vw_reg_flag` (`docs/db/migrations/04-vistas-v4.sql`) resuelve finca, lote,
+módulos, tarea, subtarea, trabajador y responsable a nombres, con LEFT JOIN a
+`reg_am` porque un rechazo no tiene fila.
+
+```sql
+SELECT * FROM vw_reg_flag ORDER BY marcado_at DESC;
+```
 
 ### Secuencia del `lot_code`
 
@@ -776,8 +799,7 @@ Respuesta (ver `01-sincronizacion.md` para la definición del ACK):
 {
   "server_time": "2026-08-28T14:03:11-05:00",
   "results": [
-    { "guid": "ad31cfcb-...", "status": "created", "id": 42,
-      "flags": ["fuera_de_ventana_horaria"] }
+    { "guid": "ad31cfcb-...", "status": "created", "id": 42 }
   ]
 }
 ```
@@ -1026,9 +1048,9 @@ mientras dura el lote y lo restaura al terminar.
 | AM sin personas | `rejected` |
 | `tipo: cosecha` y guid ilegible | omitidos → siguen PENDIENTES |
 | Lote mixto: uno malo y uno bueno | el bueno entra |
-| Registro de hace 20 días | `created` + flag `retroactivo_excedido` |
-| AM a las 22:00 | `created` + flag `fuera_de_ventana_horaria` |
-| `created_at_device` adelantado | `created` + flag `reloj_adelantado` |
+| Registro de hace 20 días | `created` |
+| AM a las 22:00 | `created` |
+| `created_at_device` adelantado | `created` |
 | Fallo del INSERT | rollback: la fila NO queda, y el guid se puede reenviar |
 | Body ilegible / lote de 201 | 400 / 413 |
 
@@ -1040,7 +1062,6 @@ Reglas del servidor, sin excepción:
 - `total_sacos` / `total_peso` se recalculan desde el detalle.
 - `lot_code` lo asigna el servidor.
 - Los porcentajes de fermentación se calculan, no se guardan.
-- Los flags los escribe el servidor; los del cliente se descartan.
 - **Transacción por registro**: un registro malo del lote no arrastra a los buenos.
 
 ---

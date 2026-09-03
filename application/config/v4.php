@@ -13,14 +13,15 @@ defined('BASEPATH') or exit('No direct script access allowed');
 | Contrato: MOBIL/02-bd-y-api.md §7 y MOBIL/01-sincronizacion.md.
 */
 
-// Ventanas horarias AM/PM. Solo informativas: el servidor NO rechaza por
-// ventana horaria, deja flag `fuera_de_ventana_horaria` (decisión cerrada).
+// Ventanas horarias AM/PM. Solo para la app: aviso en pantalla contra la hora
+// de proceso. El servidor no las mira (decisión cerrada).
 $config['ventanas_horarias'] = array(
     'am' => array('inicio' => '06:00', 'fin' => '12:00'),
     'pm' => array('inicio' => '13:00', 'fin' => '18:00'),
 );
 
-// Ventanas de retroactividad en días, por módulo.
+// Ventanas de retroactividad en días, por módulo. Solo acotan el selector de
+// fecha de la app; el servidor acepta lo que le llegue.
 // [CONFIRMAR] Pendiente #1 de MOBIL/00-plan.md: los cinco números son
 // propuesta, no decisión de negocio. Ajustar aquí cuando se confirmen.
 $config['retroactividad_dias'] = array(

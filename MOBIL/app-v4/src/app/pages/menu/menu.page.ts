@@ -16,8 +16,7 @@ import {
 } from '@ionic/angular';
 import { addIcons } from 'ionicons';
 import {
-  archiveOutline,
-  checkmarkDoneOutline,
+  swapVerticalOutline,
   cloudDownloadOutline,
   cloudOfflineOutline,
   cloudOutline,
@@ -38,10 +37,12 @@ import { SyncQueueService } from '../../core/sync/sync-queue.service';
 interface CeldaMenu {
   titulo: string;
   icono: string;
-  accion: 'modulo' | 'maestros' | 'pendientes' | 'enviados';
+  accion: 'modulo' | 'maestros' | 'registros';
   habilitada: boolean;
   /** Ruta del módulo. Solo la tienen los ya implementados. */
   ruta?: string;
+  /** Ocupa las dos columnas de la grilla. */
+  ancha?: boolean;
 }
 
 @Component({
@@ -82,8 +83,20 @@ export class MenuPage implements OnInit {
     { titulo: 'Riego', icono: 'rainy-outline', accion: 'modulo', habilitada: false },
     { titulo: 'Poscosecha', icono: 'time-outline', accion: 'modulo', habilitada: false },
     { titulo: 'Actualizar Maestros', icono: 'cloud-download-outline', accion: 'maestros', habilitada: true },
-    { titulo: 'Pendientes', icono: 'archive-outline', accion: 'pendientes', habilitada: false },
-    { titulo: 'Enviados', icono: 'checkmark-done-outline', accion: 'enviados', habilitada: false },
+    // UNA celda para las dos mitades: ya abrian la misma pantalla, asi que dos
+    // celdas separadas prometian dos lugares distintos. Va a lo ancho para que
+    // se lea como deliberado y no como un hueco en la grilla.
+    //
+    // Y va HABILITADA: estaban en `false` desde el paso 1 y quedaron grises
+    // aunque `onCelda` ya navegaba, asi que la pantalla funcionaba y parecia
+    // apagada.
+    {
+      titulo: 'Pendientes / Enviados',
+      icono: 'swap-vertical-outline',
+      accion: 'registros',
+      habilitada: true,
+      ancha: true,
+    },
   ];
 
   readonly totalSinSincronizar = computed(
@@ -92,8 +105,7 @@ export class MenuPage implements OnInit {
 
   constructor() {
     addIcons({
-      archiveOutline,
-      checkmarkDoneOutline,
+      swapVerticalOutline,
       cloudDownloadOutline,
       cloudOfflineOutline,
       cloudOutline,
@@ -118,12 +130,10 @@ export class MenuPage implements OnInit {
       case 'maestros':
         await this.actualizarMaestros();
         break;
-      case 'pendientes':
-      case 'enviados':
-        // Las dos celdas abren la MISMA pantalla, en la pestaña que
-        // corresponde. Se conservan las dos entradas porque es el vocabulario
-        // que el supervisor ya conoce de la app vieja.
-        await this.router.navigate(['/registros'], { queryParams: { vista: celda.accion } });
+      case 'registros':
+        // Entra por Pendientes: es la mitad accionable. Enviados esta a un
+        // toque del segmento.
+        await this.router.navigate(['/registros'], { queryParams: { vista: 'pendientes' } });
         break;
       case 'modulo':
         // Sin catálogos no hay nada que elegir: los selectores saldrían

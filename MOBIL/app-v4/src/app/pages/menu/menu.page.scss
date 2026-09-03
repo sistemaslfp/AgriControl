@@ -41,6 +41,15 @@
   gap: 12px;
 }
 
+/* Una celda a lo ancho: las dos mitades de Registros son una sola pantalla,
+   asi que ocupan una sola celda y se lee como deliberado, no como un hueco. */
+.celda.ancha {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  gap: 10px;
+  justify-content: center;
+}
+
 .celda {
   position: relative;
   display: flex;

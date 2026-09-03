@@ -57,15 +57,25 @@
       <button
         class="celda"
         [class.deshabilitada]="!celda.habilitada"
+        [class.ancha]="celda.ancha"
         (click)="onCelda(celda)"
       >
         <ion-icon [name]="celda.icono"></ion-icon>
         <span>{{ celda.titulo }}</span>
-        @if (celda.accion === 'pendientes' && totalSinSincronizar() > 0) {
-          <ion-badge color="danger">{{ totalSinSincronizar() }}</ion-badge>
-        }
-        @if (celda.accion === 'enviados' && sync.conteo().enviados > 0) {
-          <ion-badge color="medium">{{ sync.conteo().enviados }}</ion-badge>
+        <!--
+          Las dos cuentas en la misma celda, como en el chip de la pantalla:
+          pendientes en rojo porque piden acción, enviados en gris porque no.
+        -->
+        @if (celda.accion === 'registros') {
+          @if (totalSinSincronizar() > 0) {
+            <ion-badge color="danger">{{ totalSinSincronizar() }}</ion-badge>
+          }
+          @if (sync.conteo().rechazados > 0) {
+            <ion-badge color="danger">{{ sync.conteo().rechazados }} rech.</ion-badge>
+          }
+          @if (sync.conteo().enviados > 0) {
+            <ion-badge color="medium">{{ sync.conteo().enviados }}</ion-badge>
+          }
         }
         @if (celda.accion === 'maestros' && catalogos.actualizando()) {
           <ion-spinner name="crescent" class="spinner-celda"></ion-spinner>

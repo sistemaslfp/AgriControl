@@ -121,7 +121,39 @@ export class RegistrosPage implements OnInit {
     ),
   );
 
-  readonly conteo = this.cola.conteo;
+  /**
+   * Las cuentas de las pestanas, DERIVADAS de las mismas tarjetas que se
+   * muestran.
+   *
+   * Antes salian de `cola.conteo()`, que cuenta filas de sync_queue por estado,
+   * y el segmento decia "ENVIADOS (0)" mientras el chip decia "0/3": el
+   * contador sumaba solo `enviados` e ignoraba `rechazados`, que viven en esta
+   * misma pestana. Dos fuentes para la misma cuenta terminan discrepando
+   * siempre; ahora hay una.
+   *
+   * Un RECHAZADO cuenta del lado de "Enviados" porque es la pestana donde esta
+   * --llego al servidor, el servidor lo refuso-- pero ademas se cuenta aparte:
+   * es el unico estado que necesita que alguien haga algo, y esconderlo dentro
+   * de "enviados" lo vuelve invisible.
+   */
+  readonly cuentas = computed(() => {
+    let pendientes = 0;
+    let enviados = 0;
+    let rechazados = 0;
+    for (const t of this.todas()) {
+      const n = t.registros.length;
+      if (t.estado === 'PENDIENTE' || t.estado === 'ENVIANDO') {
+        pendientes += n;
+      } else if (t.estado === 'RECHAZADO') {
+        rechazados += n;
+        enviados += n;
+      } else {
+        enviados += n;
+      }
+    }
+    return { pendientes, enviados, rechazados };
+  });
+
   readonly enviando = this.cola.enviando;
   readonly online = this.cola.online;
   readonly proximoReintentoMs = this.cola.proximoReintentoMs;
@@ -179,7 +211,7 @@ export class RegistrosPage implements OnInit {
         ? `Reintentando en ${Math.round(seg / 60)} min.`
         : `Reintentando en ${seg} s.`;
     }
-    if (this.conteo().pendientes > 0) {
+    if (this.cuentas().pendientes > 0) {
       return 'Pendiente de enviar.';
     }
     return 'Al día.';

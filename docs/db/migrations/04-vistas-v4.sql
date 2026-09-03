@@ -56,3 +56,40 @@ SELECT am.fecha_proceso                                          AS fecha,
   JOIN z_lote     lot ON lot.id = am.lote_id
  -- Sólo lo cerrado: una programación sin avance no se paga.
  WHERE am.cierre_guid IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- La bitacora de reg_flag, legible. LEFT JOIN a reg_am porque un rechazo no
+-- tiene fila: la fila nunca llego a existir y el rastro es el payload.
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS vw_reg_flag_resumen;
+DROP VIEW IF EXISTS vw_reg_flag_detalle;
+
+CREATE OR REPLACE VIEW vw_reg_flag AS
+SELECT f.id,
+       f.created_at                                              AS marcado_at,
+       f.origen,
+       f.codigo,
+       f.detalle,
+       f.guid,
+       f.device_alias                                            AS dispositivo,
+       f.registro_id                                             AS reg_am_id,
+       am.fecha_proceso,
+       fin.nombre                                                AS finca,
+       lot.lote                                                  AS lote,
+       (SELECT GROUP_CONCAT(zm.modulo ORDER BY zm.modulo)
+          FROM z_modulo zm WHERE FIND_IN_SET(zm.id, am.modulos)) AS modulo,
+       tar.nombre                                                AS tarea,
+       sub.nombre_subtarea                                       AS subtarea,
+       tra.nombre                                                AS trabajador,
+       COALESCE(rc.nombre, res.nombre)                           AS responsable,
+       am.cantidad,
+       f.payload
+  FROM reg_flag f
+  LEFT JOIN reg_am     am  ON am.id  = f.registro_id
+  LEFT JOIN z_finca    fin ON fin.id = am.finca_id
+  LEFT JOIN z_lote     lot ON lot.id = am.lote_id
+  LEFT JOIN z_subtarea sub ON sub.id = am.subtarea_id
+  LEFT JOIN z_tarea    tar ON tar.id = sub.tarea_id
+  LEFT JOIN z_personal tra ON tra.id = am.personal_id
+  LEFT JOIN z_personal res ON res.id = am.responsable_id
+  LEFT JOIN z_personal rc  ON rc.id  = am.responsable_cierre_id;
