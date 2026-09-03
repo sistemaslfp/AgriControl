@@ -530,7 +530,9 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, $err);
         }
         if (!$this->sync_personal_activo($db, $ids['personal_id'])) {
-            return $this->sync_rechazo($guid, 'personal ' . $ids['personal_id'] . ' inexistente o inactivo');
+            return $this->sync_rechazo($guid,
+                'el trabajador ' . $this->sync_nombre($db, 'z_personal', 'nombre', $ids['personal_id'])
+                . ' no existe o esta dado de baja');
         }
 
         $modulos = $this->sync_lista_ids($p, 'modulo_ids');
@@ -542,7 +544,11 @@ class V4 extends RestController
         // que es lo que paso 16 veces en z_tabla_am.
         foreach ($modulos as $mid) {
             if (!$this->sync_modulo_de_lote($db, $mid, $ids['lote_id'])) {
-                return $this->sync_rechazo($guid, 'modulo ' . $mid . ' inexistente, inactivo o no pertenece al lote ' . $ids['lote_id']);
+                // Los nombres de modulo se repiten entre lotes --cada lote
+                // tiene su "1"-- asi que nombrarlo solo no distingue nada. Lo
+                // util es decir de que lote ES, que es lo que hay que corregir.
+                return $this->sync_rechazo($guid,
+                    $this->sync_motivo_modulo($db, $mid, $ids['lote_id']));
             }
         }
 
@@ -554,7 +560,8 @@ class V4 extends RestController
 
         // I1: unico rechazo duro por fecha.
         if ($fecha->getTimestamp() > $ahora + 7200) {
-            return $this->sync_rechazo($guid, 'fecha_proceso en el futuro (I1)');
+            return $this->sync_rechazo($guid,
+                'la fecha de proceso es futura: no se puede registrar trabajo que todavia no ocurrio');
         }
 
         $ok = $db->insert('reg_am', array(
@@ -643,7 +650,11 @@ class V4 extends RestController
         if ($trabajador_id !== NULL && $trabajador_id !== (int) $am->personal_id) {
             return $this->sync_rechazo(
                 $guid,
-                'la tarea AM ' . $am_guid . ' no es del trabajador ' . $trabajador_id
+                // Sin el guid: al supervisor no le dice nada y el mensaje se
+                // vuelve ilegible. Lo que necesita saber es de quien SI es.
+                'esa tarea de la manana no es de '
+                . $this->sync_nombre($db, 'z_personal', 'nombre', $trabajador_id)
+                . ', es de ' . $this->sync_nombre($db, 'z_personal', 'nombre', (int) $am->personal_id)
             );
         }
 
@@ -652,7 +663,7 @@ class V4 extends RestController
             // otro es un segundo cierre de la misma tarea.
             return $this->sync_rechazo(
                 $guid,
-                'esa tarea AM ya fue cerrada por el PM ' . $am->cierre_guid
+                'esa tarea de la manana ya fue cerrada'
             );
         }
 
@@ -665,7 +676,9 @@ class V4 extends RestController
         if ($responsable_id === NULL) {
             $responsable_id = (int) $am->responsable_id;
         } elseif (!$this->sync_personal_activo($db, $responsable_id)) {
-            return $this->sync_rechazo($guid, 'responsable ' . $responsable_id . ' inexistente o inactivo');
+            return $this->sync_rechazo($guid,
+                'el responsable ' . $this->sync_nombre($db, 'z_personal', 'nombre', $responsable_id)
+                . ' no existe o esta dado de baja');
         }
 
         // La hora de inicio SALE de la programacion: el cierre no la redefine.
@@ -708,7 +721,7 @@ class V4 extends RestController
         }
         if ($db->affected_rows() === 0) {
             // Alguien gano la carrera entre el SELECT y el UPDATE.
-            return $this->sync_rechazo($guid, 'esa tarea AM ya fue cerrada');
+            return $this->sync_rechazo($guid, 'esa tarea de la manana ya fue cerrada');
         }
 
         // El ano y la semana de pago NO se guardan: se derivan de
@@ -750,20 +763,38 @@ class V4 extends RestController
         return NULL;
     }
 
-    /** Valida contra los catalogos con los mismos filtros que /v4/catalogos. */
+    /**
+     * Valida contra los catalogos con los mismos filtros que /v4/catalogos.
+     *
+     * LOS MOTIVOS SE ESCRIBEN PARA EL SUPERVISOR, NO PARA EL PROGRAMADOR. El
+     * texto que vuelve acá es lo único que la pantalla "Registros" le muestra a
+     * quien tiene que corregir el registro en el campo, y un
+     * "subtarea 88 inactiva" no le dice nada: no conoce los ids, no los ve en
+     * ninguna pantalla, y el numero no le indica que tocar.
+     *
+     * Por eso cada rechazo nombra la cosa: "la subtarea COSECHA DE MAZORCA esta
+     * inactiva". El servidor ya tiene el catalogo a mano cuando valida, asi que
+     * resolver el nombre cuesta una consulta mas SOLO en el camino de error --
+     * el camino feliz no paga nada. El id se conserva entre parentesis para que
+     * siga sirviendo de soporte.
+     */
     private function sync_valida_catalogos($db, $ids)
     {
         if (!$this->sync_existe($db, 'z_finca', $ids['finca_id'], "estado IN ('1','A')")) {
-            return 'finca ' . $ids['finca_id'] . ' inexistente o inactiva';
+            return 'la finca ' . $this->sync_nombre($db, 'z_finca', 'nombre', $ids['finca_id'])
+                 . ' no existe o esta inactiva';
         }
         if (!$this->sync_existe($db, 'z_cultivo', $ids['cultivo_id'], "estado IN ('1','A')")) {
-            return 'cultivo ' . $ids['cultivo_id'] . ' inexistente o inactivo';
+            return 'el cultivo ' . $this->sync_nombre($db, 'z_cultivo', 'nombre', $ids['cultivo_id'])
+                 . ' no existe o esta inactivo';
         }
         if (!$this->sync_existe($db, 'z_subtarea', $ids['subtarea_id'], "estado IN ('1','A')")) {
-            return 'subtarea ' . $ids['subtarea_id'] . ' inexistente o inactiva';
+            return 'la subtarea ' . $this->sync_nombre($db, 'z_subtarea', 'nombre_subtarea', $ids['subtarea_id'])
+                 . ' no existe o esta inactiva';
         }
         if (!$this->sync_personal_activo($db, $ids['responsable_id'])) {
-            return 'responsable ' . $ids['responsable_id'] . ' inexistente o inactivo';
+            return 'el responsable ' . $this->sync_nombre($db, 'z_personal', 'nombre', $ids['responsable_id'])
+                 . ' no existe o esta dado de baja';
         }
         // El lote tiene que ser de la finca declarada: la FK sola no lo ve.
         $lote = $db->select('finca_id')->from('z_lote')
@@ -771,10 +802,13 @@ class V4 extends RestController
                    ->limit(1)->get();
         $lote = ($lote === FALSE) ? NULL : $lote->row();
         if (!$lote) {
-            return 'lote ' . $ids['lote_id'] . ' inexistente o inactivo';
+            return 'el lote ' . $this->sync_nombre($db, 'z_lote', 'lote', $ids['lote_id'])
+                 . ' no existe o esta inactivo';
         }
         if ((int) $lote->finca_id !== $ids['finca_id']) {
-            return 'el lote ' . $ids['lote_id'] . ' no pertenece a la finca ' . $ids['finca_id'];
+            return 'el lote ' . $this->sync_nombre($db, 'z_lote', 'lote', $ids['lote_id'])
+                 . ' no pertenece a la finca '
+                 . $this->sync_nombre($db, 'z_finca', 'nombre', $ids['finca_id']);
         }
         return NULL;
     }
@@ -786,12 +820,85 @@ class V4 extends RestController
         return ($q !== FALSE) && ($q->row() !== NULL);
     }
 
+    /**
+     * Nombre de un registro de catalogo para un mensaje de error.
+     *
+     * SIN filtro de estado a proposito: se llama justamente cuando la fila no
+     * paso el filtro, asi que filtrar otra vez devolveria vacio siempre y el
+     * mensaje quedaria peor que con el id.
+     *
+     * SIN el id entre parentesis: los codigos internos no se muestran (decision
+     * cerrada, 00-plan.md). Si de verdad no existe la fila --un id inventado--
+     * devuelve `#88`, que al menos dice que se mando algo que no esta; ese caso
+     * no es un dato del negocio, es un cliente mandando basura. Nunca devuelve
+     * vacio: "la subtarea  no existe" parece un error de la app.
+     *
+     * `$columna` NO viene de la request: lo fija cada llamador con un literal.
+     * Los nombres de columna de los catalogos estan mezclados --`z_subtarea`
+     * usa `nombre_subtarea`, `z_lote` usa `lote`, `z_finca` usa `nombre`-- y no
+     * hay convencion que adivinar.
+     */
+    private function sync_nombre($db, $tabla, $columna, $id)
+    {
+        $id = (int) $id;
+        $debug_previo = $db->db_debug;
+        $db->db_debug = FALSE;
+        try {
+            $q = $db->select($columna)->from($tabla)->where('id', $id)->limit(1)->get();
+        } catch (Throwable $e) {
+            $db->db_debug = $debug_previo;
+            return '#' . $id;
+        }
+        $db->db_debug = $debug_previo;
+        $fila = ($q === FALSE) ? NULL : $q->row();
+        if (!$fila || !isset($fila->$columna) || trim((string) $fila->$columna) === '') {
+            return '#' . $id;
+        }
+        return trim((string) $fila->$columna);
+    }
+
     /** V3 nunca filtro por `estado` en personal: la señal viva es `eregistro`. */
     private function sync_personal_activo($db, $id)
     {
         $q = $db->select('id')->from('z_personal')->where('id', $id)
                 ->where('eregistro', 'A')->limit(1)->get();
         return ($q !== FALSE) && ($q->row() !== NULL);
+    }
+
+    /**
+     * Motivo legible cuando un modulo no va con el lote declarado.
+     *
+     * Tres casos distintos que el mensaje unico de antes mezclaba:
+     * no existe, existe pero esta inactivo, o existe activo pero es de OTRO
+     * lote. El tercero es el unico que el supervisor puede corregir solo, y es
+     * el que mas pasa: 16 filas de z_tabla_am lo tienen.
+     */
+    private function sync_motivo_modulo($db, $modulo_id, $lote_id)
+    {
+        $lote = $this->sync_nombre($db, 'z_lote', 'lote', $lote_id);
+
+        $debug_previo = $db->db_debug;
+        $db->db_debug = FALSE;
+        try {
+            $q = $db->select('modulo, lote_id, estado')->from('z_modulo')
+                    ->where('id', (int) $modulo_id)->limit(1)->get();
+        } catch (Throwable $e) {
+            $db->db_debug = $debug_previo;
+            return 'ese modulo no pertenece al lote ' . $lote;
+        }
+        $db->db_debug = $debug_previo;
+        $m = ($q === FALSE) ? NULL : $q->row();
+
+        if (!$m) {
+            return 'ese modulo no existe';
+        }
+        if (!in_array((string) $m->estado, array('1', 'A'), TRUE)) {
+            return 'el modulo ' . trim((string) $m->modulo) . ' del lote ' . $lote
+                 . ' esta inactivo';
+        }
+        return 'el modulo ' . trim((string) $m->modulo) . ' es del lote '
+             . $this->sync_nombre($db, 'z_lote', 'lote', (int) $m->lote_id)
+             . ', no del lote ' . $lote;
     }
 
     /** El modulo tiene que pertenecer al lote declarado. La FK no lo verifica. */
