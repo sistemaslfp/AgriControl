@@ -628,8 +628,7 @@ export class AmPage implements OnInit {
       await this.bloqueo(
         'Personal con una tarea AM sin cerrar',
         'Estas personas ya tienen una tarea AM de hoy sin cerrar. El servidor no acepta otra hasta que el PM cierre la primera:\n\n' +
-          detalle +
-          '\n\nSolo se ve lo capturado en este equipo: una tarea cargada en otra tablet no aparece acá.',
+          detalle
       );
       return;
     }

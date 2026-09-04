@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 
 import { CatalogQueryService } from '../catalog/catalog-query.service';
 import { DatabaseService } from '../db/database.service';
+import { FechaService } from './fecha.service';
 
 /**
  * "¿Esta persona ya tiene una tarea AM abierta?"
@@ -78,6 +79,7 @@ export class AsignacionesService {
 
   private readonly database = inject(DatabaseService);
   private readonly catalogo = inject(CatalogQueryService);
+  private readonly fechas = inject(FechaService);
 
   /** Se llama al encolar cada tarea AM, con el guid ya asignado. */
   /**
@@ -158,7 +160,7 @@ export class AsignacionesService {
       const loteId = Number(f['lote_id']);
       const subtareaId = Number(f['subtarea_id']);
       const sub = await this.catalogo.subtarea(subtareaId);
-      const hora = String(f['created_at']).slice(11, 16);
+      const hora = this.fechas.horaLocalDeIso(String(f['created_at']));
       salida.push({
         guid: String(f['guid']),
         personalId: Number(f['personal_id']),

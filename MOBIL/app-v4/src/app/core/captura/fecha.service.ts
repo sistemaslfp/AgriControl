@@ -109,6 +109,16 @@ export class FechaService {
     return local.slice(0, 10);
   }
 
+  /**
+   * 'HH:mm' local a partir de un ISO UTC. El espejo de asignaciones guarda
+   * `created_at` con `toISOString()`, o sea en UTC: cortar la cadena a mano
+   * mostraba la hora corrida el offset del dispositivo (21:56 por 16:56).
+   */
+  horaLocalDeIso(iso: string): string {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso.slice(11, 16) : this.aLocal(d).slice(11, 16);
+  }
+
   private aLocal(d: Date): string {
     const p = (n: number) => String(n).padStart(2, '0');
     return (
