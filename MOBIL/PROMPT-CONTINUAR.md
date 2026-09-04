@@ -76,9 +76,11 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
    coincide con el uso: en agosto de 2026 hubo **279 filas de riego contra 60
    de cosecha**, y postcosecha lleva **4 partidas en todo 2026** (77 en 2024).
    Riego está bloqueado sólo por las capturas de pantalla (pendiente #9) y su
-   tabla `reg_riego` ya existe. Postcosecha es el módulo más caro y el menos
-   usado — y antes de construirlo conviene auditar el DDL de `pc_*` contra los
-   datos reales, que es exactamente lo que le faltó a `reg_cosecha`.
+   tabla `reg_riego` ya existe y **no hay que rehacerla**: riego es una bitácora
+   propia, no cierra tareas AM (ver `00-plan.md` y `02-bd-y-api.md` §Riego).
+   Postcosecha es el módulo más caro y el menos usado — y antes de construirlo
+   conviene auditar el DDL de `pc_*` contra los datos reales, que es exactamente
+   lo que le faltó a `reg_cosecha`.
 2. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
    con el UUID. Es lo único que quedó fuera del paso 4.
 3. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las

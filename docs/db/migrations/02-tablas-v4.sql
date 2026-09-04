@@ -261,7 +261,20 @@ CREATE TABLE IF NOT EXISTS reg_cosecha_saco (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- =========================================================================
--- RIEGO
+-- RIEGO — bitacora propia, NO cuelga de una tarea AM
+--
+-- Decision de Kevin (2026-09-03): el supervisor entrega su parte de riego y se
+-- registra tal cual. Por eso esta tabla conserva finca_id, supervisor_id,
+-- lote_id y modulo_id PROPIOS: no es una copia del AM, es su unica fuente.
+--
+-- Las tareas de riego del AM si se cierran con PM, y no se contradice: el
+-- AM/PM paga el JORNAL de la persona (las 7 subtareas de la tarea Riego son en
+-- Jornal, 10.639 AM y 9.246 PM en el historico) y esta tabla registra el AGUA
+-- (9.778 filas en z_riego). Riego no entra en tarea_cosecha_ids ni en
+-- tarea_poscosecha_ids.
+--
+-- Los dos lados NO tienen enlace entre si. Es un hueco conocido y sin
+-- dimensionar; se deja asi a proposito.
 --
 -- 02-bd-y-api.md la dejaba "para el final, con las capturas". Las capturas
 -- definen la PANTALLA, no la tabla, así que la tabla se crea ahora y nace

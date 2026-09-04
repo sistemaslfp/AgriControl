@@ -55,6 +55,25 @@ con el conteo de sacos.
 **Poscosecha queda sin quién la cierre hasta el paso 6.** Son 38 AM en agosto,
 unidad Jornal. Es la consecuencia conocida de sacarla del PM.
 
+**Riego no cierra nada: es una bitácora propia** (2026-09-03). El supervisor
+entrega su parte y se registra tal cual, así que `reg_riego` conserva sus
+`finca_id`, `supervisor_id`, `lote_id` y `modulo_id` — es su única fuente de
+verdad, no una copia del AM. **Las tareas de riego del AM sí se cierran con
+PM**: son dos cosas distintas sobre la misma actividad, el AM/PM paga el jornal
+de la persona (las 7 subtareas de la tarea Riego son en Jornal, con 10.639 AM y
+9.246 PM en el histórico) y la bitácora registra el agua (9.778 filas en
+`z_riego`). Riego **no** entra en `tarea_cosecha_ids` ni `tarea_poscosecha_ids`.
+
+*Queda un hueco conocido y sin dimensionar: los dos lados no tienen enlace, así
+que no se puede cruzar el agua con el costo de mano de obra. Se deja así a
+propósito.*
+
+**Cosecha no repite las columnas del AM, y el costo está medido**: sobre 2× el
+volumen real, un reporte de un mes y una finca cuesta 1,08 ms yendo por el AM
+contra 0,48 ms con una tabla plana; el histórico completo sin filtro, 345 ms
+contra 230 ms. No alcanza para justificar una segunda copia del dato que la
+nómina no va a creer. Si algún día molesta, se resuelve con una vista.
+
 ## El modelo de datos
 
 **UN REGISTRO = UNA PERSONA EN UNA TAREA.** `reg_am` es la única tabla: lleva la

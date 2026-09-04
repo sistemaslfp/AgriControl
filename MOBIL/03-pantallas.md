@@ -343,10 +343,18 @@ programación de la mañana, no se vuelve a cargar.
 
 ## Riego
 
-Sin capturas. Campos según `z_riego`: supervisor, fecha, hora, finca,
-codigo_tarea, codigo_subtarea, lote, modulo, tiempo_riego, volumen_riego,
-observaciones. Mismo patrón que Cosecha. **[PENDIENTE]** capturas para el
-detalle de pantalla.
+Sin capturas. **[PENDIENTE]** capturas para el detalle de pantalla
+(pendiente #9).
+
+**No es como Cosecha ni como el PM: es una bitácora** (Kevin, 2026-09-03). No
+elige una tarea AM ni cierra nada — el supervisor entrega su parte de riego y
+la pantalla lo registra. Campos según `z_riego`: supervisor, fecha, hora,
+finca, lote, módulo, tiempo de riego, volumen, observaciones. (`codigo_tarea` y
+`codigo_subtarea` valen '0' en las 9.778 filas: están muertos.)
+
+**Las tareas de riego del AM se siguen cerrando desde el PM**, y eso no se
+contradice: ahí se paga el jornal de la persona —las 7 subtareas de la tarea
+Riego son en Jornal—, acá se registra el agua. Ver `02-bd-y-api.md` §Riego.
 
 ---
 

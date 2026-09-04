@@ -237,6 +237,25 @@ CREATE TABLE reg_cosecha_saco (
 );
 ```
 
+**Por qué esta tabla NO repite las columnas del AM.** La pregunta es legítima
+—una vista que va `cosecha → AM → catálogos` cuesta más que una plana— y está
+medida sobre una copia de la base con **2× el volumen real** (26.426 cosechas
+sobre 113.410 AM):
+
+| Reporte | Vía AM | Tabla plana |
+|---|---|---|
+| Un mes, una finca, por trabajador | **1,08 ms** | 0,48 ms |
+| Todo el histórico, sin filtro | **345 ms** | 230 ms |
+
+El plan es el correcto: arranca por `reg_am` con `(finca_id, fecha_proceso)` y
+entra a cosecha por la única (`eq_ref`), sin escaneo. **El costo no justifica
+duplicar la verdad**: si `reg_cosecha.finca_id` dijera 1 y el AM dijera 2, la
+nómina siempre le creería al AM, y la columna solo serviría para que alguien
+lea la equivocada — que es exactamente cómo 3.176 filas de `z_tabla_am`
+terminaron apuntando a módulos inexistentes. Si algún día esos 345 ms molestan,
+lo que corresponde es una vista `vw_reg_cosecha` (o materializarla), no una
+segunda copia del dato.
+
 **LA SUMA DE LAS LIBRAS ES EL AVANCE DE LA TAREA.** `sync_cosecha` escribe
 `reg_am.cantidad` con `total_peso` y marca `cierre_origen = 'cosecha'`. No es
 una interpretación: de **14.466 pares** (PM de cosecha, fila de
@@ -252,8 +271,31 @@ El techo de 15 sacos de `z_cosecha_cacao.saco1..saco15` desapareció.
 
 ### Riego
 
-Mismo patrón, con `tiempo_riego` y `volumen_riego`. Se define al final, con las
-capturas de pantalla (ver `00-plan.md`).
+**Riego NO cuelga de una tarea AM. Es una bitácora propia** (Kevin,
+2026-09-03): el supervisor entrega su parte de riego y eso se registra tal
+cual. Por eso `reg_riego` conserva `finca_id`, `supervisor_id`, `lote_id` y
+`modulo_id` **propios** — no es denormalización, es su única fuente de verdad.
+
+**Las tareas de riego sí se cierran con PM.** No se contradice con lo de arriba
+porque son dos cosas distintas sobre la misma actividad: el AM/PM paga el
+**jornal de la persona**, la bitácora registra **cuánta agua fue a qué lote y
+por cuánto tiempo**. Los datos lo confirman: la tarea 3 (Riego) tiene 7
+subtareas y **las 7 son en Jornal**, con 10.639 AM y 9.246 PM en el histórico,
+mientras `z_riego` lleva sus 9.778 filas aparte.
+
+Consecuencia práctica: **riego no entra en `tarea_cosecha_ids` ni en
+`tarea_poscosecha_ids`** de `application/config/v4.php`. Sus AM se siguen
+cerrando desde el PM como cualquier otra tarea.
+
+**Hueco conocido, sin dimensionar:** el mismo trabajo queda en dos lados **sin
+enlace** — el AM/PM de la persona y la fila de bitácora. Hoy nadie puede
+cruzarlos, así que un reporte de "horas de riego por lote con su costo de mano
+de obra" no se puede armar. Se deja así a propósito (Kevin, 2026-09-03): el
+puente no está dimensionado y no se inventa uno por las dudas.
+
+`tiempo_riego` va en minutos enteros, no en `'HH:MM'` como VARCHAR: sumar y
+comparar duraciones como texto es el mismo defecto que `fecha VARCHAR(10)`.
+Falta el detalle de pantalla, que espera las capturas (pendiente #9).
 
 ### Postcosecha
 
