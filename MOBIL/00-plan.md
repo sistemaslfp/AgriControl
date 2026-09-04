@@ -23,7 +23,7 @@ al día al **2026-09-02**.
 | 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
 | 5 | **Cosecha de Cacao** | **HECHO** — cierra una tarea AM: `tipo: cosecha` en `/v4/sync` y la pantalla `/cosecha` |
 | 6 | **Postcosecha** — máquina de estados + fotos. El más caro | pendiente |
-| 7 | **Riego** — al final por decisión; faltan capturas para especificarlo | pendiente |
+| 7 | **Riego** — bitácora propia, no cierra tareas AM. `reg_riego` ya está y no se rehace | pendiente — faltan las capturas (#9) |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
 
 La migración de la ventana de agosto está **hecha y verificada**
@@ -279,14 +279,25 @@ con una bandera.
 
 ## Cerrados con datos
 
-- **#7 — el botón `ADICIONAL` de Cosecha agrega otro trabajador al mismo
+- **#7 — el botón `ADICIONAL` de Cosecha agregaba otro trabajador al mismo
   encabezado** (2026-09-03). **2.710 de los 3.641 encabezados de
   `z_cosecha_cacao` (74 %) tienen más de un trabajador, con un máximo de 21.**
-  Por eso `reg_cosecha` ganó `captura_guid` y el modelo es el mismo de AM: un
-  registro = un trabajador.
+  *En la app nueva el botón no hace falta*: cosecha cierra una tarea AM y las
+  personas ya vienen de ahí. `reg_cosecha` **no** lleva `captura_guid` — el que
+  agrupa es el del AM.
 
 ## Trabajo identificado, sin decisión que tomar
 
+- **`Supervisor de cosecha` (subtarea 24) no tiene sacos que pesar.** Cuelga de
+  la tarea Cosecha, así que la pantalla de cosecha se la ofrece y le exige al
+  menos un saco; pero su unidad es **Jornal**, no Libra. Son 241 filas en
+  `z_tabla_am` y 4 abiertas hoy en `reg_am`. Hay que decidir si esas subtareas
+  vuelven al PM (por unidad de labor) o si la pantalla acepta cerrarlas sin
+  sacos.
+- **Vista plana de cosecha para los reportes web.** Hoy un reporte va
+  `cosecha → AM → catálogos`. Está medido y alcanza (1,08 ms por mes y finca),
+  pero conviene una `vw_reg_cosecha` para que el que escribe el reporte no
+  repita el join. Ver `02-bd-y-api.md` §Cosecha.
 - **Repuntar las 19 vistas restantes** a `reg_am`/`pc_*` para el período desde
   agosto. Sólo se hizo `vw_reg_reporte_pago`, que es la nómina.
 - **Campo propio para la justificación del registro retroactivo.** Hoy viaja

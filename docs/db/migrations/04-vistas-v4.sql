@@ -93,3 +93,108 @@ SELECT f.id,
   LEFT JOIN z_personal tra ON tra.id = am.personal_id
   LEFT JOIN z_personal res ON res.id = am.responsable_id
   LEFT JOIN z_personal rc  ON rc.id  = am.responsable_cierre_id;
+
+-- ---------------------------------------------------------------------------
+-- Cosecha, plana. Equivalente V4 de lo que en v3 se leia de z_cosecha_cacao,
+-- que traia finca/lote/subtarea/trabajador repetidos en la propia fila.
+--
+-- Aca NO se repiten: `reg_cosecha` solo guarda los sacos y cuelga del AM
+-- (decision cerrada, 02-bd-y-api.md). Esta vista es la que paga ese join una
+-- sola vez para que ningun reporte web lo vuelva a escribir a mano — que es
+-- exactamente lo que 00-plan.md dejo anotado.
+--
+-- Grano: UNA FILA POR CIERRE DE COSECHA = una persona en una tarea AM.
+-- `uq_cosecha_am` garantiza que no hay dos por AM. El resumen del CRUD viejo
+-- (vw_cosecha_cacao_resumen, agrupado por fecha/supervisor/lote/subtarea) sale
+-- de un GROUP BY sobre esta vista; no se replica aca para no fijar un
+-- agrupamiento que cada reporte quiere distinto.
+--
+-- Se exponen los ids ADEMAS de los nombres, a diferencia de
+-- vw_reg_reporte_pago: Grocery CRUD filtra por id (`$crud->where('finca', ...)`
+-- en Cosechacacao.php) y con solo el nombre habria que filtrar por texto.
+--
+-- `id` es reg_cosecha.id y es unico: sirve de PK para Grocery CRUD
+-- (`$crud->set_primary_key('id')`).
+--
+-- El pago se calcula con `am.cantidad`, NO con total_peso. Hoy son el mismo
+-- numero —sync_cosecha escribe cantidad = total_peso— pero el que manda es el
+-- AM: si un ajuste corrige la cantidad, el pago tiene que seguir al ajuste.
+-- Por eso tambien va `unidad_labor`: una subtarea de cosecha que no se pague
+-- por peso haria que total_peso y cantidad dejaran de coincidir.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_reg_cosecha AS
+SELECT c.id                                                      AS id,
+       c.guid                                                    AS guid,
+       am.id                                                     AS reg_am_id,
+       am.guid                                                   AS am_guid,
+       am.fecha_proceso                                          AS fecha,
+       CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED)  AS anio,
+       WEEK(am.fecha_proceso, 3)                                 AS semana,
+       am.finca_id                                               AS finca_id,
+       f.nombre                                                  AS finca,
+       am.cultivo_id                                             AS cultivo_id,
+       cul.nombre                                                AS cultivo,
+       am.lote_id                                                AS lote_id,
+       lot.lote                                                  AS lote,
+       (SELECT GROUP_CONCAT(zm.modulo ORDER BY zm.modulo)
+          FROM z_modulo zm WHERE FIND_IN_SET(zm.id, am.modulos)) AS modulo,
+       sub.tarea_id                                              AS tarea_id,
+       tar.nombre                                                AS tarea,
+       am.subtarea_id                                            AS subtarea_id,
+       sub.nombre_subtarea                                       AS nombre_subtarea,
+       sub.unidad_labor_id                                       AS unidad_labor_id,
+       u.ulabor_nombre                                           AS unidad_labor,
+       am.personal_id                                            AS trabajador_id,
+       tra.nombre                                                AS nombre,
+       tra.cedula                                                AS cedula,
+       -- Quien cerro manda sobre quien programo, igual que en la nomina.
+       COALESCE(am.responsable_cierre_id, am.responsable_id)     AS responsable_id,
+       res.nombre                                                AS nombre1,
+       c.total_sacos                                             AS total_sacos,
+       c.total_peso                                              AS total_peso,
+       -- NULLIF: una cosecha sin sacos no deberia existir (sync_cosecha la
+       -- rechaza), pero una division por cero en una vista rompe el reporte
+       -- entero en vez de una fila.
+       ROUND(c.total_peso / NULLIF(c.total_sacos, 0), 2)         AS peso_promedio_saco,
+       am.cantidad                                               AS cantidad,
+       sub.tarifa                                                AS tarifa,
+       am.cantidad * sub.tarifa                                  AS total,
+       am.hora_cierre                                            AS hora_cierre,
+       c.observaciones                                           AS observaciones,
+       c.origen                                                  AS origen,
+       c.device_alias                                            AS dispositivo,
+       c.created_at_device                                       AS creado_en_dispositivo,
+       c.received_at_server                                      AS recibido_en_servidor
+  FROM reg_cosecha c
+  JOIN reg_am      am  ON am.id  = c.reg_am_id
+  JOIN z_personal  tra ON tra.id = am.personal_id
+  JOIN z_personal  res ON res.id = COALESCE(am.responsable_cierre_id, am.responsable_id)
+  JOIN z_subtarea  sub ON sub.id = am.subtarea_id
+  JOIN z_finca     f   ON f.id   = am.finca_id
+  JOIN z_lote      lot ON lot.id = am.lote_id
+  -- LEFT en los tres que la nomina no necesita: tarea y unidad son de catalogo
+  -- (z_subtarea no tiene FK a ninguno de los dos) y cultivo_id puede apuntar a
+  -- un catalogo depurado. Un JOIN duro aca esconderia filas de cosecha reales.
+  LEFT JOIN z_tarea   tar ON tar.id = sub.tarea_id
+  LEFT JOIN z_ulabor  u   ON u.id   = sub.unidad_labor_id
+  LEFT JOIN z_cultivo cul ON cul.id = am.cultivo_id;
+
+-- ---------------------------------------------------------------------------
+-- El detalle saco por saco, para reemplazar las columnas saco1..saco15 de
+-- z_cosecha_cacao. Una fila por saco; el techo de 15 ya no existe.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_reg_cosecha_saco AS
+SELECT s.id            AS id,
+       s.cosecha_id    AS cosecha_id,
+       s.numero        AS numero,
+       s.libras        AS libras,
+       v.reg_am_id,
+       v.fecha,
+       v.finca,
+       v.lote,
+       v.nombre_subtarea,
+       v.unidad_labor,
+       v.nombre,
+       v.cedula
+  FROM reg_cosecha_saco s
+  JOIN vw_reg_cosecha   v ON v.id = s.cosecha_id;

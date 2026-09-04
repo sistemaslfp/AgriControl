@@ -81,20 +81,24 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
    Postcosecha es el módulo más caro y el menos usado — y antes de construirlo
    conviene auditar el DDL de `pc_*` contra los datos reales, que es exactamente
    lo que le faltó a `reg_cosecha`.
-2. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
+2. **Los dos flecos de cosecha**: `Supervisor de cosecha` (subtarea 24, unidad
+   **Jornal**) aparece en la pantalla de cosecha y no tiene sacos que pesar —hay
+   que decidir si vuelve al PM o si se puede cerrar sin sacos—, y falta la vista
+   `vw_reg_cosecha` para que los reportes web no repitan el join.
+3. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
    con el UUID. Es lo único que quedó fuera del paso 4.
-3. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
+4. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
    demás) a `reg_am` para el período desde agosto. Sólo se hizo
    `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
    endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
-4. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
+5. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
    dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255.
-5. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
+6. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
    (`z_personal.id_finca`, `z_subtarea.id_finca`) y el servidor no las compara.
-6. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
+7. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
    (lista en `docker/php/Dockerfile`): guardado real desde Grocery CRUD, campos
    de archivo, login POST de ion_auth, y `Operations/PM`.
-7. Después: el corte.
+8. Después: el corte.
 
 Las decisiones cerradas —las que no hay que volver a discutir— están en
 **`00-plan.md`**, una conclusión por tema. No se repiten acá.
