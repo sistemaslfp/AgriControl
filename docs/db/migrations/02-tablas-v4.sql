@@ -70,22 +70,31 @@
 -- `_historico/00-limpiar-intermedias.sql` para dejarla virgen, o pedir un dump
 -- regenerado. En PRODUCCIÓN nunca puede saltar: no hay ninguna tabla reg_*.
 --
--- El DELIMITER es necesario porque el bloque lleva `;` adentro. Funciona en la
--- consola de MariaDB y en MySQL Workbench.
+-- Mira las tres tablas que el dump trae viejas (reg_am, reg_cosecha, reg_flag)
+-- y las cuatro que ya no existen (reg_am_modulo, reg_am_personal, reg_pm,
+-- reg_pm_modulo). Antes miraba solo reg_am, y por eso una reg_cosecha vieja
+-- pasaba en silencio y recien explotaba al crear vw_reg_cosecha.
 -- ---------------------------------------------------------------------------
-DELIMITER //
-BEGIN NOT ATOMIC
-  IF EXISTS (SELECT 1 FROM information_schema.tables
-              WHERE table_schema = DATABASE() AND table_name = 'reg_am')
-     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
-              WHERE table_schema = DATABASE() AND table_name = 'reg_am'
-                AND column_name = 'cierre_guid')
-  THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-      'ABORTADO: existe un reg_am de un esquema anterior. Ver docs/db/migrations/_historico/README.md';
-  END IF;
-END //
-DELIMITER ;
+-- Sin DELIMITER y sin BEGIN NOT ATOMIC: eso es sintaxis de MariaDB que
+-- MySQL Workbench no parsea (error de sintaxis antes de mandar nada al
+-- servidor). Esto usa solo SET + PREPARE, que entienden los dos.
+--
+-- El truco: si la base esta sucia, @guardian queda apuntando a una tabla que
+-- no existe y el PREPARE muere con ERROR 1146 diciendo el nombre, que ES el
+-- mensaje. Si esta limpia, prepara un 'SELECT 1' y sigue de largo.
+SET @guardian := (
+  SELECT IF(EXISTS (
+           SELECT 1 FROM information_schema.tables t
+            WHERE t.table_schema = DATABASE()
+              AND ( (t.table_name = 'reg_am'      AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'reg_am'      AND c.column_name = 'cierre_guid'))
+                 OR (t.table_name = 'reg_cosecha' AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'reg_cosecha' AND c.column_name = 'reg_am_id'))
+                 OR (t.table_name = 'reg_flag'    AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'reg_flag'    AND c.column_name = 'payload'))
+                 OR  t.table_name IN ('reg_am_modulo','reg_am_personal','reg_pm','reg_pm_modulo') )),
+         'SELECT * FROM ABORTADO_hay_tablas_v4_viejas_correr_historico_00_limpiar',
+         'SELECT 1')
+);
+PREPARE guardian FROM @guardian;
+DEALLOCATE PREPARE guardian;
 
 SET FOREIGN_KEY_CHECKS = 1;
 

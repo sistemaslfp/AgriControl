@@ -98,10 +98,10 @@
 
     @if (!cargandoLista() && disponibles().length === 0) {
       <div class="banner info">
-        No hay tareas de cosecha sin cerrar para el {{ fecha() }}.
+        No hay tareas de cosecha para el {{ fecha() }}.
         @if (!listaDesdeServidor()) {
           Solo se está viendo lo cargado en este equipo: con conexión pueden
-          aparecer tareas de otras tablets.
+          aparecer tareas de otros equipos.
         }
       </div>
     } @else {
@@ -131,9 +131,7 @@
     }
 
     <div class="banner info">
-      Cosecha no crea tareas: cierra las que se programaron en el AM. Lote,
-      módulos, subtarea y personal vienen de ahí; acá solo se pesan los sacos.
-      La suma de las libras queda como el avance de la tarea.
+      Este modulo solo cierra tareas de cosecha creadas en AM
     </div>
 
     @if (problemasEncabezado().length > 0) {

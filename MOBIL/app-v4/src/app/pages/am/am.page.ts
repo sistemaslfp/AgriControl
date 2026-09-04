@@ -246,7 +246,7 @@ export class AmPage implements OnInit {
     if (!t.tarea) p.push('Falta la tarea.');
     if (!t.subtarea) p.push('Falta la subtarea.');
     if (t.lote?.tieneModulos && t.modulos.length === 0) {
-      p.push('Este lote trabaja por módulos: elegí al menos uno.');
+      p.push('Este lote trabaja por módulos: Elige al menos uno.');
     }
     if (t.personal.length === 0) {
       p.push('Sin personal no hay programación: agregá al menos una persona.');
@@ -392,7 +392,7 @@ export class AmPage implements OnInit {
   async abrirLote(i: number): Promise<void> {
     const f = this.finca();
     if (!f) {
-      await this.aviso('Elegí primero la finca, en el encabezado.');
+      await this.aviso('Elige primero la finca, en el encabezado.');
       return;
     }
     const t = this.tareas()[i];
@@ -403,7 +403,7 @@ export class AmPage implements OnInit {
   async abrirTarea(i: number): Promise<void> {
     const t = this.tareas()[i];
     if (!t.cultivo) {
-      await this.aviso('Elegí primero el cultivo.');
+      await this.aviso('Elige primero el cultivo.');
       return;
     }
     const tareas = await this.tareasDe(t.cultivo.id);
@@ -419,7 +419,7 @@ export class AmPage implements OnInit {
   async abrirSubtarea(i: number): Promise<void> {
     const t = this.tareas()[i];
     if (!t.tarea) {
-      await this.aviso('Elegí primero la tarea.');
+      await this.aviso('Elige primero la tarea.');
       return;
     }
     const subs = await this.subtareasDe(t.tarea.id);
@@ -435,7 +435,7 @@ export class AmPage implements OnInit {
   async abrirModulos(i: number): Promise<void> {
     const t = this.tareas()[i];
     if (!t.lote) {
-      await this.aviso('Elegí primero el lote.');
+      await this.aviso('Elige primero el lote.');
       return;
     }
     const modulos = await this.catalogo.modulosDeLote(t.lote.id);
@@ -588,7 +588,7 @@ export class AmPage implements OnInit {
     const validos = await this.catalogo.responsables(this.finca()?.id ?? null);
     if (!validos.some((v) => v.id === r.id)) {
       this.responsable.set(null);
-      await this.aviso(`${r.nombre} no es responsable de esa finca; elegí otro.`);
+      await this.aviso(`${r.nombre} no es responsable de esa finca; Elige otro.`);
     }
   }
 
@@ -614,13 +614,21 @@ export class AmPage implements OnInit {
             this.tareas()
               .flatMap((t) => t.personal)
               .find((p) => p.id === id)?.nombre ?? `#${id}`;
-          return `<li><strong>${nombre}</strong><br />${lista.map((a) => a.descripcion).join('<br />')}</li>`;
+          // TEXTO PLANO, no HTML. Desde Ionic 6 el `message` de un alert se
+          // escapa salvo que se encienda `innerHTMLTemplatesEnabled`, que lo
+          // habilita para TODA la app: cualquier texto que venga de la base
+          // --un nombre de z_personal, editable desde la web-- pasaria a ser
+          // HTML inyectable. Se deja apagado; los saltos de linea se ven
+          // gracias al `white-space: pre-line` de .alert-message en
+          // styles.scss.
+          return `• ${nombre}\n   ${lista.map((a) => a.descripcion).join('\n   ')}`;
         })
-        .join('');
+        .join('\n');
       const sigo = await this.confirmar(
         'Personal con una tarea AM sin cerrar',
-        `Estas personas ya tienen una tarea AM de hoy cargada en este equipo y todavía sin PM que la cierre:<ul>${detalle}</ul>` +
-          'Solo se ve lo capturado en este equipo: una tarea cargada en otra tablet no aparece acá.',
+        'Estas personas ya tienen una tarea AM de hoy cargada en este equipo y todavía sin PM que la cierre:\n\n' +
+          detalle +
+          '\n\nSolo se ve lo capturado en este equipo: una tarea cargada en otra tablet no aparece acá.',
         'Guardar igual',
       );
       if (!sigo) {

@@ -106,10 +106,10 @@
       }
       <ion-item lines="none">
         <ion-note>
-          Normalmente se carga el mismo día. Este interruptor permite elegir
+          Este interruptor permite elegir
           una fecha de hasta hace
-          {{ evaluacion()?.diasRetroactividad ?? 3 }} días o más, y pide
-          explicar el motivo. Fechas futuras no se ofrecen nunca.
+          {{ evaluacion()?.diasRetroactividad ?? 3 }} días o más. 
+          Es necesario detallar el motivo.
         </ion-note>
       </ion-item>
     </ion-list>
@@ -166,13 +166,13 @@
       <ion-item button="true" detail="true" [disabled]="!t.cultivo" (click)="abrirTarea(i)">
         <ion-label>
           Tarea
-          <p>{{ t.tarea?.nombre ?? (t.cultivo ? 'Sin elegir' : 'Elegí primero el cultivo') }}</p>
+          <p>{{ t.tarea?.nombre ?? (t.cultivo ? 'Sin elegir' : 'Elige primero el cultivo') }}</p>
         </ion-label>
       </ion-item>
       <ion-item button="true" detail="true" [disabled]="!t.tarea" (click)="abrirSubtarea(i)">
         <ion-label>
           Subtarea
-          <p>{{ t.subtarea?.nombre ?? (t.tarea ? 'Sin elegir' : 'Elegí primero la tarea') }}</p>
+          <p>{{ t.subtarea?.nombre ?? (t.tarea ? 'Sin elegir' : 'Elige primero la tarea') }}</p>
         </ion-label>
       </ion-item>
     </ion-list>

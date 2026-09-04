@@ -32,5 +32,5 @@ UPDATE lfp_prodapp.z_lote l
    SET l.tiene_modulos = CASE
          WHEN EXISTS (SELECT 1 FROM lfp_prodapp.z_modulo m
                        WHERE m.lote_id = l.id AND m.estado = '1')
-         THEN 1 ELSE 0 END;
+         THEN 1 ELSE 0 END
    where l.id>0;

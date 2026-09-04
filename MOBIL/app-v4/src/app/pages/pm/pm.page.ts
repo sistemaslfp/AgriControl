@@ -209,7 +209,7 @@ export class PmPage implements OnInit {
     if (!this.responsable()) p.push('Falta el responsable que cierra las tareas.');
     if (!this.horaCierre()) p.push('Falta la hora de cierre.');
     if (this.elegidas().length === 0) {
-      p.push('Elegí al menos una tarea de la mañana para cerrar.');
+      p.push('Elige al menos una tarea de la mañana para cerrar.');
     }
     return p;
   });
@@ -595,7 +595,7 @@ export class PmPage implements OnInit {
     const validos = await this.catalogo.responsables(this.finca()?.id ?? null);
     if (!validos.some((v) => v.id === r.id)) {
       this.responsable.set(null);
-      await this.aviso(`${r.nombre} no es responsable de esa finca; elegí otro.`);
+      await this.aviso(`${r.nombre} no es responsable de esa finca; Elige otro.`);
     }
   }
 

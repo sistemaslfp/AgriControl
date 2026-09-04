@@ -43,3 +43,13 @@ ion-modal.selector-flotante {
   --min-height: 150px;
   --max-height: 72vh;
 }
+
+
+/* Los mensajes de alert se arman en TEXTO PLANO, nunca en HTML: Ionic 6+ los
+   escapa salvo que se encienda `innerHTMLTemplatesEnabled`, y ese interruptor
+   es global -- convertiria en HTML inyectable cualquier nombre traido de
+   z_personal. Sin esta regla los `\n` se colapsan y la lista sale como un
+   parrafo corrido. */
+.alert-message {
+  white-space: pre-line;
+}
