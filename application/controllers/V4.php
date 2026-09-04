@@ -642,6 +642,13 @@ class V4 extends RestController
                 'la fecha de proceso es futura: no se puede registrar trabajo que todavia no ocurrio');
         }
 
+        // Una persona no puede tener dos AM abiertos el mismo dia (Kevin,
+        // 2026-09-04). Cerrado el primero con el PM, el segundo entra.
+        $abierto = $this->sync_am_abierto($db, $guid, $ids['personal_id'], $fecha);
+        if ($abierto !== NULL) {
+            return $this->sync_rechazo($guid, $abierto);
+        }
+
         $ok = $db->insert('reg_am', array(
             'guid'                => $guid,
             'captura_guid'        => $captura,
@@ -671,6 +678,39 @@ class V4 extends RestController
             $out['_duplicado'] = $dup;
         }
         return $out;
+    }
+
+    /**
+     * Motivo si esa persona ya tiene un AM SIN CERRAR ese dia; NULL si no.
+     *
+     * Excluye el propio guid: un reenvio del mismo registro tiene que seguir
+     * llegando al INSERT para que el 1062 lo devuelva como `duplicate`. Sin
+     * eso, perder un ACK convertia el reintento en un rechazo duro.
+     */
+    private function sync_am_abierto($db, $guid, $personal_id, $fecha)
+    {
+        $dia = $fecha->format('Y-m-d');
+        try {
+            $q = $db->select('am.id, s.nombre_subtarea AS subtarea')
+                    ->from('reg_am am')
+                    ->join('z_subtarea s', 's.id = am.subtarea_id', 'left')
+                    ->where('am.personal_id', $personal_id)
+                    ->where('am.guid !=', $guid)
+                    ->where('am.cierre_guid IS NULL', NULL, FALSE)
+                    ->where('am.fecha_proceso >=', $dia . ' 00:00:00')
+                    ->where('am.fecha_proceso <=', $dia . ' 23:59:59')
+                    ->order_by('am.id', 'ASC')->limit(1)->get();
+        } catch (Throwable $e) {
+            return NULL;   // detectar no puede tumbar un registro valido
+        }
+        $f = ($q === FALSE) ? NULL : $q->row();
+        if (!$f) {
+            return NULL;
+        }
+        $sub = trim((string) $f->subtarea);
+        return 'esa persona ya tiene la tarea AM #' . (int) $f->id . ' sin cerrar del ' . $dia
+             . ($sub === '' ? '' : ' (' . $sub . ')')
+             . ': cerrala con el PM antes de cargarle otra';
     }
 
     /**

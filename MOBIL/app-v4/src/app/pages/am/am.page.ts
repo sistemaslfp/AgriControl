@@ -603,8 +603,9 @@ export class AmPage implements OnInit {
     }
     const fecha = this.fechas.soloFecha(this.fechaLocal());
 
-    // Aviso (no bloqueo) por AM abierto en ESTE equipo. Con los datos de
-    // agosto, un bloqueo duro acá habría impedido 9 reasignaciones legítimas.
+    // Bloqueo por AM abierto (Kevin, 2026-09-04): el servidor rechaza una
+    // segunda tarea sin cerrar, así que dejar guardar aquí sólo fabrica
+    // registros condenados. Sólo ve lo capturado en ESTE equipo.
     const ids = this.tareas().flatMap((t) => t.personal.map((p) => p.id));
     const abiertos = await this.asignaciones.personasConAmAbierto(ids, fecha);
     if (abiertos.size > 0) {
@@ -624,16 +625,13 @@ export class AmPage implements OnInit {
           return `• ${nombre}\n   ${lista.map((a) => a.descripcion).join('\n   ')}`;
         })
         .join('\n');
-      const sigo = await this.confirmar(
+      await this.bloqueo(
         'Personal con una tarea AM sin cerrar',
-        'Estas personas ya tienen una tarea AM de hoy cargada en este equipo y todavía sin PM que la cierre:\n\n' +
+        'Estas personas ya tienen una tarea AM de hoy sin cerrar. El servidor no acepta otra hasta que el PM cierre la primera:\n\n' +
           detalle +
           '\n\nSolo se ve lo capturado en este equipo: una tarea cargada en otra tablet no aparece acá.',
-        'Guardar igual',
       );
-      if (!sigo) {
-        return;
-      }
+      return;
     }
 
     this.guardando.set(true);
@@ -772,17 +770,13 @@ export class AmPage implements OnInit {
     await t.present();
   }
 
-  private async confirmar(titulo: string, mensaje: string, aceptar: string): Promise<boolean> {
+  private async bloqueo(titulo: string, mensaje: string): Promise<void> {
     const a = await this.alert.create({
       header: titulo,
       message: mensaje,
-      buttons: [
-        { text: 'Revisar', role: 'cancel' },
-        { text: aceptar, role: 'confirm' },
-      ],
+      buttons: [{ text: 'Entendido', role: 'cancel' }],
     });
     await a.present();
-    const { role } = await a.onDidDismiss();
-    return role === 'confirm';
+    await a.onDidDismiss();
   }
 }

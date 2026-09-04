@@ -370,18 +370,19 @@ await boton('Guardar 1 tarea').click();
 await t(1200);
 const alerta = p.locator('ion-alert');
 const hayAlerta = await alerta.isVisible().catch(() => false);
-ok('20 avisa que la persona ya tiene un AM sin cerrar', hayAlerta);
+ok('20 bloquea porque la persona ya tiene un AM sin cerrar', hayAlerta);
 if (hayAlerta) {
   const texto = await alerta.innerText();
   ok('21 el aviso identifica a la persona y la tarea abierta',
     texto.includes('ALAVA') && texto.includes('Lote'), texto.replace(/\n/g, ' ').slice(0, 120));
-  // Es aviso, no bloqueo: el responsable decide.
-  await p.locator('ion-alert button', { hasText: 'Guardar igual' }).click();
+  // Bloqueo, no aviso: no hay manera de guardar igual.
+  const guardarIgual = await p.locator('ion-alert button', { hasText: 'Guardar igual' }).count();
+  await p.locator('ion-alert button', { hasText: 'Entendido' }).click();
   await t(2500);
   recibidos = (await lotes()).flatMap((l) => l.records ?? []);
-  ok('22 confirmando, el registro se guarda igual',
-    recibidos.filter((r) => r.tipo === 'am').length === 3,
-    `n=${recibidos.filter((r) => r.tipo === 'am').length}`);
+  const nAm = recibidos.filter((r) => r.tipo === 'am').length;
+  ok('22 no ofrece guardar igual y el registro no se manda',
+    guardarIgual === 0 && nAm === 2, `botones=${guardarIgual} n=${nAm}`);
 }
 
 // ------------------------------------------------------------------
