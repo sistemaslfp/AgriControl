@@ -30,10 +30,14 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   `POST /v4/sync` cuelga `reg_cosecha` (+ sacos) del AM y escribe
   `reg_am.cantidad` con la suma de las libras; la pantalla `/cosecha` lista las
   tareas AM de cosecha abiertas y solo pesa los sacos de cada persona.
-- **El PM ya no muestra ni cierra cosecha ni poscosecha** (2026-09-03).
-  `GET /v4/am_abiertos` acepta `&modulo=pm|cosecha` y `sync_pm` rechaza una
-  tarea de cosecha con un motivo legible. **Poscosecha queda sin quién la cierre
-  hasta el paso 6**: son 38 AM en agosto, unidad Jornal.
+- **El reparto PM / Cosecha va por UNIDAD** (2026-09-05). Se pesa lo que se
+  paga por Libra; el PM cierra el complemento exacto de esa lista.
+  `GET /v4/am_abiertos` acepta `&modulo=pm|cosecha`, y `sync_pm` / `sync_cosecha`
+  rechazan lo que no les toca con un motivo legible. Vuelven al PM la subtarea
+  24 (`Supervisor de cosecha`), la 86 (`Cosecha plátano`, Kg) y la 87
+  (`Poscosecha cacao`), con lo que **se cierra el hueco de los 38 AM de
+  poscosecha de agosto**. Verificado con curl contra CI3 + la base real y con
+  las cuatro suites e2e.
 - **Migración de la ventana de agosto — HECHA y verificada.**
   `docs/db/migrations/03-migracion-agosto.sql`.
 - **Migraciones consolidadas — HECHO (2026-09-02).** De seis archivos a cuatro

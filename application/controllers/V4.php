@@ -107,10 +107,7 @@ class V4 extends RestController
     // -----------------------------------------------------------------
     public function bootstrap_get()
     {
-        $cosecha_ids = $this->v4cfg['cosecha_subtarea_ids'];
-        if (empty($cosecha_ids)) {
-            $cosecha_ids = $this->get_cosecha_subtarea_ids();
-        }
+        $cosecha_ids = $this->subtareas_cosecha($this->requireDb());
 
         $this->response(array(
             'server_time'          => date('c'),
@@ -151,8 +148,8 @@ class V4 extends RestController
 
         // Que pantalla pregunta. Un solo endpoint para las dos, porque la
         // consulta es la misma y lo unico que cambia es que tareas entran.
-        //   pm      (por defecto) -> todo MENOS cosecha y poscosecha
-        //   cosecha                -> solo las tareas de cosecha
+        //   pm      (por defecto) -> todo MENOS las subtareas que se pesan
+        //   cosecha                -> solo las subtareas que se pesan
         $modulo = $this->input->get('modulo', TRUE);
         $modulo = ($modulo === 'cosecha') ? 'cosecha' : 'pm';
 
@@ -166,6 +163,11 @@ class V4 extends RestController
         $db->db_debug = FALSE;
 
         try {
+            // Se resuelve ANTES de armar la consulta: el query builder de CI3
+            // acumula estado en $db y una consulta anidada a mitad de armado
+            // se lleva puesto el select/from de esta.
+            $cos = $this->subtareas_cosecha($db);
+
             // OJO con los nombres de columna: z_subtarea guarda el nombre en
             // `nombre_subtarea` y z_ulabor en `ulabor_nombre`, no en `nombre`.
             // z_cultivo si usa `nombre`. La convencion esta mezclada en toda
@@ -200,21 +202,14 @@ class V4 extends RestController
             if ($finca_id !== NULL) {
                 $db->where('am.finca_id', $finca_id);
             }
-            // El PM no cierra cosecha ni poscosecha: tienen formulario propio
-            // (Kevin, 2026-09-03). No es un caso de borde -- de los 550 AM de
-            // agosto, 252 son de cosecha y 38 de poscosecha: mas de la mitad
-            // de la lista del PM no le correspondia.
+            // Las dos pantallas se reparten la MISMA lista: cosecha las que
+            // se pesan, el PM todo el resto.
             if ($modulo === 'cosecha') {
-                $cos = $this->tareas_modulo($db, 'cosecha');
-                // Sin tareas de cosecha configuradas la lista sale vacia, que
-                // es lo correcto: mejor una pantalla sin nada que una que
-                // ofrece cerrar lo que no es suyo.
-                $db->where_in('st.tarea_id', empty($cos) ? array(0) : $cos);
-            } else {
-                $propias = $this->tareas_con_formulario_propio($db);
-                if (!empty($propias)) {
-                    $db->where_not_in('st.tarea_id', $propias);
-                }
+                // Lista vacia -> pantalla vacia: mejor nada que ofrecer cerrar
+                // lo que no es suyo.
+                $db->where_in('am.subtarea_id', empty($cos) ? array(0) : $cos);
+            } elseif (!empty($cos)) {
+                $db->where_not_in('am.subtarea_id', $cos);
             }
             $q = $db->order_by('am.fecha_proceso, per.nombre')->get();
         } catch (Throwable $e) {
@@ -355,8 +350,8 @@ class V4 extends RestController
     /** Tipos que se saben recibir. El resto se omite de `results`. */
     private static $SYNC_TIPOS = array('am', 'pm', 'cosecha');
 
-    /** Cache por request de tareas_modulo(). */
-    private $tareas_cache = array();
+    /** Cache por request de subtareas_cosecha(). */
+    private $subtareas_cosecha_cache = NULL;
 
     public function sync_post()
     {
@@ -788,14 +783,12 @@ class V4 extends RestController
             return NULL;
         }
 
-        // Cosecha y poscosecha NO se cierran desde el PM: tienen formulario
-        // propio y el PM solo sabe de una cantidad. Rechazo duro -- reenviar
-        // no lo arregla, hay que cerrarla desde su pantalla.
-        $tarea = $this->tarea_de_subtarea($db, $am->subtarea_id);
-        if ($tarea !== NULL && in_array($tarea, $this->tareas_con_formulario_propio($db), TRUE)) {
+        // Lo que se paga por peso no se cierra desde el PM: ahi la cantidad
+        // son los sacos. Rechazo duro -- reenviar no lo arregla.
+        if (in_array((int) $am->subtarea_id, $this->subtareas_cosecha($db), TRUE)) {
             return $this->sync_rechazo($guid,
-                'esa tarea es de ' . $this->sync_nombre($db, 'z_tarea', 'nombre', $tarea)
-                . ' y se cierra desde su propia pantalla, no desde el PM');
+                'la subtarea ' . $this->sync_nombre($db, 'z_subtarea', 'nombre_subtarea', (int) $am->subtarea_id)
+                . ' se cierra desde la pantalla de Cosecha, no desde el PM');
         }
 
         // El trabajador es redundante -- la fila ya sabe de quien es -- pero
@@ -930,10 +923,9 @@ class V4 extends RestController
             return NULL;
         }
 
-        $tarea = $this->tarea_de_subtarea($db, $am->subtarea_id);
-        if ($tarea === NULL || !in_array($tarea, $this->tareas_modulo($db, 'cosecha'), TRUE)) {
+        if (!in_array((int) $am->subtarea_id, $this->subtareas_cosecha($db), TRUE)) {
             return $this->sync_rechazo($guid,
-                'esa tarea de la manana no es de cosecha: se cierra desde el PM');
+                'esa tarea de la manana no se paga por peso: se cierra desde el PM');
         }
 
         $trabajador_id = $this->sync_int($p, 'trabajador_id');
@@ -1383,69 +1375,41 @@ class V4 extends RestController
     }
 
     /**
-     * Tareas que NO se cierran desde el PM porque tienen formulario propio.
+     * Subtareas que se cierran desde la pantalla de Cosecha: las que se pagan
+     * por peso. El PM cierra exactamente el complemento de esta lista.
      *
-     * `$cual` es 'cosecha' o 'poscosecha'. Sale de la configuracion; vacia,
-     * se deriva por el nombre de la tarea. OJO: 'Poscosecha cacao' tambien
-     * contiene 'COSECHA', asi que la de cosecha excluye explicitamente a la
-     * otra -- un LIKE '%COSECHA%' a secas se las lleva a las dos.
+     * Sale de la configuracion; vacia, se deriva por unidad (Libra). Se eligio
+     * la unidad y no la tarea porque 'Supervisor de cosecha' cuelga de la
+     * tarea Cosecha y se paga por jornal: no tiene sacos que pesar.
      */
-    private function tareas_modulo($db, $cual)
+    private function subtareas_cosecha($db)
     {
-        if (isset($this->tareas_cache[$cual])) {
-            return $this->tareas_cache[$cual];
+        if ($this->subtareas_cosecha_cache !== NULL) {
+            return $this->subtareas_cosecha_cache;
         }
-        $clave = $cual === 'cosecha' ? 'tarea_cosecha_ids' : 'tarea_poscosecha_ids';
-        $ids = isset($this->v4cfg[$clave]) ? array_map('intval', (array) $this->v4cfg[$clave]) : array();
+
+        $ids = isset($this->v4cfg['cosecha_subtarea_ids'])
+            ? array_map('intval', (array) $this->v4cfg['cosecha_subtarea_ids'])
+            : array();
 
         if (empty($ids)) {
-            $pos = "(UPPER(nombre) LIKE '%POSCOSECHA%' OR UPPER(nombre) LIKE '%POSTCOSECHA%')";
-            $where = $cual === 'cosecha'
-                ? "UPPER(nombre) LIKE '%COSECHA%' AND NOT " . $pos
-                : $pos;
-            $q = $db->select('id')->from('z_tarea')
-                    ->where($where, NULL, FALSE)
-                    ->where("estado IN ('1','A')", NULL, FALSE)->get();
-            $ids = array();
-            if ($q !== FALSE) {
-                foreach ($q->result() as $f) {
-                    $ids[] = (int) $f->id;
+            $unidades = isset($this->v4cfg['cosecha_unidad_ids'])
+                ? array_map('intval', (array) $this->v4cfg['cosecha_unidad_ids'])
+                : array();
+            if (!empty($unidades)) {
+                $q = $db->select('id')->from('z_subtarea')
+                        ->where_in('unidad_labor_id', $unidades)
+                        ->where_in('estado', array('1', 'A'))
+                        ->order_by('id')->get();
+                if ($q !== FALSE) {
+                    foreach ($q->result() as $f) {
+                        $ids[] = (int) $f->id;
+                    }
                 }
             }
         }
-        $this->tareas_cache[$cual] = $ids;
+
+        $this->subtareas_cosecha_cache = $ids;
         return $ids;
-    }
-
-    /** Las dos juntas: lo que el PM no debe ver ni cerrar. */
-    private function tareas_con_formulario_propio($db)
-    {
-        return array_merge($this->tareas_modulo($db, 'cosecha'),
-                           $this->tareas_modulo($db, 'poscosecha'));
-    }
-
-    /** La tarea (no la subtarea) de una fila de reg_am. NULL si no se sabe. */
-    private function tarea_de_subtarea($db, $subtarea_id)
-    {
-        $q = $db->select('tarea_id')->from('z_subtarea')
-                ->where('id', (int) $subtarea_id)->limit(1)->get();
-        $f = ($q === FALSE) ? NULL : $q->row();
-        return $f ? (int) $f->tarea_id : NULL;
-    }
-
-    /**
-     * Ids de subtareas activas cuyas tareas activas contienen 'COSECHA'.
-     * Se usa solo si $config['cosecha_subtarea_ids'] está vacío.
-     */
-    private function get_cosecha_subtarea_ids()
-    {
-        $rows = $this->requireDb()->select('s.id')
-            ->from('z_subtarea s')
-            ->join('z_tarea t', 't.id = s.tarea_id')
-            ->where_in('s.estado', array('1', 'A'))
-            ->where_in('t.estado', array('1', 'A'))
-            ->like('t.nombre', 'COSECHA')
-            ->get()->result_array();
-        return array_map('intval', array_column($rows, 'id'));
     }
 }

@@ -24,8 +24,9 @@ const NOMBRES = { 214: 'ALAVA TOMALA ERICKA', 301: 'BRIONES MERO JUAN',
                   26: 'HOLGUIN LUIS ALBERTO', 27: 'MENDOZA CARLOS RUBEN',
                   400: 'PACARI PEREZ ANA' };
 const SUBTAREAS = { 88: 'COSECHA CACAO', 90: 'PODA DE FORMACION', 91: 'COSECHA EN PACARITAMBO' };
-// Que modulo cierra cada subtarea. El PM no ve las de cosecha ni las de
-// poscosecha: tienen formulario propio (Kevin, 2026-09-03).
+// Que modulo cierra cada subtarea. El criterio real es la unidad: lo que se
+// paga por Libra lo cierra Cosecha, el resto el PM (Kevin, 2026-09-05).
+const UNIDAD_DE_SUBTAREA = { 88: 4, 90: 2, 91: 4 };   // 4 Libra, 2 Jornal
 const MODULO_DE_SUBTAREA = { 88: 'cosecha', 90: 'pm', 91: 'cosecha' };
 const LOTES = { 1: '1', 5: '5', 6: 'Administrativos' };
 const MODULOS = { 2: '02' };
@@ -79,7 +80,8 @@ const server = http.createServer((req, res) => {
           cultivo: 'CACAO',
           subtarea: SUBTAREAS[am.payload.subtarea_id] ?? 'Subtarea',
           modulos: (am.payload.modulo_ids ?? []).map((x) => MODULOS[x] ?? x).join(', ') || null,
-          unidad_labor_id: 4, unidad_labor: 'Libra',
+          unidad_labor_id: UNIDAD_DE_SUBTAREA[am.payload.subtarea_id] ?? 2,
+          unidad_labor: (UNIDAD_DE_SUBTAREA[am.payload.subtarea_id] ?? 2) === 4 ? 'Libra' : 'Jornal',
         });
       }
     }
@@ -129,9 +131,9 @@ const server = http.createServer((req, res) => {
     // 21 en Pacaritambo en los datos reales). La 91 es de la finca 2 y NO
     // tiene que aparecer trabajando en Bellita.
     subtareas: [{ id: 88, codigo: 'C-01', nombre: 'COSECHA CACAO', tarea_id: 3, id_finca: 1, unidad_labor_id: 4, tipo_pago_id: 1 },
-                { id: 90, codigo: 'M-07', nombre: 'PODA DE FORMACION', tarea_id: 4, id_finca: 1, unidad_labor_id: 4, tipo_pago_id: 1 },
+                { id: 90, codigo: 'M-07', nombre: 'PODA DE FORMACION', tarea_id: 4, id_finca: 1, unidad_labor_id: 2, tipo_pago_id: 2 },
                 { id: 91, codigo: 'C-09', nombre: 'COSECHA EN PACARITAMBO', tarea_id: 3, id_finca: 2, unidad_labor_id: 4, tipo_pago_id: 1 }],
-    ulabores: [{ id: 4, nombre: 'Libra' }],
+    ulabores: [{ id: 4, nombre: 'Libra' }, { id: 2, nombre: 'Jornal' }],
     // rol 8 = responsable de campo. Es el filtro del selector de Responsable:
     // HOLGUIN tiene que aparecer ahi y los dos operarios NO.
     personal: [{ id: 214, nombre: 'ALAVA TOMALA ERICKA', id_finca: 1, rol: 13, rol_app: '1' },

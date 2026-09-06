@@ -39,11 +39,14 @@ se actualiza esto en el mismo commit.
 
 ## Qué cierra cada pantalla
 
-**El PM no cierra cosecha ni poscosecha** (Kevin, 2026-09-03). Esas dos piden
-más datos que una cantidad y tienen formulario propio; el PM queda para lo
-administrativo y las tareas puntuales. De los 550 AM de agosto, **252 son de
-cosecha y 38 de poscosecha**: más de la mitad de la lista del PM no le
-correspondía.
+**El PM cierra todo lo que no se paga por peso** (Kevin, 2026-09-05). El
+criterio es la **unidad**, no la tarea: lo que se paga por Libra se pesa en la
+pantalla de Cosecha y el resto lo cierra el PM. Las dos pantallas leen **una
+sola lista** (`cosecha_subtarea_ids`, derivada de `cosecha_unidad_ids`), así que
+ninguna subtarea puede quedar sin quién la cierre — que es lo que le pasaba a
+`Supervisor de cosecha`, que cuelga de la tarea Cosecha pero se paga por jornal.
+Con esta regla vuelven al PM la subtarea 24, `Cosecha plátano` (Kg) y
+`Poscosecha cacao` (Jornal, 38 AM de agosto que antes no cerraba nadie).
 
 **Cosecha funciona como el PM: cierra una tarea AM.** No crea tareas y no vuelve
 a elegir trabajador — las personas ya vienen de la programación de la mañana.
@@ -62,7 +65,7 @@ verdad, no una copia del AM. **Las tareas de riego del AM sí se cierran con
 PM**: son dos cosas distintas sobre la misma actividad, el AM/PM paga el jornal
 de la persona (las 7 subtareas de la tarea Riego son en Jornal, con 10.639 AM y
 9.246 PM en el histórico) y la bitácora registra el agua (9.778 filas en
-`z_riego`). Riego **no** entra en `tarea_cosecha_ids` ni `tarea_poscosecha_ids`.
+`z_riego`). Ninguna subtarea de riego es de Libra, asi que todas caen en el PM solas.
 
 *Queda un hueco conocido y sin dimensionar: los dos lados no tienen enlace, así
 que no se puede cruzar el agua con el costo de mano de obra. Se deja así a

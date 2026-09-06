@@ -278,13 +278,13 @@ export class PmPage implements OnInit {
     // El espejo local siempre entra: cubre los AM de este equipo que todavía
     // no llegaron al servidor.
     //
-    // Filtrado igual que el servidor: **el PM no cierra cosecha ni
-    // poscosecha** (Kevin, 2026-09-03), y el espejo local no pasa por
-    // /v4/am_abiertos, así que sin este filtro un AM de cosecha capturado en
-    // este equipo y todavía sin enviar seguiría apareciendo acá.
-    const propias = await this.catalogo.subtareasConFormularioPropio();
+    // Filtrado igual que el servidor: **el PM cierra todo lo que no se pesa**
+    // (Kevin, 2026-09-05), y el espejo local no pasa por /v4/am_abiertos, así
+    // que sin este filtro un AM de cosecha capturado en este equipo y todavía
+    // sin enviar seguiría apareciendo acá.
+    const sePesan = await this.catalogo.subtareasQueSePesan();
     const locales = (await this.asignaciones.abiertasLocales(fecha)).filter(
-      (a) => !propias.has(a.subtareaId),
+      (a) => !sePesan.has(a.subtareaId),
     );
     let delServidor: AsignacionAmLocal[] = [];
 

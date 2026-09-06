@@ -32,20 +32,17 @@ $config['retroactividad_dias'] = array(
     'postcosecha' => 30,
 );
 
-// Tareas cuyos AM NO se cierran desde PM: tienen formulario propio.
+// Subtareas que se cierran desde la pantalla de Cosecha. El PM cierra el
+// complemento EXACTO de esta lista: con un criterio distinto de cada lado,
+// una subtarea puede quedar sin quién la cierre.
 //
-// Cosecha y Postcosecha piden más datos que una cantidad (los sacos, la
-// máquina de estados del lote), así que el PM queda para lo administrativo y
-// las tareas puntuales. Decisión de Kevin, 2026-09-03.
+// El criterio es la UNIDAD, no la tarea: 'Supervisor de cosecha' cuelga de la
+// tarea Cosecha y se paga por jornal, no tiene sacos que pesar.
+// Decisión de Kevin, 2026-09-05.
 //
-// Vacío = derivar por el nombre de la tarea: 'POSCOSECHA'/'POSTCOSECHA' para
-// la segunda, y 'COSECHA' que no sea de esas para la primera. En la base de
-// hoy son la 5 (Cosecha) y la 6 (Poscosecha cacao); se dejan explícitas
-// porque un nombre nuevo mal escrito no debería mover una regla de negocio.
-$config['tarea_cosecha_ids']    = array(5);
-$config['tarea_poscosecha_ids'] = array(6);
-
-// Subtareas visibles en el módulo Cosecha de Cacao.
-// Vacío = derivar de las tareas activas cuyo nombre contiene 'COSECHA'.
-// Si el negocio quiere una lista fija, poner los ids aquí.
+// Vacío = derivar: subtareas activas cuya unidad esté en cosecha_unidad_ids.
+// Hoy son las seis de cacao (81, 89, 98, 109, 115, 123).
 $config['cosecha_subtarea_ids'] = array();
+
+// Unidades que mandan a la pantalla de Cosecha. 4 = Libra en z_ulabor.
+$config['cosecha_unidad_ids'] = array(4);

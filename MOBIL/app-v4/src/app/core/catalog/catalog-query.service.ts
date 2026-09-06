@@ -3,6 +3,12 @@ import { Injectable, inject } from '@angular/core';
 import { DatabaseService } from '../db/database.service';
 
 /**
+ * Libra en `z_ulabor`. Es la unidad que manda una subtarea a la pantalla de
+ * Cosecha; el servidor usa el mismo criterio en `cosecha_unidad_ids`.
+ */
+const UNIDAD_LIBRA = 4;
+
+/**
  * Lecturas de los catálogos locales para los selectores de captura.
  * `CatalogService` los DESCARGA; este servicio solo los CONSULTA.
  *
@@ -217,13 +223,12 @@ export class CatalogQueryService {
 
   /**
    * Subtareas del modulo Cosecha. `ids` sale de `/v4/bootstrap`
-   * (`cosecha_subtarea_ids`, que el servidor deriva de las tareas activas
-   * cuyo nombre contiene 'COSECHA' si la configuracion esta vacia).
+   * (`cosecha_subtarea_ids`, que el servidor deriva por unidad si la
+   * configuracion esta vacia).
    *
    * Si la lista llega vacia --servidor viejo, o bootstrap nunca traido-- se
-   * cae a filtrar por el nombre de la tarea en el catalogo local: una lista
-   * larga es mejor que una pantalla que no deja avanzar. Es la misma decision
-   * que en `responsables()`.
+   * cae al mismo criterio contra el catalogo local. Es la misma decision que
+   * en `responsables()`.
    */
   async subtareasDeCosecha(ids: number[], fincaId: number | null): Promise<Subtarea[]> {
     const base = `SELECT s.id, s.nombre, s.tarea_id, s.unidad_labor_id,
@@ -243,43 +248,25 @@ export class CatalogQueryService {
       );
     }
     return this.filas(
-      `${base} WHERE UPPER(t.nombre) LIKE '%COSECHA%'${filtroFinca} ORDER BY s.nombre;`,
-      fincaId === null ? [] : [fincaId],
+      `${base} WHERE s.unidad_labor_id = ?${filtroFinca} ORDER BY s.nombre;`,
+      fincaId === null ? [UNIDAD_LIBRA] : [UNIDAD_LIBRA, fincaId],
       (f) => this.aSubtarea(f),
     );
   }
 
   /**
-   * Ids de subtarea que NO se cierran desde el PM porque tienen formulario
-   * propio: las de Cosecha y las de Poscosecha.
+   * Ids de subtarea que se pagan por peso: las que cierra la pantalla de
+   * Cosecha. El PM cierra el complemento, y **las dos pantallas leen esta
+   * misma lista** para que ninguna subtarea quede sin quien la cierre.
    *
    * El servidor ya filtra `GET /v4/am_abiertos`, pero el espejo local de este
    * equipo no pasa por ahi: sin este filtro, un AM de cosecha capturado aca y
    * todavia sin enviar seguiria apareciendo en la lista del PM.
-   *
-   * OJO: 'Poscosecha cacao' tambien contiene 'COSECHA'. Por eso la de cosecha
-   * excluye explicitamente a la otra.
    */
-  async subtareasConFormularioPropio(): Promise<Set<number>> {
+  async subtareasQueSePesan(): Promise<Set<number>> {
     const filas = await this.filas(
-      `SELECT s.id
-         FROM cat_subtarea s JOIN cat_tarea t ON t.id = s.tarea_id
-        WHERE UPPER(t.nombre) LIKE '%COSECHA%';`,
-      [],
-      (f) => Number(f['id']),
-    );
-    return new Set(filas);
-  }
-
-  /** Solo las de Cosecha (sin Poscosecha), para la pantalla de cosecha. */
-  async subtareasSoloCosecha(): Promise<Set<number>> {
-    const filas = await this.filas(
-      `SELECT s.id
-         FROM cat_subtarea s JOIN cat_tarea t ON t.id = s.tarea_id
-        WHERE UPPER(t.nombre) LIKE '%COSECHA%'
-          AND UPPER(t.nombre) NOT LIKE '%POSCOSECHA%'
-          AND UPPER(t.nombre) NOT LIKE '%POSTCOSECHA%';`,
-      [],
+      `SELECT s.id FROM cat_subtarea s WHERE s.unidad_labor_id = ?;`,
+      [UNIDAD_LIBRA],
       (f) => Number(f['id']),
     );
     return new Set(filas);

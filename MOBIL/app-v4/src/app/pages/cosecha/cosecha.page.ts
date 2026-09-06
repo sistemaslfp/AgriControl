@@ -283,9 +283,9 @@ export class CosechaPage implements OnInit {
 
     // El espejo local cubre los AM de este equipo que todavia no llegaron al
     // servidor; hay que filtrarlo aca porque no pasa por /v4/am_abiertos.
-    const soloCosecha = await this.catalogo.subtareasSoloCosecha();
+    const sePesan = await this.catalogo.subtareasQueSePesan();
     const locales = (await this.asignaciones.abiertasLocales(fecha)).filter((a) =>
-      soloCosecha.has(a.subtareaId),
+      sePesan.has(a.subtareaId),
     );
     let delServidor: AsignacionAmLocal[] = [];
 

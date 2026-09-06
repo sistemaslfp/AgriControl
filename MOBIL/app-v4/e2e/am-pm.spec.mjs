@@ -393,17 +393,21 @@ await p.goto(`${APP}/pm`, { waitUntil: 'networkidle' });
 await t(2500);
 ok('23 la pantalla PM abre', await p.locator('ion-title', { hasText: 'Reporte PM' }).isVisible());
 
-// Tres asignaciones abiertas en DOS trabajos: dos personas en
-// (Lote 1, Mod. 02, PODA DE FORMACION) y una en (Lote 5, PODA DE FORMACION).
+// DOS asignaciones abiertas en UN trabajo: ALAVA y BRIONES en
+// (Lote 1, Mod. 02, PODA DE FORMACION). El tercer AM --el de Lote 5-- lo
+// bloqueo la regla de "una persona, un AM abierto" (2026-09-04), asi que
+// nunca existio: hasta esa regla esta suite esperaba dos tarjetas.
 //
 // Se agrupa por el TRABAJO --lote, subtarea y modulos--, no por captura_guid.
-// Con el guid salian tres tarjetas y dos eran IDENTICAS palabra por palabra,
-// porque las dos personas del primer trabajo se habian cargado como dos tareas
-// distintas del formulario. Indistinguibles en pantalla, que es justo lo que
-// esta agrupacion venia a evitar.
+// Con el guid salian dos tarjetas IDENTICAS palabra por palabra, porque las
+// dos personas se habian cargado como dos tareas distintas del formulario.
+// Indistinguibles en pantalla, que es justo lo que esta agrupacion evita.
 const tareas = p.locator(`${raiz} ion-item.tarea-am`);
 ok('24 la primera pantalla lista los trabajos AM abiertos, agrupados',
-  (await tareas.count()) === 2, `tarjetas=${await tareas.count()}`);
+  (await tareas.count()) === 1, `tarjetas=${await tareas.count()}`);
+ok('24a la tarjeta agrupa a las dos personas del trabajo',
+  (await tareas.first().innerText()).includes('2 personas'),
+  (await tareas.first().innerText()).replace(/\n/g, ' '));
 // Ninguna tarjeta puede repetirse: dos identicas no se pueden distinguir.
 const textos = await tareas.allInnerTexts();
 ok('24c no hay dos tarjetas iguales',
@@ -476,7 +480,9 @@ await flecha('siguiente').click();
 await t(700);
 
 const avance = await p.locator(`${raiz} ion-input`).filter({ hasText: 'Avance' }).first().innerText();
-ok('27 la unidad de labor viene de la tarea AM', avance.includes('Libra'), avance);
+// PODA DE FORMACION se paga por Jornal. Y no puede ser de otra unidad: desde
+// el 2026-09-05 lo que se paga por Libra lo cierra Cosecha, no el PM.
+ok('27 la unidad de labor viene de la tarea AM', avance.includes('Jornal'), avance);
 
 await p.evaluate(() => {
   const c = window['ng'].getComponent(document.querySelector('app-pm'));
@@ -519,7 +525,7 @@ await t(2500);
 // no desaparece, se queda con una persona. Es la razon por la que dice
 // "por cerrar" y no "personas".
 ok('35 la tarjeta no desaparece: queda la persona que falta cerrar',
-  (await p.locator(`${raiz} ion-item.tarea-am`).count()) === 2,
+  (await p.locator(`${raiz} ion-item.tarea-am`).count()) === 1,
   `tarjetas=${await p.locator(`${raiz} ion-item.tarea-am`).count()}`);
 await p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód. 02' }).click();
 await t(600);
@@ -535,8 +541,10 @@ await t(400);
 // 7. Estado final de la cola
 // ------------------------------------------------------------------
 const c = await conteo();
+// 3 = los dos AM del formulario mas el PM que cierra a BRIONES. El AM de
+// Lote 5 no cuenta: lo bloqueo la regla de "una persona, un AM abierto".
 ok('36 todo lo capturado quedó confirmado por el servidor',
-  c.enviados === 4 && c.pendientes === 0 && c.rechazados === 0, JSON.stringify(c));
+  c.enviados === 3 && c.pendientes === 0 && c.rechazados === 0, JSON.stringify(c));
 
 // ------------------------------------------------------------------
 // 8. Valores por defecto de Configuración

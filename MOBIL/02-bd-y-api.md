@@ -283,9 +283,9 @@ por cuánto tiempo**. Los datos lo confirman: la tarea 3 (Riego) tiene 7
 subtareas y **las 7 son en Jornal**, con 10.639 AM y 9.246 PM en el histórico,
 mientras `z_riego` lleva sus 9.778 filas aparte.
 
-Consecuencia práctica: **riego no entra en `tarea_cosecha_ids` ni en
-`tarea_poscosecha_ids`** de `application/config/v4.php`. Sus AM se siguen
-cerrando desde el PM como cualquier otra tarea.
+Consecuencia práctica: **ninguna subtarea de riego se paga por Libra**, así que
+el ruteo por unidad las deja del lado del PM sin ninguna lista aparte. Sus AM se
+siguen cerrando desde el PM como cualquier otra tarea.
 
 **Hueco conocido, sin dimensionar:** el mismo trabajo queda en dos lados **sin
 enlace** — el AM/PM de la persona y la fila de bitácora. Hoy nadie puede
@@ -857,13 +857,14 @@ Respuesta (ver `01-sincronizacion.md` para la definición del ACK):
 
 `tipo` ∈ `am | pm | cosecha | riego | pc_lote | pc_etapa | pc_calidad`.
 
-**El PM no cierra cosecha ni poscosecha** (Kevin, 2026-09-03): piden más datos
-que una cantidad y tienen formulario propio. El PM queda para lo administrativo
-y las tareas puntuales. No es un caso de borde — de los **550 AM de agosto, 252
-son de cosecha y 38 de poscosecha**: más de la mitad de la lista del PM no le
-correspondía. Las tareas se identifican por `tarea_cosecha_ids` /
-`tarea_poscosecha_ids` de `application/config/v4.php` (vacías = derivar por el
-nombre de la tarea).
+**El PM no cierra lo que se paga por peso** (Kevin, 2026-09-05): ahí la cantidad
+son los sacos y eso tiene formulario propio. El criterio es la **unidad**, no la
+tarea: `Supervisor de cosecha` cuelga de la tarea Cosecha y se paga por jornal,
+así que la cierra el PM. **Las dos pantallas se reparten una sola lista** —
+`cosecha_subtarea_ids` de `application/config/v4.php`, vacía = derivar las
+subtareas activas cuya unidad esté en `cosecha_unidad_ids` (hoy `4` = Libra, las
+seis de cacao). Un criterio distinto de cada lado deja subtareas sin quien las
+cierre; era el caso de la subtarea 24.
 
 ### Estado: `am`, `pm` y `cosecha` IMPLEMENTADOS y probados
 
