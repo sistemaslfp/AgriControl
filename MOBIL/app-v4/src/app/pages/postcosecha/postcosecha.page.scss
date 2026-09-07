@@ -5,14 +5,15 @@
   gap: 4px;
 }
 
-.dia-cosecha.elegido {
-  --background: var(--ion-color-primary-tint);
-}
-
-.fila-botones.etapas ion-button {
-  margin-bottom: 6px;
+.etapa-actual {
+  font-weight: 600;
+  color: var(--ion-color-primary);
 }
 
 .lot-code {
   font-weight: 600;
+}
+
+.resumen-etapas ion-item.actual {
+  --background: var(--ion-color-light);
 }

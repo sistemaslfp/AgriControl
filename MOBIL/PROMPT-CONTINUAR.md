@@ -72,6 +72,12 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66. **No cierra ningún
   AM**: las cosechas cuyo AM quedó abierto van a `mig_descarte`, porque cerrarlas
   haría que V4 pagara filas que V3 no paga.
+- **Paso 6, ajustes de pantalla (2026-09-07).** El detalle pasó a ser **una
+  ventana por etapa, deslizable y no excluyente**: se puede saltear una etapa y
+  seguir, y lo salteado queda en blanco. Los días de cosecha se eligen con el
+  **selector de checkbox** común, y la lista dice **en qué etapa** está cada
+  partida. Se corrigió además que las tres lecturas de humedad eran compartidas
+  entre secado sol y secado máquina. **43 comprobaciones e2e.**
 - **Paso 6 — HECHO (2026-09-05), las dos mitades.** La pantalla
   `/postcosecha` tiene lista de partidas en proceso, pesaje y detalle. El peso
   del lote sale de los días de cosecha elegidos y el baba se calcula; el número

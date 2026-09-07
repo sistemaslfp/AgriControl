@@ -6,6 +6,7 @@ import {
   IonContent,
   IonDatetime,
   IonDatetimeButton,
+  IonFooter,
   IonHeader,
   IonIcon,
   IonInput,
@@ -22,6 +23,7 @@ import {
 import { addIcons } from 'ionicons';
 import {
   addOutline,
+  checkmarkCircleOutline,
   cloudOfflineOutline,
   cloudUploadOutline,
   hourglassOutline,
@@ -37,6 +39,7 @@ import { ClockService } from '../../core/clock/clock.service';
 import { FechaService } from '../../core/captura/fecha.service';
 import { PostcosechaService } from '../../core/captura/postcosecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
+import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
 
 interface Ref {
@@ -61,13 +64,33 @@ export interface Partida {
   soloLocal: boolean;
 }
 
-/** Las cinco etapas, en orden. `resultado` no se registra como etapa suelta. */
+interface FormEtapa {
+  inicio: string;
+  fin: string;
+  comentario: string;
+}
+
+interface FormHumedad {
+  h1: number | null;
+  h2: number | null;
+  h3: number | null;
+}
+
+/**
+ * Las cinco ventanas del detalle, en el orden en que ocurren. `resultado` no
+ * es una etapa que se registre suelta: la escribe `pc_resultado` junto con el
+ * peso final.
+ */
 const ETAPAS: { clave: string; nombre: string }[] = [
   { clave: 'presecado', nombre: 'Presecado' },
   { clave: 'fermentado', nombre: 'Fermentado' },
   { clave: 'secado_sol', nombre: 'Secado (sol)' },
   { clave: 'secado_maq', nombre: 'Secado (máquina)' },
+  { clave: 'resultado', nombre: 'Peso final' },
 ];
+
+const VACIO: FormEtapa = { inicio: '', fin: '', comentario: '' };
+const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null };
 
 /**
  * Postcosecha — el proceso del cacao, de la balanza al peso final.
@@ -76,14 +99,19 @@ const ETAPAS: { clave: string; nombre: string }[] = [
  * jornal de poscosecha lo paga el PM. Acá se registra el proceso, igual que
  * riego registra el agua.
  *
+ * El detalle es **una ventana por etapa, deslizable**, como en v3 — y
+ * **NINGUNA es excluyente**: se puede pasar de largo una etapa que no se hizo
+ * y seguir con la siguiente. Lo que no se registra queda en blanco, que es
+ * exactamente como v3 guardaba las etapas salteadas (de 98 partidas, 42
+ * tienen los dos secados y 13 no tienen ninguno).
+ *
  * Tres cosas que la pantalla NO hace, a propósito:
  *
  * - **No pide el número de proceso.** El `lot_code` (dddnnaa) lo asigna el
  *   servidor. Sin señal la partida se crea igual y muestra "pendiente de
  *   número" hasta el ACK (decisión de Kevin, 2026-09-05).
  * - **No pide el peso del lote.** Sale de las cosechas elegidas.
- * - **No obliga a un orden de etapas.** Los datos de v3 lo desmienten: de 98
- *   partidas, 42 tienen los dos secados y 13 no tienen ninguno.
+ * - **No obliga a un orden de etapas.**
  */
 @Component({
   selector: 'app-postcosecha',
@@ -91,13 +119,16 @@ const ETAPAS: { clave: string; nombre: string }[] = [
   templateUrl: './postcosecha.page.html',
   styleUrls: ['./postcosecha.page.scss'],
   imports: [
+    BarraPasosComponent,
     SelectorComponent,
+    SwipePasosDirective,
     IonBackButton,
     IonButton,
     IonButtons,
     IonContent,
     IonDatetime,
     IonDatetimeButton,
+    IonFooter,
     IonHeader,
     IonIcon,
     IonInput,
@@ -146,16 +177,16 @@ export class PostcosechaPage implements OnInit {
 
   // --- Detalle ---
   readonly partida = signal<Partida | null>(null);
-  readonly etapaInicio = signal('');
-  readonly etapaFin = signal('');
-  readonly etapaComentario = signal('');
+  readonly paso = signal(0);
+  private readonly formEtapa = signal<Record<string, FormEtapa>>({});
+  private readonly formHumedad = signal<Record<string, FormHumedad>>({});
   readonly granoBuena = signal<number | null>(null);
   readonly granoLigera = signal<number | null>(null);
   readonly granoVioleta = signal<number | null>(null);
-  readonly humedad1 = signal<number | null>(null);
-  readonly humedad2 = signal<number | null>(null);
-  readonly humedad3 = signal<number | null>(null);
   readonly pesoFinal = signal<number | null>(null);
+
+  readonly etapaActualDef = computed(() => ETAPAS[this.paso()] ?? ETAPAS[0]);
+  readonly etiquetaPaso = computed(() => this.etapaActualDef().nombre);
 
   // --- Selector ---
   readonly selectorAbierto = signal(false);
@@ -164,11 +195,14 @@ export class PostcosechaPage implements OnInit {
   readonly selectorSeleccion = signal<number[]>([]);
   readonly selectorVacio = signal('No hay opciones para elegir.');
   readonly selectorBuscador = signal<boolean | null>(null);
+  readonly selectorMultiple = signal(false);
+  private destino: 'supervisor' | 'dias' | null = null;
   readonly alturaSelector = computed(() => {
     const n = Math.min(this.selectorOpciones().length, 12);
     const conDetalle = this.selectorOpciones().some((o) => !!o.detalle);
     const buscador = this.selectorBuscador() ?? this.selectorOpciones().length > 10;
-    return `${56 + (buscador ? 60 : 0) + Math.max(n, 1) * (conDetalle ? 66 : 49) + 6}px`;
+    return `${56 + (buscador ? 60 : 0) + (this.selectorMultiple() ? 44 : 0) +
+      Math.max(n, 1) * (conDetalle ? 66 : 49) + 6}px`;
   });
 
   readonly sinHoraVerificada = computed(() => this.clock.offsetSeconds() === null);
@@ -196,6 +230,11 @@ export class PostcosechaPage implements OnInit {
     return Math.round((this.pesoElegido() - m) * 100) / 100;
   });
 
+  readonly resumenDias = computed(() => {
+    const n = this.diasElegidos().length;
+    return n === 0 ? 'Sin elegir' : `${n} día(s) · ${this.pesoElegido()} lb`;
+  });
+
   readonly problemasPesaje = computed(() => {
     const p: string[] = [];
     if (!this.supervisor()) p.push('Falta el supervisor de la partida.');
@@ -214,6 +253,7 @@ export class PostcosechaPage implements OnInit {
   constructor() {
     addIcons({
       addOutline,
+      checkmarkCircleOutline,
       cloudOfflineOutline,
       cloudUploadOutline,
       hourglassOutline,
@@ -266,8 +306,7 @@ export class PostcosechaPage implements OnInit {
           // Gana el servidor: trae el lot_code y lo que cargaron otros equipos.
           // Las etapas locales se suman, no se pisan: una etapa recién
           // capturada sin señal todavía no está allá.
-          const previo = mapa.get(p.guid);
-          mapa.set(p.guid, this.aPartida(p, previo));
+          mapa.set(p.guid, this.aPartida(p, mapa.get(p.guid)));
         }
         this.listaDesdeServidor.set(true);
       } catch {
@@ -285,7 +324,6 @@ export class PostcosechaPage implements OnInit {
     );
     this.cargandoLista.set(false);
 
-    // Si estábamos mirando una partida, se refresca con lo que llegó.
     const abierta = this.partida();
     if (abierta) {
       const nueva = this.partidas().find((x) => x.guid === abierta.guid);
@@ -313,6 +351,20 @@ export class PostcosechaPage implements OnInit {
       calidades,
       soloLocal: false,
     };
+  }
+
+  /**
+   * En qué etapa está la partida: la última registrada, por nombre. La lista
+   * decía "N etapa(s)" y eso no le sirve a nadie — lo que se pregunta al
+   * mirar la lista es en qué anda cada partida.
+   */
+  etapaDe(p: Partida): string {
+    for (let i = ETAPAS.length - 1; i >= 0; i--) {
+      if (p.etapas.has(ETAPAS[i].clave)) {
+        return ETAPAS[i].nombre;
+      }
+    }
+    return 'Sin iniciar';
   }
 
   // ------------------------------------------------------------------
@@ -351,15 +403,38 @@ export class PostcosechaPage implements OnInit {
     this.cargandoDias.set(false);
   }
 
-  alternarDia(fecha: string): void {
-    const actual = this.diasElegidos();
-    this.diasElegidos.set(
-      actual.includes(fecha) ? actual.filter((f) => f !== fecha) : [...actual, fecha],
+  /**
+   * Los días van en el MISMO selector de checkbox que el resto de la app. El
+   * id de cada opción es el primer `cosecha_id` del día: es estable y evita
+   * inventar una clave paralela.
+   */
+  abrirDias(): void {
+    this.destino = 'dias';
+    this.selectorTitulo.set('Días de cosecha');
+    this.selectorOpciones.set(
+      this.dias().map((d) => ({
+        id: d.cosecha_ids[0],
+        nombre: d.fecha,
+        detalle: `${d.peso} lb · ${d.sacos} saco(s) en ${d.cosechas} registro(s)`,
+      })),
     );
+    this.selectorSeleccion.set(this.idsElegidos());
+    this.selectorVacio.set('No hay cosechas pendientes de procesar.');
+    this.selectorBuscador.set(null);
+    this.selectorMultiple.set(true);
+    this.selectorAbierto.set(true);
   }
 
-  diaElegido(fecha: string): boolean {
-    return this.diasElegidos().includes(fecha);
+  private idsElegidos(): number[] {
+    const elegidos = new Set(this.diasElegidos());
+    return this.dias().filter((d) => elegidos.has(d.fecha)).map((d) => d.cosecha_ids[0]);
+  }
+
+  private aplicarDias(ids: number[]): void {
+    const set = new Set(ids);
+    this.diasElegidos.set(
+      this.dias().filter((d) => set.has(d.cosecha_ids[0])).map((d) => d.fecha),
+    );
   }
 
   async guardarPesaje(): Promise<void> {
@@ -396,28 +471,44 @@ export class PostcosechaPage implements OnInit {
   }
 
   // ------------------------------------------------------------------
-  // Detalle de una partida
+  // Detalle: una ventana por etapa, sin orden obligatorio
   // ------------------------------------------------------------------
 
   abrir(p: Partida): void {
     this.partida.set(p);
     const ahora = this.fechas.ahoraLocal();
-    this.etapaInicio.set(ahora);
-    this.etapaFin.set('');
-    this.etapaComentario.set('');
+    const formularios: Record<string, FormEtapa> = {};
+    const humedades: Record<string, FormHumedad> = {};
+    for (const e of ETAPAS) {
+      formularios[e.clave] = { ...VACIO, inicio: ahora };
+      humedades[e.clave] = { ...SIN_HUMEDAD };
+    }
+    this.formEtapa.set(formularios);
+    this.formHumedad.set(humedades);
     this.granoBuena.set(null);
     this.granoLigera.set(null);
     this.granoVioleta.set(null);
-    this.humedad1.set(null);
-    this.humedad2.set(null);
-    this.humedad3.set(null);
     this.pesoFinal.set(null);
+    // Se abre en la etapa que sigue a la última registrada, pero se puede ir
+    // a cualquiera: la barra de pasos no bloquea nada.
+    const hechas = ETAPAS.filter((e) => p.etapas.has(e.clave)).length;
+    this.paso.set(Math.min(hechas, ETAPAS.length - 1));
     this.vista.set('detalle');
   }
 
   volver(): void {
     this.partida.set(null);
     this.vista.set('lista');
+  }
+
+  irA(i: number): void {
+    this.paso.set(Math.max(0, Math.min(i, ETAPAS.length - 1)));
+  }
+  siguiente(): void {
+    this.irA(this.paso() + 1);
+  }
+  anterior(): void {
+    this.irA(this.paso() - 1);
   }
 
   etapaHecha(clave: string): boolean {
@@ -428,22 +519,44 @@ export class PostcosechaPage implements OnInit {
     return this.partida()?.calidades.has(clave) ?? false;
   }
 
-  /** El análisis de secado sólo tiene sentido si esa etapa ya se registró. */
-  puedeAnalizarSecado(clave: string): boolean {
-    return this.etapaHecha(clave) && !this.calidadHecha(clave);
+  // --- Formulario de la etapa visible ---
+
+  campo(clave: string, campo: keyof FormEtapa): string {
+    return this.formEtapa()[clave]?.[campo] ?? '';
+  }
+
+  setCampo(clave: string, campo: keyof FormEtapa, valor: unknown): void {
+    const actual = this.formEtapa();
+    const previo = actual[clave] ?? { ...VACIO };
+    this.formEtapa.set({ ...actual, [clave]: { ...previo, [campo]: String(valor ?? '') } });
+  }
+
+  humedad(clave: string, campo: keyof FormHumedad): number | null {
+    return this.formHumedad()[clave]?.[campo] ?? null;
+  }
+
+  setHumedad(clave: string, campo: keyof FormHumedad, valor: unknown): void {
+    const actual = this.formHumedad();
+    const previo = actual[clave] ?? { ...SIN_HUMEDAD };
+    this.formHumedad.set({ ...actual, [clave]: { ...previo, [campo]: this.numero(valor) } });
+  }
+
+  puedeRegistrarEtapa(clave: string): boolean {
+    return !this.etapaHecha(clave) && this.campo(clave, 'inicio') !== '' && !this.guardando();
   }
 
   async registrarEtapa(clave: string): Promise<void> {
     const p = this.partida();
-    if (!p || this.etapaHecha(clave) || this.guardando()) return;
+    if (!p || !this.puedeRegistrarEtapa(clave)) return;
     this.guardando.set(true);
     try {
+      const f = this.formEtapa()[clave];
       const payload = {
         proceso_guid: p.guid,
         etapa: clave,
-        inicio: this.fechas.conOffset(this.etapaInicio()),
-        fin: this.etapaFin() ? this.fechas.conOffset(this.etapaFin()) : null,
-        comentario: this.etapaComentario().trim(),
+        inicio: this.fechas.conOffset(f.inicio),
+        fin: f.fin ? this.fechas.conOffset(f.fin) : null,
+        comentario: f.comentario.trim(),
       };
       await this.cola.enqueue('pc_etapa', payload);
       await this.local.registrarEtapa(p.guid, clave);
@@ -454,6 +567,8 @@ export class PostcosechaPage implements OnInit {
       this.guardando.set(false);
     }
   }
+
+  // --- Calidad ---
 
   readonly problemasGrano = computed(() => {
     const v = [this.granoBuena(), this.granoLigera(), this.granoVioleta()];
@@ -485,32 +600,44 @@ export class PostcosechaPage implements OnInit {
     }
   }
 
-  readonly problemasHumedad = computed(() => {
-    const v = [this.humedad1(), this.humedad2(), this.humedad3()];
+  problemasHumedad(clave: string): string[] {
+    const v = [
+      this.humedad(clave, 'h1'),
+      this.humedad(clave, 'h2'),
+      this.humedad(clave, 'h3'),
+    ];
     return v.some((x) => x === null || x <= 0) ? ['Cargá las tres lecturas de humedad.'] : [];
-  });
+  }
 
-  async registrarHumedad(etapa: string): Promise<void> {
+  puedeRegistrarHumedad(clave: string): boolean {
+    return (
+      !this.calidadHecha(clave) && this.problemasHumedad(clave).length === 0 && !this.guardando()
+    );
+  }
+
+  async registrarHumedad(clave: string): Promise<void> {
     const p = this.partida();
-    if (!p || this.problemasHumedad().length > 0 || this.guardando()) return;
+    if (!p || !this.puedeRegistrarHumedad(clave)) return;
     this.guardando.set(true);
     try {
       await this.cola.enqueue('pc_calidad_sec', {
         proceso_guid: p.guid,
-        etapa,
+        etapa: clave,
         fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
-        humedad_1: this.humedad1(),
-        humedad_2: this.humedad2(),
-        humedad_3: this.humedad3(),
+        humedad_1: this.humedad(clave, 'h1'),
+        humedad_2: this.humedad(clave, 'h2'),
+        humedad_3: this.humedad(clave, 'h3'),
       });
-      await this.local.registrarCalidad(p.guid, etapa);
-      p.calidades.add(etapa);
+      await this.local.registrarCalidad(p.guid, clave);
+      p.calidades.add(clave);
       this.partida.set({ ...p });
       await this.aviso('Análisis de secado registrado.');
     } finally {
       this.guardando.set(false);
     }
   }
+
+  // --- Cierre ---
 
   readonly puedeCerrar = computed(() => (this.pesoFinal() ?? 0) > 0 && !this.guardando());
 
@@ -540,22 +667,35 @@ export class PostcosechaPage implements OnInit {
   // ------------------------------------------------------------------
 
   async abrirSupervisor(): Promise<void> {
+    this.destino = 'supervisor';
     this.selectorTitulo.set('Supervisor');
     this.selectorOpciones.set(await this.catalogo.responsables(null));
     this.selectorSeleccion.set(this.supervisor() ? [this.supervisor()!.id] : []);
     this.selectorVacio.set('Descargá los maestros: no hay supervisores en este equipo.');
     this.selectorBuscador.set(false);
+    this.selectorMultiple.set(false);
     this.selectorAbierto.set(true);
   }
 
+  /** En modo múltiple el selector emite `cambio`, nunca `confirmar`. */
+  onCambio(ids: number[]): void {
+    if (this.destino === 'dias') {
+      this.aplicarDias(ids);
+    }
+  }
+
   onSeleccion(ids: number[]): void {
-    const o = this.selectorOpciones().find((x) => x.id === ids[0]);
-    this.supervisor.set(o ? { id: o.id, nombre: o.nombre } : null);
+    if (this.destino === 'supervisor') {
+      const o = this.selectorOpciones().find((x) => x.id === ids[0]);
+      this.supervisor.set(o ? { id: o.id, nombre: o.nombre } : null);
+    }
     this.cerrarSelector();
   }
 
   cerrarSelector(): void {
     this.selectorAbierto.set(false);
+    this.selectorMultiple.set(false);
+    this.destino = null;
   }
 
   setFechaInicio(valor: string | string[] | null | undefined): void {

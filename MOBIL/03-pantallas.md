@@ -362,16 +362,33 @@ Riego son en Jornal—, acá se registra el agua. Ver `02-bd-y-api.md` §Riego.
 
 Es una **máquina de estados por partida**, no un formulario. La pantalla
 `/postcosecha` tiene tres vistas: la lista de partidas en proceso, el pesaje que
-abre una nueva, y el detalle donde se registran etapas, calidad y peso final.
+abre una nueva, y el detalle.
+
+**El detalle es UNA VENTANA POR ETAPA, deslizable** (Kevin, 2026-09-07), como en
+v3: Presecado → Fermentado → Secado (sol) → Secado (máquina) → Peso final, con
+swipe y flechas, más un resumen al pie que dice cuáles están registradas y deja
+saltar a cualquiera. **Ninguna ventana bloquea a la otra**: si una etapa no se
+hizo, se pasa de largo y queda en blanco. Cada ventana lleva su propio análisis
+—el corte de grano en Fermentado, la humedad en cada secado, **con lecturas
+independientes por secado**—.
+
+La versión anterior ponía las cuatro etapas como cuatro botones en la misma
+pantalla, y cada uno cambiaba su propio texto a "registrada". Kevin lo reportó
+como confuso: no se distinguía qué botón se había apretado.
+
+**La lista dice EN QUÉ ETAPA está cada partida** («Presecado», «Fermentado»,
+«Sin iniciar»), no cuántas lleva: contar etapas no responde la pregunta que uno
+se hace mirando la lista.
 
 **No cierra ninguna tarea AM**: el jornal de poscosecha lo paga el PM desde el
 ruteo por unidad. Acá se registra el proceso, igual que riego registra el agua.
 
 Flujo observado en las capturas:
 
-1. **Pesaje** — Fecha Inicio, Supervisor, `Seleccione Lotes` (multi-selección de
-   cosechas por fecha con su peso: `2026-08-17 | 2779.70 lb`), Peso Mallas
-   (vacías), No. Proceso, Comentarios Pesaje → `INICIAR PRESECADO`.
+1. **Pesaje** — Fecha Inicio, Supervisor, `Seleccionar lotes de cosecha`
+   (**el mismo selector de checkbox que el resto de la app**, con el peso y los
+   sacos de cada día como detalle: `2026-08-17 · 2779.7 lb · 9 saco(s)`), Peso
+   Mallas (vacías) y Comentarios. El peso del lote y el peso baba se calculan.
 2. **Presecado** — muestra No. Proceso, Peso lote, Peso Mallas,
    **Peso Baba** (= peso lote − peso mallas, calculado), fecha inicio,
    comentarios → `INICIAR FERMENTADO`.
