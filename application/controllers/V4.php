@@ -119,6 +119,102 @@ class V4 extends RestController
     }
 
     // -----------------------------------------------------------------
+    // GET /v4/postcosecha_pendientes — cosechas que todavia no entraron en
+    // ninguna partida, agrupadas por dia, que es como las elige la pantalla.
+    //
+    // Sin guion en la ruta: CI mapea el segmento de URI al nombre del metodo
+    // y `postcosecha-pendientes` no es un identificador PHP valido.
+    // -----------------------------------------------------------------
+    public function postcosecha_pendientes_get()
+    {
+        $db    = $this->requireDb();
+        $desde = $this->input->get('desde', TRUE);
+
+        $debug_previo = $db->db_debug;
+        $db->db_debug = FALSE;
+        try {
+            $db->select('DATE(am.fecha_proceso) AS fecha, COUNT(*) AS cosechas,
+                         SUM(c.total_peso) AS peso, SUM(c.total_sacos) AS sacos,
+                         GROUP_CONCAT(c.id ORDER BY c.id) AS ids', FALSE)
+               ->from('reg_cosecha c')
+               ->join('reg_am am', 'am.id = c.reg_am_id')
+               // Una cosecha entra en una sola partida: lo que ya se consumio
+               // no se vuelve a ofrecer. Si un dia ya consumido recibe una
+               // cosecha nueva, ese dia REAPARECE con el peso que falta --- en
+               // v3 se perdia, porque alli se consumia la fecha entera.
+               ->where('NOT EXISTS (SELECT 1 FROM pc_proceso_cosecha pc WHERE pc.cosecha_id = c.id)', NULL, FALSE);
+            if (is_string($desde) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $desde)) {
+                $db->where('DATE(am.fecha_proceso) >=', $desde);
+            }
+            $q = $db->group_by('DATE(am.fecha_proceso)')->order_by('fecha')->get();
+        } catch (Throwable $e) {
+            $db->db_debug = $debug_previo;
+            log_message('error', 'V4 postcosecha_pendientes: ' . $e->getMessage());
+            $this->response(array('error' => 'No se pudo consultar'), 500);
+            return;
+        }
+        $db->db_debug = $debug_previo;
+        if ($q === FALSE) {
+            $this->response(array('error' => 'No se pudo consultar'), 500);
+            return;
+        }
+
+        $dias = array();
+        foreach ($q->result_array() as $f) {
+            $dias[] = array(
+                'fecha'       => $f['fecha'],
+                'cosechas'    => (int) $f['cosechas'],
+                'sacos'       => (int) $f['sacos'],
+                'peso'        => (float) $f['peso'],
+                'cosecha_ids' => array_map('intval', explode(',', $f['ids'])),
+            );
+        }
+        $this->response(array('server_time' => date('c'), 'dias' => $dias), 200);
+    }
+
+    // -----------------------------------------------------------------
+    // GET /v4/postcosecha_abiertas — partidas sin peso final, con la ultima
+    // etapa registrada. Es la lista "Registros Abiertos" de la pantalla.
+    // -----------------------------------------------------------------
+    public function postcosecha_abiertas_get()
+    {
+        $db = $this->requireDb();
+
+        $debug_previo = $db->db_debug;
+        $db->db_debug = FALSE;
+        try {
+            $q = $db->select("p.id, p.guid, p.lot_code, p.fecha_cosecha, p.fecha_inicio,
+                              p.peso_lote, p.peso_mallas, p.peso_baba, p.comentario,
+                              p.supervisor_id, s.nombre AS supervisor,
+                              (SELECT e.etapa FROM pc_etapa e
+                                WHERE e.pc_proceso_id = p.id ORDER BY e.orden DESC LIMIT 1) AS etapa,
+                              (SELECT COUNT(*) FROM pc_proceso_cosecha x WHERE x.pc_proceso_id = p.id) AS cosechas", FALSE)
+                    ->from('pc_proceso p')
+                    ->join('z_personal s', 's.id = p.supervisor_id', 'left')
+                    ->where('p.peso_final IS NULL', NULL, FALSE)
+                    ->order_by('p.fecha_inicio')->get();
+        } catch (Throwable $e) {
+            $db->db_debug = $debug_previo;
+            log_message('error', 'V4 postcosecha_abiertas: ' . $e->getMessage());
+            $this->response(array('error' => 'No se pudo consultar'), 500);
+            return;
+        }
+        $db->db_debug = $debug_previo;
+        if ($q === FALSE) {
+            $this->response(array('error' => 'No se pudo consultar'), 500);
+            return;
+        }
+
+        // castRows trabaja sobre OBJETOS, no sobre arrays asociativos: con
+        // result_array() no castea nada y todo sale como string.
+        $filas = $this->castRows($q->result(), array(
+            'id' => 'int', 'supervisor_id' => 'int', 'cosechas' => 'int',
+            'peso_lote' => 'float', 'peso_mallas' => 'float', 'peso_baba' => 'float',
+        ));
+        $this->response(array('server_time' => date('c'), 'partidas' => $filas), 200);
+    }
+
+    // -----------------------------------------------------------------
     // GET /v4/am_abiertos — asignaciones AM sin cerrar, para la pantalla PM
     // -----------------------------------------------------------------
 
@@ -348,7 +444,13 @@ class V4 extends RestController
     const SYNC_MAX_RECORDS = 200;
 
     /** Tipos que se saben recibir. El resto se omite de `results`. */
-    private static $SYNC_TIPOS = array('am', 'pm', 'cosecha');
+    private static $SYNC_TIPOS = array('am', 'pm', 'cosecha',
+        'pc_proceso', 'pc_etapa', 'pc_calidad_ferm', 'pc_calidad_sec', 'pc_resultado');
+
+    /** Las cinco etapas de una partida y su orden. */
+    private static $PC_ETAPAS = array(
+        'presecado' => 1, 'fermentado' => 2, 'secado_sol' => 3, 'secado_maq' => 4, 'resultado' => 5,
+    );
 
     /** Cache por request de subtareas_cosecha(). */
     private $subtareas_cosecha_cache = NULL;
@@ -481,7 +583,14 @@ class V4 extends RestController
             return NULL;   // la base no responde: PENDIENTE, no rechazado
         }
         if ($ya !== NULL) {
-            return array('guid' => $guid, 'status' => 'duplicate', 'id' => $ya);
+            $r = array('guid' => $guid, 'status' => 'duplicate', 'id' => $ya);
+            // El lot_code viaja tambien en el reenvio: si el primer ACK se
+            // perdio, este es el unico camino por el que el telefono se entera
+            // del numero que le toco a la partida.
+            if ($tipo === 'pc_proceso') {
+                $r['lot_code'] = $this->pc_lot_code_de($db, $ya);
+            }
+            return $r;
         }
 
         $payload = isset($rec['payload']) && is_array($rec['payload']) ? $rec['payload'] : NULL;
@@ -507,8 +616,18 @@ class V4 extends RestController
                 $res = $this->sync_am($db, $guid, $payload, $cad, $alias, $offset, $ahora);
             } elseif ($tipo === 'pm') {
                 $res = $this->sync_pm($db, $guid, $payload, $cad, $alias, $offset, $ahora);
-            } else {
+            } elseif ($tipo === 'cosecha') {
                 $res = $this->sync_cosecha($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            } elseif ($tipo === 'pc_proceso') {
+                $res = $this->sync_pc_proceso($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            } elseif ($tipo === 'pc_etapa') {
+                $res = $this->sync_pc_etapa($db, $guid, $payload);
+            } elseif ($tipo === 'pc_calidad_ferm') {
+                $res = $this->sync_pc_calidad_ferm($db, $guid, $payload);
+            } elseif ($tipo === 'pc_calidad_sec') {
+                $res = $this->sync_pc_calidad_sec($db, $guid, $payload);
+            } else {
+                $res = $this->sync_pc_resultado($db, $guid, $payload);
             }
         } catch (Throwable $e) {
             $db->trans_rollback();
@@ -549,8 +668,344 @@ class V4 extends RestController
         return NULL;
     }
 
+
+    // -----------------------------------------------------------------
+    // Postcosecha
+    // -----------------------------------------------------------------
+
     /**
-     * El id que ve el telefono. SIEMPRE es el de `reg_am`, en los tres tipos.
+     * Arranca una partida: pesaje + las cosechas que la componen.
+     *
+     * El telefono NO manda peso_lote ni fecha_cosecha ni lot_code: los tres
+     * salen de las cosechas enlazadas y los congela el servidor. Una cosecha
+     * entra en una sola partida (uq_cosecha_una_sola_vez).
+     */
+    private function sync_pc_proceso($db, $guid, $p, $cad, $alias, $offset, $ahora)
+    {
+        $supervisor_id = $this->sync_int($p, 'supervisor_id');
+        if ($supervisor_id === NULL) {
+            return $this->sync_rechazo($guid, 'falta el supervisor de la partida');
+        }
+        if (!$this->sync_personal_activo($db, $supervisor_id)) {
+            return $this->sync_rechazo($guid,
+                'el supervisor ' . $this->sync_nombre($db, 'z_personal', 'nombre', $supervisor_id)
+                . ' no existe o esta dado de baja');
+        }
+
+        $inicio = $this->sync_fecha(isset($p['fecha_inicio']) ? $p['fecha_inicio'] : NULL);
+        if ($inicio === NULL) {
+            return $this->sync_rechazo($guid, 'fecha_inicio ausente o no es ISO-8601');
+        }
+        if ($inicio->getTimestamp() > $ahora + 7200) {
+            return $this->sync_rechazo($guid,
+                'la fecha de inicio es futura: no se puede registrar una partida que todavia no empezo');
+        }
+
+        if (!isset($p['peso_mallas']) || !is_numeric($p['peso_mallas']) || (float) $p['peso_mallas'] < 0) {
+            return $this->sync_rechazo($guid, 'peso_mallas ausente o negativo');
+        }
+
+        $ids = isset($p['cosecha_ids']) && is_array($p['cosecha_ids']) ? $p['cosecha_ids'] : array();
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (empty($ids)) {
+            return $this->sync_rechazo($guid, 'la partida no lleva ninguna cosecha: elegi al menos un dia');
+        }
+
+        // Una consulta contesta las tres preguntas: que existe, de que dia es y
+        // cuanto pesa. Lo que falte en el resultado, no existe.
+        $q = $db->select('c.id, c.total_peso, DATE(a.fecha_proceso) AS fecha', FALSE)
+                ->from('reg_cosecha c')->join('reg_am a', 'a.id = c.reg_am_id')
+                ->where_in('c.id', $ids)->get();
+        if ($q === FALSE) {
+            return NULL;
+        }
+        $filas = $q->result();
+        if (count($filas) !== count($ids)) {
+            return $this->sync_rechazo($guid, 'alguna de las cosechas elegidas ya no existe: volve a traer los dias pendientes');
+        }
+
+        $tomada = $db->select('cosecha_id')->from('pc_proceso_cosecha')->where_in('cosecha_id', $ids)->limit(1)->get();
+        if ($tomada !== FALSE && $tomada->row()) {
+            return $this->sync_rechazo($guid,
+                'una de las cosechas elegidas ya entro en otra partida: volve a traer los dias pendientes');
+        }
+
+        $peso_lote = 0.0;
+        $fecha_cosecha = NULL;
+        foreach ($filas as $f) {
+            $peso_lote += (float) $f->total_peso;
+            if ($fecha_cosecha === NULL || $f->fecha < $fecha_cosecha) {
+                $fecha_cosecha = $f->fecha;
+            }
+        }
+
+        $lot_code = $this->pc_lot_code($db, $fecha_cosecha);
+        if ($lot_code === NULL) {
+            return $this->sync_rechazo($guid,
+                'ya hay 99 partidas para la cosecha del ' . $fecha_cosecha . ': el codigo no da para mas');
+        }
+
+        $ok = $db->insert('pc_proceso', array(
+            'guid'                => $guid,
+            'lot_code'            => $lot_code,
+            'fecha_cosecha'       => $fecha_cosecha,
+            'fecha_inicio'        => $inicio->format('Y-m-d H:i:s'),
+            'supervisor_id'       => $supervisor_id,
+            'peso_lote'           => $peso_lote,
+            'peso_mallas'         => (float) $p['peso_mallas'],
+            'comentario'          => $this->sync_texto($p, 'comentario', 255),
+            'device_alias'        => $alias,
+            'created_at_device'   => $cad->format('Y-m-d H:i:s'),
+            'received_at_server'  => date('Y-m-d H:i:s', $ahora),
+            'device_clock_offset' => $offset,
+            'origen'              => 'app',
+        ));
+        if ($ok === FALSE) {
+            return NULL;
+        }
+        $id = (int) $db->insert_id();
+
+        foreach ($ids as $cid) {
+            if ($db->insert('pc_proceso_cosecha', array('pc_proceso_id' => $id, 'cosecha_id' => $cid)) === FALSE) {
+                return NULL;
+            }
+        }
+
+        return array('guid' => $guid, 'status' => 'created', 'id' => $id, 'lot_code' => $lot_code);
+    }
+
+    /**
+     * Una etapa de la partida. `resultado` no entra por aca: la cierra
+     * `pc_resultado`, que ademas escribe el peso final.
+     */
+    private function sync_pc_etapa($db, $guid, $p)
+    {
+        $etapa = isset($p['etapa']) && is_string($p['etapa']) ? trim($p['etapa']) : '';
+        if (!isset(self::$PC_ETAPAS[$etapa]) || $etapa === 'resultado') {
+            return $this->sync_rechazo($guid,
+                'etapa desconocida: son presecado, fermentado, secado_sol y secado_maq');
+        }
+
+        $proceso = $this->pc_proceso_de($db, $p);
+        if ($proceso === FALSE) { return NULL; }
+        if ($proceso === NULL) {
+            // La partida todavia no llego: PENDIENTE, la cola reintenta.
+            return NULL;
+        }
+        if ($proceso->peso_final !== NULL) {
+            return $this->sync_rechazo($guid,
+                'la partida ' . $proceso->lot_code . ' ya se cerro con su peso final');
+        }
+
+        $inicio = $this->sync_fecha(isset($p['inicio']) ? $p['inicio'] : NULL);
+        if ($inicio === NULL) {
+            return $this->sync_rechazo($guid, 'inicio ausente o no es ISO-8601');
+        }
+        $fin = $this->sync_fecha(isset($p['fin']) ? $p['fin'] : NULL);
+        if ($fin !== NULL && $fin < $inicio) {
+            return $this->sync_rechazo($guid, 'la etapa termina antes de empezar');
+        }
+
+        // El UNIQUE (partida, etapa) lo atajaria, pero como 1062 el motivo se
+        // pierde y el registro quedaria PENDIENTE reintentando para siempre.
+        $ya = $db->select('id')->from('pc_etapa')
+                 ->where('pc_proceso_id', (int) $proceso->id)->where('etapa', $etapa)->limit(1)->get();
+        if ($ya === FALSE) { return NULL; }
+        if ($ya->row()) {
+            return $this->sync_rechazo($guid,
+                'la etapa ' . $etapa . ' de la partida ' . $proceso->lot_code . ' ya estaba registrada');
+        }
+
+        $ok = $db->insert('pc_etapa', array(
+            'guid'               => $guid,
+            'pc_proceso_id'      => (int) $proceso->id,
+            'etapa'              => $etapa,
+            'orden'              => self::$PC_ETAPAS[$etapa],
+            'inicio'             => $inicio->format('Y-m-d H:i:s'),
+            'fin'                => $fin === NULL ? NULL : $fin->format('Y-m-d H:i:s'),
+            'comentario'         => $this->sync_texto($p, 'comentario', 255),
+            'received_at_server' => date('Y-m-d H:i:s'),
+        ));
+        return $ok === FALSE ? NULL : array('guid' => $guid, 'status' => 'created', 'id' => (int) $proceso->id);
+    }
+
+    /** El corte de grano del fermentado. Uno solo por partida. */
+    private function sync_pc_calidad_ferm($db, $guid, $p)
+    {
+        $proceso = $this->pc_proceso_de($db, $p);
+        if ($proceso === FALSE || $proceso === NULL) { return NULL; }
+
+        $fecha = $this->sync_fecha(isset($p['fecha_muestra']) ? $p['fecha_muestra'] : NULL);
+        if ($fecha === NULL) {
+            return $this->sync_rechazo($guid, 'fecha_muestra ausente o no es ISO-8601');
+        }
+        $granos = array();
+        foreach (array('buena', 'ligera', 'violeta') as $k) {
+            if (!isset($p[$k]) || !is_numeric($p[$k]) || (int) $p[$k] < 0) {
+                return $this->sync_rechazo($guid, 'el conteo de granos ' . $k . ' falta o es negativo');
+            }
+            $granos[$k] = (int) $p[$k];
+        }
+        if (array_sum($granos) === 0) {
+            return $this->sync_rechazo($guid, 'el corte de grano no puede ser todo ceros');
+        }
+
+        $ya = $db->select('id')->from('pc_calidad_fermentacion')
+                 ->where('pc_proceso_id', (int) $proceso->id)->limit(1)->get();
+        if ($ya === FALSE) { return NULL; }
+        if ($ya->row()) {
+            return $this->sync_rechazo($guid,
+                'la partida ' . $proceso->lot_code . ' ya tiene su corte de grano de fermentado');
+        }
+
+        $ok = $db->insert('pc_calidad_fermentacion', array(
+            'guid'               => $guid,
+            'pc_proceso_id'      => (int) $proceso->id,
+            'fecha_muestra'      => $fecha->format('Y-m-d H:i:s'),
+            'buena'              => $granos['buena'],
+            'ligera'             => $granos['ligera'],
+            'violeta'            => $granos['violeta'],
+            'received_at_server' => date('Y-m-d H:i:s'),
+        ));
+        return $ok === FALSE ? NULL : array('guid' => $guid, 'status' => 'created', 'id' => (int) $proceso->id);
+    }
+
+    /** Humedad e indice de grano. Aplica a los DOS secados, uno por etapa. */
+    private function sync_pc_calidad_sec($db, $guid, $p)
+    {
+        $etapa = isset($p['etapa']) && is_string($p['etapa']) ? trim($p['etapa']) : '';
+        if ($etapa !== 'secado_sol' && $etapa !== 'secado_maq') {
+            return $this->sync_rechazo($guid, 'la calidad de secado va en secado_sol o secado_maq');
+        }
+        $proceso = $this->pc_proceso_de($db, $p);
+        if ($proceso === FALSE || $proceso === NULL) { return NULL; }
+
+        $fecha = $this->sync_fecha(isset($p['fecha_muestra']) ? $p['fecha_muestra'] : NULL);
+        if ($fecha === NULL) {
+            return $this->sync_rechazo($guid, 'fecha_muestra ausente o no es ISO-8601');
+        }
+        $h = array();
+        foreach (array('humedad_1', 'humedad_2', 'humedad_3') as $k) {
+            if (!isset($p[$k]) || !is_numeric($p[$k]) || (float) $p[$k] <= 0) {
+                return $this->sync_rechazo($guid, 'falta la lectura ' . $k . ' de humedad');
+            }
+            $h[$k] = (float) $p[$k];
+        }
+
+        $ya = $db->select('id')->from('pc_calidad_secado')
+                 ->where('pc_proceso_id', (int) $proceso->id)->where('etapa', $etapa)->limit(1)->get();
+        if ($ya === FALSE) { return NULL; }
+        if ($ya->row()) {
+            return $this->sync_rechazo($guid,
+                'la partida ' . $proceso->lot_code . ' ya tiene la calidad de ' . $etapa);
+        }
+
+        $ok = $db->insert('pc_calidad_secado', array(
+            'guid'               => $guid,
+            'pc_proceso_id'      => (int) $proceso->id,
+            'etapa'              => $etapa,
+            'fecha_muestra'      => $fecha->format('Y-m-d H:i:s'),
+            'humedad_1'          => $h['humedad_1'],
+            'humedad_2'          => $h['humedad_2'],
+            'humedad_3'          => $h['humedad_3'],
+            'granos_muestra'     => $this->sync_int($p, 'granos_muestra'),
+            'indice_grano_g'     => isset($p['indice_grano_g']) && is_numeric($p['indice_grano_g']) ? (float) $p['indice_grano_g'] : NULL,
+            'granos_vacios_pct'  => isset($p['granos_vacios_pct']) && is_numeric($p['granos_vacios_pct']) ? (float) $p['granos_vacios_pct'] : NULL,
+            'received_at_server' => date('Y-m-d H:i:s'),
+        ));
+        return $ok === FALSE ? NULL : array('guid' => $guid, 'status' => 'created', 'id' => (int) $proceso->id);
+    }
+
+    /**
+     * El peso final CIERRA la partida: escribe `peso_final` y deja la etapa
+     * `resultado`. Las dos cosas en la misma transaccion y con el mismo guid,
+     * porque para el supervisor es un solo acto.
+     */
+    private function sync_pc_resultado($db, $guid, $p)
+    {
+        $proceso = $this->pc_proceso_de($db, $p);
+        if ($proceso === FALSE || $proceso === NULL) { return NULL; }
+
+        if (!isset($p['peso_final']) || !is_numeric($p['peso_final']) || (float) $p['peso_final'] <= 0) {
+            return $this->sync_rechazo($guid, 'peso_final ausente o no positivo');
+        }
+        $fecha = $this->sync_fecha(isset($p['fecha']) ? $p['fecha'] : NULL);
+        if ($fecha === NULL) {
+            return $this->sync_rechazo($guid, 'fecha ausente o no es ISO-8601');
+        }
+
+        // `peso_final IS NULL` hace el cierre atomico sin transaccion, igual
+        // que `cierre_guid IS NULL` en el PM.
+        $db->where('id', (int) $proceso->id)->where('peso_final IS NULL', NULL, FALSE);
+        $ok = $db->update('pc_proceso', array('peso_final' => (float) $p['peso_final']));
+        if ($ok === FALSE) { return NULL; }
+        if ($db->affected_rows() === 0) {
+            return $this->sync_rechazo($guid,
+                'la partida ' . $proceso->lot_code . ' ya estaba cerrada con su peso final');
+        }
+
+        $ok = $db->insert('pc_etapa', array(
+            'guid'               => $guid,
+            'pc_proceso_id'      => (int) $proceso->id,
+            'etapa'              => 'resultado',
+            'orden'              => self::$PC_ETAPAS['resultado'],
+            'inicio'             => $fecha->format('Y-m-d H:i:s'),
+            'fin'                => $fecha->format('Y-m-d H:i:s'),
+            'comentario'         => $this->sync_texto($p, 'comentario', 255),
+            'received_at_server' => date('Y-m-d H:i:s'),
+        ));
+        return $ok === FALSE ? NULL : array('guid' => $guid, 'status' => 'created', 'id' => (int) $proceso->id);
+    }
+
+    /**
+     * La partida a la que apunta un registro hijo, por su guid.
+     * FALSE = la base no contesta; NULL = todavia no llego (PENDIENTE).
+     */
+    private function pc_proceso_de($db, $p)
+    {
+        $g = isset($p['proceso_guid']) && is_string($p['proceso_guid']) ? trim($p['proceso_guid']) : '';
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $g)) {
+            return NULL;
+        }
+        $q = $db->select('id, lot_code, peso_final')->from('pc_proceso')->where('guid', $g)->limit(1)->get();
+        if ($q === FALSE) { return FALSE; }
+        $f = $q->row();
+        return $f ? $f : NULL;
+    }
+
+    /** El lot_code de una partida ya guardada. */
+    private function pc_lot_code_de($db, $id)
+    {
+        $q = $db->select('lot_code')->from('pc_proceso')->where('id', (int) $id)->limit(1)->get();
+        $f = ($q === FALSE) ? NULL : $q->row();
+        return $f ? $f->lot_code : NULL;
+    }
+
+    /**
+     * `dddnnaa`: dia juliano de la cosecha, consecutivo del dia y anio en dos
+     * digitos. El consecutivo sale de una tabla propia con el truco de
+     * LAST_INSERT_ID, que es atomico sin bloquear la tabla.
+     * NULL si ese dia ya gasto los 99: nunca envuelve a 00.
+     */
+    private function pc_lot_code($db, $fecha)
+    {
+        $t   = strtotime($fecha);
+        $ddd = (int) date('z', $t) + 1;
+        $aa  = (int) date('y', $t);
+        $db->query('INSERT INTO pc_lot_code_seq (julian_day, year_2d, last_seq)
+                    VALUES (?, ?, LAST_INSERT_ID(1))
+                    ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)', array($ddd, $aa));
+        $r  = $db->query('SELECT LAST_INSERT_ID() AS nn')->row();
+        $nn = $r ? (int) $r->nn : 0;
+        if ($nn < 1 || $nn > 99) {
+            return NULL;
+        }
+        return sprintf('%03d%02d%02d', $ddd, $nn, $aa);
+    }
+
+    /**
+     * El id que ve el telefono. En AM, PM y cosecha es el de `reg_am`; en
+     * postcosecha, el de la partida.
      *
      * No es cosmetico: sin esto un mismo guid devolvia 42 al crearse (el id
      * del AM) y 1 al reenviarse (el id de reg_cosecha), y la app se guardaba
@@ -558,7 +1013,18 @@ class V4 extends RestController
      */
     private function sync_id_publico($db, $tipo, $guid)
     {
-        if ($tipo === 'cosecha') {
+        // En postcosecha el id publico es el de la PARTIDA, por la misma razon
+        // que en cosecha es el del AM: el telefono guarda un solo id por
+        // registro y tiene que ser el mismo en el alta y en el reenvio.
+        if ($tipo === 'pc_proceso') {
+            $q = $db->select('id')->from('pc_proceso')->where('guid', $guid)->limit(1)->get();
+        } elseif ($tipo === 'pc_etapa' || $tipo === 'pc_resultado') {
+            $q = $db->select('pc_proceso_id AS id')->from('pc_etapa')->where('guid', $guid)->limit(1)->get();
+        } elseif ($tipo === 'pc_calidad_ferm') {
+            $q = $db->select('pc_proceso_id AS id')->from('pc_calidad_fermentacion')->where('guid', $guid)->limit(1)->get();
+        } elseif ($tipo === 'pc_calidad_sec') {
+            $q = $db->select('pc_proceso_id AS id')->from('pc_calidad_secado')->where('guid', $guid)->limit(1)->get();
+        } elseif ($tipo === 'cosecha') {
             $q = $db->select('reg_am_id AS id')->from('reg_cosecha')
                     ->where('guid', $guid)->limit(1)->get();
         } elseif ($tipo === 'pm') {

@@ -69,16 +69,32 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   real — `cantidad` = 149,75, `cierre_origen = 'cosecha'`, sacos guardados y
   cero filas fantasma.
 - **La migración sigue cuadrando con el modelo nuevo**: 550 / 495 / 55 / 21 /
-  367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66, con 41 cosechas y
-  217 sacos colgados de su AM. **No cierra ningún AM**: las 15 cosechas cuyo AM
-  quedó abierto van a `mig_descarte`, porque cerrarlas haría que V4 pagara filas
-  que V3 no paga.
+  367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66. **No cierra ningún
+  AM**: las cosechas cuyo AM quedó abierto van a `mig_descarte`, porque cerrarlas
+  haría que V4 pagara filas que V3 no paga.
+- **Paso 6, servidor — HECHO (2026-09-05).** `POST /v4/sync` acepta cinco tipos
+  nuevos: `pc_proceso` (pesaje + las cosechas que lo componen), `pc_etapa`,
+  `pc_calidad_ferm`, `pc_calidad_sec` y `pc_resultado` (peso final, cierra la
+  partida). Más `GET /v4/postcosecha_pendientes` y
+  `GET /v4/postcosecha_abiertas`. El servidor calcula y congela `peso_lote`,
+  `fecha_cosecha` y `lot_code`; el teléfono no los manda. **Faltan las
+  pantallas**, y las fotos quedaron fuera de esta pasada a propósito (cola
+  binaria aparte). Verificado con curl contra CI3 + la base real: alta,
+  reenvío con `lot_code`, etapa repetida, calidad repetida, cosecha ya tomada,
+  doble cierre y etapa sobre partida cerrada.
+- **Deduplicación — HECHA (2026-09-05).** Secciones 2.0 y 3.0 de
+  `03-migracion-agosto.sql`: 9 pares exactos de cosecha (41 cosechas, **201
+  sacos / 17.701,00 lb**, antes 217 / 19.055,40) y **173 filas de riego, todas
+  del 2026-08-19** (`reg_riego` 279 → **106**). Poscosecha no tenía duplicados.
+  Se marcan en `mig_descarte` como `duplicado_exacto` y **no se borra nada del
+  origen**. La nómina no se movió: 495 / 15.091,66 igual que antes.
 
 ## Lo siguiente, en orden
 
 1. **Paso 6 — Postcosecha** o **paso 7 — Riego**, y el orden del plan no
-   coincide con el uso: en agosto de 2026 hubo **279 filas de riego contra 60
-   de cosecha**, y postcosecha lleva **4 partidas en todo 2026** (77 en 2024).
+   coincide con el uso: en agosto de 2026 hubo **106 partes reales de riego
+   contra 60 de cosecha** (las 279 brutas eran 173 reenvíos), y postcosecha
+   lleva **4 partidas en todo 2026** (77 en 2024).
    Riego está bloqueado sólo por las capturas de pantalla (pendiente #9) y su
    tabla `reg_riego` ya existe y **no hay que rehacerla**: riego es una bitácora
    propia, no cierra tareas AM (ver `00-plan.md` y `02-bd-y-api.md` §Riego).

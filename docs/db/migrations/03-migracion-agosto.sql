@@ -218,6 +218,47 @@ WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.cierre_guid = f.cierre_guid)
 -- de agosto dé idéntica. Esas 15 quedan en `mig_descarte` con su payload y
 -- siguen enteras en `z_cosecha_cacao`.
 
+-- 2.0 — Duplicados exactos de z_cosecha_cacao. Se marcan ANTES de cualquier
+-- otra cosa de esta seccion: la cosecha se agrupa por AM y se SUMA, asi que un
+-- reenvio duplicado no infla una lista, infla el peso. Y desde V4 el peso ES la
+-- cantidad que se paga (sync_cosecha), o sea que un saco cargado dos veces
+-- pagaria dos veces.
+--
+-- La clave es TODA la fila menos id y created_at, sacos individuales incluidos:
+-- nunca se colapsan dos filas que difieran en un dato. En la ventana de agosto
+-- son 9 pares byte a byte (4 del 08-03 que entran a reg_cosecha y 5 del 08-26),
+-- y da lo mismo con o sin los 15 sacos en la clave. Ojo con el trabajador 738:
+-- tiene DOS registros legitimos distintos ese dia (58,00 en el modulo 6 y 65,00
+-- en el 1), cada uno con su duplicado -- por eso `modulo` va en la clave.
+INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
+SELECT 'z_cosecha_cacao', a.id, 'duplicado_exacto',
+       (SELECT MIN(b.id) FROM z_cosecha_cacao b WHERE b.fecha=a.fecha AND b.hora=a.hora AND b.finca=a.finca AND b.supervisor=a.supervisor
+                 AND b.tarea=a.tarea AND b.subtarea=a.subtarea AND b.trabajador=a.trabajador
+                 AND b.lote=a.lote AND b.modulo=a.modulo AND b.jornales=a.jornales
+                 AND b.total_sacos=a.total_sacos AND b.total_peso=a.total_peso
+                 AND COALESCE(b.observaciones,'') = COALESCE(a.observaciones,'')
+                 AND CONCAT_WS(',',b.saco1,b.saco2,b.saco3,b.saco4,b.saco5,b.saco6,b.saco7,b.saco8,
+                            b.saco9,b.saco10,b.saco11,b.saco12,b.saco13,b.saco14,b.saco15)
+                   = CONCAT_WS(',',a.saco1,a.saco2,a.saco3,a.saco4,a.saco5,a.saco6,a.saco7,a.saco8,
+                            a.saco9,a.saco10,a.saco11,a.saco12,a.saco13,a.saco14,a.saco15)),
+       JSON_OBJECT('id',a.id,'fecha',a.fecha,'trabajador',a.trabajador,'hora',a.hora,
+                   'subtarea',a.subtarea,'lote',a.lote,'modulo',a.modulo,
+                   'total_sacos',a.total_sacos,'total_peso',a.total_peso,
+                   'created_at',DATE_FORMAT(a.created_at,'%Y-%m-%d %H:%i:%s')), NOW()
+FROM z_cosecha_cacao a
+WHERE a.fecha >= '2026-08-01'
+  AND a.id > (SELECT MIN(b.id) FROM z_cosecha_cacao b WHERE b.fecha=a.fecha AND b.hora=a.hora AND b.finca=a.finca AND b.supervisor=a.supervisor
+                 AND b.tarea=a.tarea AND b.subtarea=a.subtarea AND b.trabajador=a.trabajador
+                 AND b.lote=a.lote AND b.modulo=a.modulo AND b.jornales=a.jornales
+                 AND b.total_sacos=a.total_sacos AND b.total_peso=a.total_peso
+                 AND COALESCE(b.observaciones,'') = COALESCE(a.observaciones,'')
+                 AND CONCAT_WS(',',b.saco1,b.saco2,b.saco3,b.saco4,b.saco5,b.saco6,b.saco7,b.saco8,
+                            b.saco9,b.saco10,b.saco11,b.saco12,b.saco13,b.saco14,b.saco15)
+                   = CONCAT_WS(',',a.saco1,a.saco2,a.saco3,a.saco4,a.saco5,a.saco6,a.saco7,a.saco8,
+                            a.saco9,a.saco10,a.saco11,a.saco12,a.saco13,a.saco14,a.saco15))
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=a.id AND d.motivo='duplicado_exacto');
+
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
 SELECT 'z_cosecha_cacao', c.id, 'cosecha_sin_cierre_am', a.id,
        JSON_OBJECT('fecha',c.fecha,'trabajador',c.trabajador,'subtarea',c.subtarea,
@@ -226,6 +267,8 @@ FROM z_cosecha_cacao c
 JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
 WHERE c.fecha >= '2026-08-01' AND a.cierre_guid IS NULL
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=c.id AND d.motivo='duplicado_exacto')
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
                     AND d.id_origen=c.id AND d.motivo='cosecha_sin_cierre_am');
 
@@ -241,16 +284,21 @@ JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
 WHERE c.fecha >= '2026-08-01' AND a.cierre_guid IS NOT NULL
   AND ABS(a.cantidad - c.total_peso) >= 0.01
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=c.id AND d.motivo='duplicado_exacto')
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
                     AND d.id_origen=c.id AND d.motivo='cosecha_total_no_cuadra');
 
 -- El guid es el del cierre: una cosecha ES el cierre de esa tarea. Así el
 -- invariante `reg_cosecha.guid = reg_am.cierre_guid` vale también para lo
 -- migrado, y no hace falta inventar un guid nuevo.
 --
--- Se AGRUPA por AM: 8 de las 50 tareas tienen más de una fila en
--- z_cosecha_cacao (7 con dos, 1 con cuatro) — la misma persona pesando en dos
--- tandas. Una tarea se cosecha una vez, así que las tandas se suman y los
--- sacos se renumeran corridos.
+-- Se AGRUPA por AM. Hasta el 2026-09-05 el comentario decía que las 8 tareas
+-- con más de una fila eran «la misma persona pesando en dos tandas»: era falso,
+-- las 8 eran reenvíos byte a byte y ya salen por 2.0. Deduplicado, NINGÚN AM
+-- cerrado tiene dos filas. El GROUP BY se queda igual porque el caso legítimo
+-- existe y está a la vista: el trabajador 738 el 26-08 pesó en el módulo 6
+-- (58,00) y en el 1 (65,00) bajo el mismo AM — hoy no entra porque ese AM quedó
+-- abierto, pero el día que entre hay que sumarlo, no elegir uno.
 INSERT INTO reg_cosecha (guid, reg_am_id, total_sacos, total_peso, observaciones,
                          created_at_device, received_at_server, origen)
 SELECT a.cierre_guid, a.id, SUM(c.total_sacos), SUM(c.total_peso),
@@ -260,6 +308,8 @@ FROM z_cosecha_cacao c
 JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
 WHERE c.fecha >= '2026-08-01' AND a.cierre_guid IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=c.id AND d.motivo='duplicado_exacto')
   AND NOT EXISTS (SELECT 1 FROM reg_cosecha r WHERE r.reg_am_id = a.id)
 GROUP BY a.id, a.cierre_guid;
 
@@ -278,6 +328,8 @@ JOIN (SELECT 1 numero UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 U
       UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
       UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15) n
 WHERE c.fecha >= '2026-08-01'
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
+                    AND d.id_origen=c.id AND d.motivo='duplicado_exacto')
   AND CASE n.numero
         WHEN 1 THEN c.saco1 WHEN 2 THEN c.saco2 WHEN 3 THEN c.saco3 WHEN 4 THEN c.saco4 WHEN 5 THEN c.saco5
         WHEN 6 THEN c.saco6 WHEN 7 THEN c.saco7 WHEN 8 THEN c.saco8 WHEN 9 THEN c.saco9 WHEN 10 THEN c.saco10
@@ -296,6 +348,41 @@ UPDATE reg_cosecha r
 -- ---------------------------------------------------------------------------
 -- `codigo_tarea`/`codigo_subtarea` valen '0' en las 9.778 filas: se descartan.
 -- `tiempo_riego` 'HH:MM' es duración, no hora del día -> minutos.
+--
+-- 3.0 — Duplicados exactos. En la ventana de agosto son 173 de 279 filas, y
+-- **todas del 2026-08-19**: ese dia tiene 200 filas para 27 combinaciones
+-- distintas de (lote, modulo, tiempo), o sea la misma tanda reenviada once
+-- veces. Los otros cuatro dias no tienen un solo duplicado (18, 22, 20 y 19
+-- filas, todas unicas). Diecisiete horas de riego en un dia sobre el mismo
+-- modulo no existen: es la cola de la app vieja reintentando sin idempotencia,
+-- que es justo lo que el guid de V4 viene a resolver.
+--
+-- La clave es toda la fila menos id y created_at. `created_at` NO entra: vale
+-- 05:00:00 clavadas, es el sello del import, y meterlo dejaba pasar 9 filas
+-- repetidas que solo se diferenciaban en el dia del sello.
+INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
+SELECT 'z_riego', a.id, 'duplicado_exacto',
+       (SELECT MIN(b.id) FROM z_riego b
+         WHERE b.supervisor=a.supervisor AND b.fecha=a.fecha AND b.hora=a.hora AND b.finca=a.finca
+           AND b.codigo_tarea=a.codigo_tarea AND b.codigo_subtarea=a.codigo_subtarea
+           AND b.lote=a.lote AND b.modulo=a.modulo AND b.tiempo_riego=a.tiempo_riego
+           AND b.volumen_riego=a.volumen_riego
+           AND COALESCE(b.observaciones,'') = COALESCE(a.observaciones,'')),
+       JSON_OBJECT('id',a.id,'fecha',a.fecha,'supervisor',a.supervisor,'finca',a.finca,
+                   'lote',a.lote,'modulo',a.modulo,'tiempo_riego',a.tiempo_riego,
+                   'volumen_riego',a.volumen_riego,
+                   'created_at',DATE_FORMAT(a.created_at,'%Y-%m-%d %H:%i:%s')), NOW()
+FROM z_riego a
+WHERE a.fecha >= '2026-08-01'
+  AND a.id > (SELECT MIN(b.id) FROM z_riego b
+               WHERE b.supervisor=a.supervisor AND b.fecha=a.fecha AND b.hora=a.hora AND b.finca=a.finca
+                 AND b.codigo_tarea=a.codigo_tarea AND b.codigo_subtarea=a.codigo_subtarea
+                 AND b.lote=a.lote AND b.modulo=a.modulo AND b.tiempo_riego=a.tiempo_riego
+                 AND b.volumen_riego=a.volumen_riego
+                 AND COALESCE(b.observaciones,'') = COALESCE(a.observaciones,''))
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_riego'
+                    AND d.id_origen=a.id AND d.motivo='duplicado_exacto');
+
 INSERT INTO reg_riego (guid, fecha_proceso, finca_id, supervisor_id, lote_id, modulo_id, subtarea_id,
                        tiempo_riego_min, volumen_riego, observaciones,
                        created_at_device, received_at_server, origen)
@@ -314,6 +401,8 @@ SELECT LOWER(CONCAT(SUBSTR(MD5(CONCAT('z_riego:',g.id)),1,8),'-',SUBSTR(MD5(CONC
        g.volumen_riego, NULLIF(LEFT(g.observaciones,500),''), g.created_at, NOW(), 'migracion'
 FROM z_riego g
 WHERE g.fecha >= '2026-08-01'
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_riego'
+                    AND d.id_origen=g.id AND d.motivo='duplicado_exacto')
   AND NOT EXISTS (SELECT 1 FROM reg_riego r WHERE r.guid = LOWER(CONCAT(
         SUBSTR(MD5(CONCAT('z_riego:',g.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_riego:',g.id)),9,4),
         '-5',SUBSTR(MD5(CONCAT('z_riego:',g.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_riego:',g.id)),18,3),
@@ -322,16 +411,25 @@ WHERE g.fecha >= '2026-08-01'
 -- ---------------------------------------------------------------------------
 -- 4. Postcosecha
 -- ---------------------------------------------------------------------------
--- Se migran TODAS las partidas de la ventana, cerradas y en curso: la app vieja
--- no va a convivir con la nueva y la web sólo permite VER postcosecha, así que
--- una partida que quede en z_* no la podría cerrar nadie.
+-- SÓLO entran las partidas cuyo peso está RESPALDADO por las cosechas que se
+-- les pueden enlazar (Kevin, 2026-09-05). `pc_proceso.peso_lote` es, por
+-- diseño, la suma congelada de `pc_proceso_cosecha`; una partida sin enlaces
+-- traería un peso que no sale de ningún lado y que nadie puede recalcular.
+--
+-- En la ventana son 2 de 4: las del 18-08 (10 cosechas, 4.829,60) y del 14-08
+-- (1 cosecha, 420,00), las dos cerradas. Las otras dos —las que estaban en
+-- curso el 27-08— se quedan afuera: sus cosechas del 26-08 cuelgan de AM que
+-- V3 nunca cerró (migrarlas haría que V4 pague filas que V3 no paga) y las del
+-- 27-08 no existen en la ventana. Se quedan enteras en z_* y la web las sigue
+-- mostrando; nadie las va a cerrar desde la app nueva, y se aceptó.
 --
 -- El enlace partida <-> cosecha no existe como columna en el esquema viejo. Se
 -- recupera por `created_at` idéntico al segundo entre z_postharvest_weight y
--- z_postharvest_lotsharvest, y se comprueba contra el peso: en la ventana de
--- agosto las 4 partidas emparejan y el lot_weight coincide EXACTO con la suma
--- de la cosecha de esa fecha. Si alguna no empareja, no se migra y queda en
--- mig_descarte para revisión manual.
+-- z_postharvest_lotsharvest, y se comprueba contra el peso: donde hay enlace,
+-- el lot_weight coincide EXACTO con la suma de la cosecha de esa fecha.
+--
+-- Los hijos (etapas, calidades, fotos) entran por JOIN contra pc_proceso, así
+-- que las partidas descartadas se llevan a los suyos sin regla aparte.
 
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
 SELECT 'z_postharvest_weight', w.id, 'sin_lote_de_cosecha_emparejable', NULL,
@@ -342,6 +440,30 @@ WHERE w.created_at >= '2026-08-01'
   AND NOT EXISTS (SELECT 1 FROM z_postharvest_lotsharvest h WHERE h.created_at = w.created_at)
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_postharvest_weight'
                     AND d.id_origen=w.id AND d.motivo='sin_lote_de_cosecha_emparejable');
+
+-- Partidas cuyo peso no se puede respaldar con cosechas migradas. Se anotan con
+-- las dos cifras para que la revisión sea de un vistazo: lo que decía v3 y lo
+-- que suman las cosechas que existen.
+INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
+SELECT 'z_postharvest_weight', w.id, 'partida_sin_peso_respaldado', NULL,
+       JSON_OBJECT('lot_number',w.lot_number,'lot_weight',w.lot_weight,
+                   'cosechas_enlazables',(SELECT COUNT(*) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+            WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
+                                              WHERE h2.created_at = w.created_at)),
+                   'suma_cosechas',(SELECT COALESCE(SUM(rc.total_peso),0) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+            WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
+                                              WHERE h2.created_at = w.created_at)),
+                   'created_at',DATE_FORMAT(w.created_at,'%Y-%m-%d %H:%i:%s')), NOW()
+FROM z_postharvest_weight w
+WHERE w.created_at >= '2026-08-01'
+  AND EXISTS (SELECT 1 FROM z_postharvest_lotsharvest h WHERE h.created_at = w.created_at)
+  AND ((SELECT COUNT(*) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+            WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
+                                              WHERE h2.created_at = w.created_at)) = 0 OR ABS(w.lot_weight - (SELECT COALESCE(SUM(rc.total_peso),0) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+            WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
+                                              WHERE h2.created_at = w.created_at))) >= 0.01)
+  AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_postharvest_weight'
+                    AND d.id_origen=w.id AND d.motivo='partida_sin_peso_respaldado');
 
 INSERT INTO pc_proceso (guid, lot_code, fecha_cosecha, fecha_inicio, supervisor_id,
                         peso_lote, peso_mallas, peso_final, comentario,
@@ -363,6 +485,14 @@ FROM (
   LEFT JOIN z_postharvest_result r ON r.lot_id = w.lot_number
   WHERE w.created_at >= '2026-08-01'
   GROUP BY w.lot_number, w.supervisor_id, w.lot_weight, w.container_weight, w.comments, w.created_at, r.output_weight
+  -- El peso tiene que salir de las cosechas, no de v3. Va en HAVING y no en
+  -- WHERE a propósito: así el ROW_NUMBER del `seq` sólo numera las que entran.
+  HAVING (SELECT COUNT(*) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+            WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
+                                              WHERE h2.created_at = w.created_at)) > 0
+     AND ABS(w.lot_weight - (SELECT COALESCE(SUM(rc.total_peso),0) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+            WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
+                                              WHERE h2.created_at = w.created_at))) < 0.01
 ) p
 WHERE NOT EXISTS (SELECT 1 FROM pc_proceso x WHERE x.guid = LOWER(CONCAT(
         SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),1,8),'-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),9,4),
@@ -493,8 +623,10 @@ ON DUPLICATE KEY UPDATE last_seq = GREATEST(last_seq, VALUES(last_seq));
 --   Comparado además fila por fila y columna por columna contra el resultado
 --   de la cadena vieja de seis migraciones: 550 de 550 emparejan y la única
 --   diferencia es el texto del comentario de las 21 filas deducidas.
---   z_cosecha_cacao    60 filas   ->  reg_cosecha 60, 292 sacos
---   z_riego           279 filas   ->  reg_riego 279
+--   z_cosecha_cacao    60 filas   ->  reg_cosecha 41, 201 sacos, 17.701,00 lb
+--                                     (9 duplicados exactos + 10 sin cierre AM)
+--   z_riego           279 filas   ->  reg_riego 106 (173 duplicados exactos,
+--                                     todos del 2026-08-19)
 --   z_postharvest_*     4 partidas->  pc_proceso 4, 25 enlaces de cosecha,
 --                                     13 etapas, 1 calidad ferm., 1 secado, 4 fotos
 --
@@ -502,15 +634,18 @@ ON DUPLICATE KEY UPDATE last_seq = GREATEST(last_seq, VALUES(last_seq));
 --   peso_lote de las 4 partidas = suma EXACTA de la cosecha enlazada, las 4.
 --   lot_code generados: 2380126, 2300126, 2260126, 2390126.
 --
--- mig_descarte queda con 178 filas: 103 duplicado_60s (PM),
--- 61 duplicado_cabecera_persona (AM), 14 finca_derivada_del_lote (cosecha).
--- Ninguna se pierde: la fila entera está en el payload JSON.
+-- mig_descarte queda con 359 filas: 173 duplicado_exacto (riego),
+-- 103 duplicado_60s (PM), 61 duplicado_cabecera_persona (AM),
+-- 10 cosecha_sin_cierre_am, 9 duplicado_exacto (cosecha) y
+-- 3 cosecha_total_no_cuadra. Ninguna se pierde: la fila entera está en el
+-- payload JSON.
 --
 -- LO QUE ESTE SCRIPT NO HACE Y HAY QUE SABER:
 --  * `z_riego.hora` vale '0' en las 9.778 filas: la hora del día no existe en el
 --    origen. Se usa la de created_at cuando cae el mismo día (35 de 279); el
 --    resto queda a las 00:00.
---  * 14 filas de cosecha de agosto traían finca = 0. Se derivó del lote.
+--  * Los duplicados exactos de cosecha y riego se MARCAN y no se migran, pero
+--    siguen enteros en z_*: no se borra nada del origen.
 --  * El enlace partida <-> cosecha se reconstruye por created_at idéntico al
 --    segundo. En la ventana de agosto empareja 4 de 4 y el peso cuadra exacto.
 --    En el histórico completo empareja 100 de 102 y el peso cuadra en 77 —

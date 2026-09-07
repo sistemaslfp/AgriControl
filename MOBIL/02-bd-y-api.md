@@ -299,79 +299,28 @@ Falta el detalle de pantalla, que espera las capturas (pendiente #9).
 
 ### Postcosecha
 
-```sql
-CREATE TABLE pc_lote (
-  id            INT AUTO_INCREMENT PRIMARY KEY,
-  guid          CHAR(36)     NOT NULL,
-  lot_code      CHAR(7)      NOT NULL,       -- dddnnaa
-  fecha_cosecha DATE         NOT NULL,       -- de donde salen ddd y aa
-  fecha_inicio  DATETIME     NOT NULL,
-  supervisor_id INT          NOT NULL,
-  peso_lote     DECIMAL(9,3) NOT NULL,
-  peso_mallas   DECIMAL(9,3) NOT NULL,
-  peso_baba     DECIMAL(9,3) AS (peso_lote - peso_mallas) STORED,
-  peso_final    DECIMAL(9,3) NULL,
-  comentario    VARCHAR(255) NULL,
-  device_alias        VARCHAR(50) NULL,
-  created_at_device   DATETIME    NULL,
-  received_at_server  DATETIME    NOT NULL,
-  device_clock_offset INT         NULL,
-  origen        VARCHAR(10)  NOT NULL DEFAULT 'app',
-  UNIQUE KEY uq_pc_guid (guid),
-  UNIQUE KEY uq_pc_code (lot_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+**El DDL vive en `docs/db/migrations/02-tablas-v4.sql` y manda sobre este
+documento.** Acá estaba copiado con los nombres de la primera versión
+(`pc_lote`, `pc_lote_cosecha`, una sola `pc_calidad`, `pc_lote_seq`) y quedó
+mintiendo seis días: se sacó a propósito para que no vuelva a pasar.
 
--- qué cosechas entraron en el lote (hoy es una multiselección de fechas)
-CREATE TABLE pc_lote_cosecha (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  pc_lote_id INT NOT NULL,
-  cosecha_id INT NOT NULL,
-  UNIQUE KEY uq_pc_cosecha (pc_lote_id, cosecha_id),
-  CONSTRAINT fk_pcc_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+| tabla | qué guarda |
+|---|---|
+| `pc_proceso` | la partida: `lot_code`, `fecha_cosecha`, pesos y el cierre |
+| `pc_proceso_cosecha` | qué cosechas la componen. `UNIQUE (cosecha_id)`: una cosecha entra en una sola partida |
+| `pc_etapa` | las cinco etapas, `UNIQUE (partida, etapa)` |
+| `pc_calidad_fermentacion` | el corte de grano, una por partida |
+| `pc_calidad_secado` | humedad e índice de grano, una por cada secado |
+| `pc_foto` | fotos por etapa |
+| `pc_lot_code_seq` | el consecutivo del `lot_code` |
 
--- una fila por etapa, en vez de cinco tablas
-CREATE TABLE pc_etapa (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  guid       CHAR(36)    NOT NULL,
-  pc_lote_id INT         NOT NULL,
-  etapa      VARCHAR(20) NOT NULL,   -- presecado|fermentado|secado_sol|secado_maq|resultado
-  orden      TINYINT     NOT NULL,
-  inicio     DATETIME    NOT NULL,
-  fin        DATETIME    NULL,
-  comentario VARCHAR(255) NULL,
-  received_at_server DATETIME NOT NULL,
-  UNIQUE KEY uq_etapa_guid (guid),
-  UNIQUE KEY uq_etapa (pc_lote_id, etapa),
-  CONSTRAINT fk_etapa_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+Tres cosas que el servidor calcula y el teléfono **no manda**: `peso_lote` (suma
+congelada de las cosechas enlazadas), `fecha_cosecha` (la menor de esas
+cosechas) y `lot_code`. `peso_baba` y `humedad_promedio` son columnas generadas.
 
-CREATE TABLE pc_calidad (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  guid       CHAR(36)    NOT NULL,
-  pc_lote_id INT         NOT NULL,
-  etapa      VARCHAR(20) NOT NULL,   -- fermentado | secado_sol
-  buena      SMALLINT    NOT NULL DEFAULT 0,
-  ligera     SMALLINT    NOT NULL DEFAULT 0,
-  violeta    SMALLINT    NOT NULL DEFAULT 0,
-  received_at_server DATETIME NOT NULL,
-  UNIQUE KEY uq_cal_guid (guid),
-  UNIQUE KEY uq_calidad (pc_lote_id, etapa),
-  CONSTRAINT fk_cal_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
-
-CREATE TABLE pc_foto (
-  id         INT AUTO_INCREMENT PRIMARY KEY,
-  guid       CHAR(36)     NOT NULL,
-  pc_lote_id INT          NOT NULL,
-  etapa      VARCHAR(20)  NOT NULL,
-  archivo    VARCHAR(150) NOT NULL,
-  orden      TINYINT      NOT NULL,
-  received_at_server DATETIME NOT NULL,
-  UNIQUE KEY uq_foto_guid (guid),
-  CONSTRAINT fk_foto_lote FOREIGN KEY (pc_lote_id) REFERENCES pc_lote(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
-```
+**La calidad son DOS tablas y no una** porque miden cosas distintas: el corte de
+grano del fermentado (buena/ligera/violeta, enteros) y la humedad de los
+secados. Colapsarlas dejaba 66 mediciones reales sin dónde ir.
 
 Los porcentajes de fermentación **no se guardan**: se calculan desde
 `buena/ligera/violeta`. Guardar un porcentaje derivado es guardarse una
@@ -436,7 +385,7 @@ SELECT * FROM vw_reg_flag ORDER BY marcado_at DESC;
 ### Secuencia del `lot_code`
 
 ```sql
-CREATE TABLE pc_lote_seq (
+CREATE TABLE pc_lot_code_seq (
   julian_day SMALLINT NOT NULL,
   year_2d    TINYINT  NOT NULL,
   last_seq   TINYINT  NOT NULL DEFAULT 0,
@@ -445,7 +394,7 @@ CREATE TABLE pc_lote_seq (
 ```
 
 ```sql
-INSERT INTO pc_lote_seq (julian_day, year_2d, last_seq)
+INSERT INTO pc_lot_code_seq (julian_day, year_2d, last_seq)
 VALUES (:ddd, :aa, LAST_INSERT_ID(1))
 ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1);
 -- SELECT LAST_INSERT_ID();  -> el 'nn'
@@ -584,8 +533,13 @@ Reglas de la ventana:
 
 - **AM / PM / Cosecha / Riego:** todo lo de `fecha >= '2026-08-01'`, con las
   reglas de deduplicación de arriba y auditoría en `mig_descarte`.
-- **Postcosecha: sólo partidas CERRADAS.** Ninguna partida en proceso se migra.
-  La app nueva arranca sin partidas abiertas.
+- **Postcosecha: sólo las partidas cuyo peso está RESPALDADO** por las cosechas
+  que se les pueden enlazar (Kevin, 2026-09-05). `peso_lote` es por diseño la
+  suma congelada de `pc_proceso_cosecha`; una partida sin enlaces traería un
+  peso que nadie puede recalcular. En la ventana entran 2 de 4, las dos
+  cerradas; las dos que estaban en curso el 27-08 se quedan en `z_*` y **nadie
+  las va a cerrar desde la app nueva**. La app nueva arranca sin partidas
+  abiertas.
 - **Excepción de fecha en postcosecha:** una partida cerrada de agosto puede
   estar enlazada a cosechas de julio. Esas cosechas **se migran igual**, fuera
   de la ventana — sin ellas `pc_proceso_cosecha` no tiene a qué apuntar y
@@ -666,13 +620,14 @@ Cero rechazos de FK, cero filas tocadas en las `z_*`.
 |---|---|
 | `z_tabla_am` 590 | `reg_am` 529 filas en 367 capturas, 61 descartes |
 | `z_tabla_pm` 598 | 495 cierres sobre filas de `reg_am` + 21 filas nuevas `mig-pm`, 103 descartes |
-| `z_cosecha_cacao` 60 | `reg_cosecha` 60, 292 sacos |
-| `z_riego` 279 | `reg_riego` 279 |
+| `z_cosecha_cacao` 60 | `reg_cosecha` 41, 201 sacos, 17.701,00 lb (9 duplicados exactos, 10 sin cierre AM) |
+| `z_riego` 279 | `reg_riego` 106 (173 duplicados exactos, todos del 2026-08-19) |
 | `z_postharvest_*` 4 partidas | `pc_proceso` 4, 25 enlaces, 13 etapas, 2 calidades, 4 fotos |
 
 529 + 61 = 590 y 495 + 103 = 598: todo lo que entró está o migrado o auditado.
-La suma de `total_peso` de cosecha da 20.526,60 en los dos lados, y el
-`peso_lote` de las 4 partidas es la suma exacta de su cosecha enlazada.
+`mig_descarte` queda con 359 filas y **nada se borra del origen**: los duplicados
+exactos de cosecha y riego se marcan y se saltan, pero siguen enteros en `z_*`.
+El `peso_lote` de las 4 partidas es la suma exacta de su cosecha enlazada.
 
 Tres cosas que salieron al escribirlo y no estaban en ningún documento:
 
@@ -796,8 +751,12 @@ Controlador nuevo: `application/controllers/V4.php`.
 | GET  | `/v4/am_abiertos` | Asignaciones AM de una fecha que todavía no cerró ningún PM. |
 | POST | `/v4/sync` | Lote de registros. Idempotente por `guid`. |
 | POST | `/v4/fotos` | Multipart. `guid` del padre + etapa + orden. |
-| GET  | `/v4/postcosecha/lotes-pendientes` | Cosechas sin proceso de postcosecha. |
-| GET  | `/v4/postcosecha/lote/{lot_code}` | Estado y etapas de un lote. |
+| GET  | `/v4/postcosecha_pendientes` | Cosechas que todavía no entraron en ninguna partida, agrupadas por día. |
+| GET  | `/v4/postcosecha_abiertas` | Partidas sin peso final, con su última etapa. |
+
+**Sin guiones en las rutas**: CI mapea el segmento de URI al nombre del método y
+`postcosecha-pendientes` no es un identificador PHP válido. Es la misma razón
+por la que `am_abiertos` se llama así.
 
 ### `GET /v4/catalogos`
 
@@ -855,7 +814,13 @@ Respuesta (ver `01-sincronizacion.md` para la definición del ACK):
 }
 ```
 
-`tipo` ∈ `am | pm | cosecha | riego | pc_lote | pc_etapa | pc_calidad`.
+`tipo` ∈ `am | pm | cosecha | riego | pc_proceso | pc_etapa | pc_calidad_ferm |
+pc_calidad_sec | pc_resultado`.
+
+**`pc_resultado` cierra la partida**: escribe `peso_final` y deja la etapa
+`resultado` en la misma transacción, porque para el supervisor es un solo acto.
+Por eso `pc_etapa` rechaza `etapa: resultado`. El cierre es atómico con
+`peso_final IS NULL` en el WHERE, igual que `cierre_guid IS NULL` en el PM.
 
 **El PM no cierra lo que se paga por peso** (Kevin, 2026-09-05): ahí la cantidad
 son los sacos y eso tiene formulario propio. El criterio es la **unidad**, no la

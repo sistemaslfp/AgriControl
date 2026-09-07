@@ -22,7 +22,7 @@ al día al **2026-09-02**.
 | 3 | **AM y PM** — el 80 % del uso diario | **HECHO** — `POST /v4/sync` y las pantallas `/am` y `/pm` |
 | 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
 | 5 | **Cosecha de Cacao** | **HECHO** — cierra una tarea AM: `tipo: cosecha` en `/v4/sync` y la pantalla `/cosecha` |
-| 6 | **Postcosecha** — máquina de estados + fotos. El más caro | pendiente |
+| 6 | **Postcosecha** — servidor HECHO (migración, endpoints y los 5 tipos de sync). Faltan las pantallas; las fotos quedaron fuera a propósito | en curso |
 | 7 | **Riego** — bitácora propia, no cierra tareas AM. `reg_riego` ya está y no se rehace | pendiente — faltan las capturas (#9) |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
 
@@ -55,8 +55,9 @@ de la tarea** (`reg_am.cantidad`). Medido sobre 14.466 pares del histórico:
 95,6 % de los PM de cosecha tienen `cantidad = total_peso` y ninguno coincide
 con el conteo de sacos.
 
-**Poscosecha queda sin quién la cierre hasta el paso 6.** Son 38 AM en agosto,
-unidad Jornal. Es la consecuencia conocida de sacarla del PM.
+**Poscosecha ya la cierra el PM** desde el ruteo por unidad (2026-09-05): sus 38
+AM de agosto son de unidad Jornal, así que caen del lado del PM como cualquier
+otra tarea. El módulo de postcosecha no cierra nada: registra el proceso.
 
 **Riego no cierra nada: es una bitácora propia** (2026-09-03). El supervisor
 entrega su parte y se registra tal cual, así que `reg_riego` conserva sus
