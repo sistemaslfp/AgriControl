@@ -1,0 +1,440 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      @if (vista() === 'lista') {
+        <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+      } @else {
+        <ion-button (click)="volver()" class="volver-lista">Volver</ion-button>
+      }
+    </ion-buttons>
+    <ion-title>Postcosecha</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="cargarLista()" aria-label="Actualizar lista">
+        <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (sinHoraVerificada()) {
+    <div class="banner aviso">
+      Este equipo nunca sincronizó la hora con el servidor. Se puede capturar,
+      pero los registros viajan marcados como no verificables.
+    </div>
+  }
+
+  <!-- ==================== Lista de partidas abiertas ==================== -->
+  @if (vista() === 'lista') {
+    <div class="cabecera-trabajador">
+      <h2 class="titulo-seccion">Partidas en proceso</h2>
+      @if (cargandoLista()) {
+        <ion-spinner name="crescent" class="spinner-boton"></ion-spinner>
+      }
+    </div>
+
+    @if (errorLista(); as err) {
+      <div class="banner aviso">
+        <ion-icon name="cloud-offline-outline"></ion-icon>
+        {{ err }}
+      </div>
+    }
+
+    @if (!cargandoLista() && partidas().length === 0) {
+      <div class="banner info">No hay partidas en proceso.</div>
+    } @else {
+      <ion-list inset="true">
+        @for (p of partidas(); track p.guid) {
+          <ion-item button="true" detail="true" (click)="abrir(p)" class="partida">
+            <ion-label>
+              <h3>
+                @if (p.lotCode) {
+                  {{ p.lotCode }}
+                } @else {
+                  <span class="sin-numero">
+                    <ion-icon name="hourglass-outline"></ion-icon>
+                    Pendiente de número
+                  </span>
+                }
+              </h3>
+              <p>Cosecha del {{ p.fechaCosecha }} · {{ p.cosechas }} registro(s)</p>
+              <p>{{ p.pesoLote }} lb · baba {{ p.pesoBaba }} lb</p>
+              <p class="etapa-actual">
+                @if (p.etapas.size === 0) {
+                  Sin etapas registradas
+                } @else {
+                  {{ p.etapas.size }} etapa(s) registrada(s)
+                }
+              </p>
+            </ion-label>
+          </ion-item>
+        }
+      </ion-list>
+    }
+
+    <div class="fila-botones">
+      <ion-button expand="block" (click)="nueva()" class="nueva-partida">
+        <ion-icon slot="start" name="add-outline"></ion-icon>
+        Nueva partida
+      </ion-button>
+    </div>
+  }
+
+  <!-- ==================== Pesaje: nueva partida ==================== -->
+  @if (vista() === 'nueva') {
+    <ion-list inset="true">
+      <ion-item>
+        <ion-label>Fecha de inicio</ion-label>
+        <ion-datetime-button slot="end" datetime="fechaPc"></ion-datetime-button>
+      </ion-item>
+      <ion-item>
+        <ion-label>Hora de inicio</ion-label>
+        <ion-datetime-button slot="end" datetime="horaPc"></ion-datetime-button>
+      </ion-item>
+      <ion-item button="true" detail="true" (click)="abrirSupervisor()">
+        <ion-icon slot="start" name="person-outline"></ion-icon>
+        <ion-label>
+          Supervisor
+          <p>{{ supervisor()?.nombre ?? 'Sin elegir' }}</p>
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="fechaPc"
+          presentation="date"
+          locale="es-EC"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fechaInicio()"
+          [min]="limites().min"
+          [max]="limites().max"
+          (ionChange)="setFechaInicio($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+    <ion-modal [keepContentsMounted]="true">
+      <ng-template>
+        <ion-datetime
+          id="horaPc"
+          presentation="time"
+          locale="es-EC"
+          [showDefaultButtons]="true"
+          doneText="Listo"
+          cancelText="Cancelar"
+          [value]="fechaInicio() + 'T' + horaInicio() + ':00'"
+          (ionChange)="setHoraInicio($any($event.detail).value)"
+        ></ion-datetime>
+      </ng-template>
+    </ion-modal>
+
+    <div class="cabecera-trabajador">
+      <h2 class="titulo-seccion">Días de cosecha</h2>
+      @if (cargandoDias()) {
+        <ion-spinner name="crescent" class="spinner-boton"></ion-spinner>
+      }
+    </div>
+
+    @if (errorDias(); as err) {
+      <div class="banner aviso">
+        <ion-icon name="cloud-offline-outline"></ion-icon>
+        {{ err }}
+      </div>
+    }
+
+    @if (dias().length > 0) {
+      <ion-list inset="true">
+        @for (d of dias(); track d.fecha) {
+          <ion-item
+            button="true"
+            (click)="alternarDia(d.fecha)"
+            class="dia-cosecha"
+            [class.elegido]="diaElegido(d.fecha)"
+          >
+            <ion-label>
+              {{ d.fecha }}
+              <p>{{ d.peso }} lb · {{ d.sacos }} saco(s) en {{ d.cosechas }} registro(s)</p>
+            </ion-label>
+            @if (diaElegido(d.fecha)) {
+              <ion-note slot="end">Elegido</ion-note>
+            }
+          </ion-item>
+        }
+      </ion-list>
+    }
+
+    <ion-list inset="true">
+      <ion-item>
+        <ion-input
+          label="Peso lote (lb)"
+          labelPlacement="stacked"
+          [value]="pesoElegido()"
+          [readonly]="true"
+          class="peso-lote"
+        ></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="Peso mallas vacías (lb)"
+          labelPlacement="stacked"
+          type="number"
+          inputmode="decimal"
+          class="peso-mallas"
+          [value]="pesoMallas()"
+          (ionInput)="pesoMallas.set(numero($any($event.target).value))"
+        ></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="Peso baba (lb)"
+          labelPlacement="stacked"
+          [value]="pesoBabaNuevo()"
+          [readonly]="true"
+          class="peso-baba"
+        ></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="Comentarios del pesaje"
+          labelPlacement="stacked"
+          [value]="comentario()"
+          (ionInput)="comentario.set($any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+    </ion-list>
+
+    <div class="banner info">
+      El número de proceso lo asigna el servidor: aparece cuando el registro se
+      envía.
+    </div>
+
+    @if (problemasPesaje().length > 0) {
+      <div class="banner alerta">
+        <ul>
+          @for (p of problemasPesaje(); track p) {
+            <li>{{ p }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <div class="fila-botones">
+      <ion-button
+        expand="block"
+        [disabled]="!puedeGuardarPesaje()"
+        (click)="guardarPesaje()"
+        class="iniciar-partida"
+      >
+        <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
+        Iniciar partida
+      </ion-button>
+    </div>
+  }
+
+  <!-- ==================== Detalle de una partida ==================== -->
+  @if (vista() === 'detalle' && partida(); as p) {
+    <ion-list inset="true">
+      <ion-item>
+        <ion-label>
+          <h3 class="lot-code">
+            @if (p.lotCode) {
+              {{ p.lotCode }}
+            } @else {
+              <span class="sin-numero">
+                <ion-icon name="hourglass-outline"></ion-icon>
+                Pendiente de número
+              </span>
+            }
+          </h3>
+          <p>Cosecha del {{ p.fechaCosecha }} · {{ p.cosechas }} registro(s)</p>
+          <p>Lote {{ p.pesoLote }} lb · mallas {{ p.pesoMallas }} lb · baba {{ p.pesoBaba }} lb</p>
+          @if (p.supervisor) {
+            <p>{{ p.supervisor }}</p>
+          }
+        </ion-label>
+      </ion-item>
+    </ion-list>
+
+    <h2 class="titulo-seccion">Etapas</h2>
+    <div class="banner info">
+      Las etapas no obligan a un orden: se registra la que corresponda.
+    </div>
+
+    <ion-list inset="true">
+      <ion-item>
+        <ion-input
+          label="Inicio de la etapa"
+          labelPlacement="stacked"
+          type="datetime-local"
+          class="etapa-inicio"
+          [value]="etapaInicio()"
+          (ionInput)="etapaInicio.set($any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="Fin (opcional)"
+          labelPlacement="stacked"
+          type="datetime-local"
+          class="etapa-fin"
+          [value]="etapaFin()"
+          (ionInput)="etapaFin.set($any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-input
+          label="Comentarios"
+          labelPlacement="stacked"
+          class="etapa-comentario"
+          [value]="etapaComentario()"
+          (ionInput)="etapaComentario.set($any($event.target).value ?? '')"
+        ></ion-input>
+      </ion-item>
+    </ion-list>
+
+    <div class="fila-botones etapas">
+      @for (e of etapasDef; track e.clave) {
+        <ion-button
+          expand="block"
+          fill="outline"
+          [disabled]="etapaHecha(e.clave) || guardando()"
+          (click)="registrarEtapa(e.clave)"
+          [attr.data-etapa]="e.clave"
+          class="btn-etapa"
+        >
+          @if (etapaHecha(e.clave)) {
+            {{ e.nombre }} · registrada
+          } @else {
+            Registrar {{ e.nombre }}
+          }
+        </ion-button>
+      }
+    </div>
+
+    @if (etapaHecha('fermentado') && !calidadHecha('fermentado')) {
+      <h2 class="titulo-seccion">Corte de grano (fermentado)</h2>
+      <ion-list inset="true">
+        <ion-item>
+          <ion-input
+            label="Buena" labelPlacement="stacked" type="number" class="grano-buena"
+            [value]="granoBuena()"
+            (ionInput)="granoBuena.set(numero($any($event.target).value))"
+          ></ion-input>
+        </ion-item>
+        <ion-item>
+          <ion-input
+            label="Ligera" labelPlacement="stacked" type="number" class="grano-ligera"
+            [value]="granoLigera()"
+            (ionInput)="granoLigera.set(numero($any($event.target).value))"
+          ></ion-input>
+        </ion-item>
+        <ion-item>
+          <ion-input
+            label="Violeta" labelPlacement="stacked" type="number" class="grano-violeta"
+            [value]="granoVioleta()"
+            (ionInput)="granoVioleta.set(numero($any($event.target).value))"
+          ></ion-input>
+        </ion-item>
+      </ion-list>
+      <div class="fila-botones">
+        <ion-button
+          expand="block"
+          [disabled]="problemasGrano().length > 0 || guardando()"
+          (click)="registrarGrano()"
+          class="registrar-grano"
+        >
+          Registrar corte de grano
+        </ion-button>
+      </div>
+    }
+
+    @for (e of etapasDef; track e.clave) {
+      @if (e.clave.startsWith('secado') && puedeAnalizarSecado(e.clave)) {
+        <h2 class="titulo-seccion">Humedad · {{ e.nombre }}</h2>
+        <ion-list inset="true">
+          <ion-item>
+            <ion-input
+              label="Lectura 1" labelPlacement="stacked" type="number" inputmode="decimal"
+              class="humedad-1" [value]="humedad1()"
+              (ionInput)="humedad1.set(numero($any($event.target).value))"
+            ></ion-input>
+          </ion-item>
+          <ion-item>
+            <ion-input
+              label="Lectura 2" labelPlacement="stacked" type="number" inputmode="decimal"
+              class="humedad-2" [value]="humedad2()"
+              (ionInput)="humedad2.set(numero($any($event.target).value))"
+            ></ion-input>
+          </ion-item>
+          <ion-item>
+            <ion-input
+              label="Lectura 3" labelPlacement="stacked" type="number" inputmode="decimal"
+              class="humedad-3" [value]="humedad3()"
+              (ionInput)="humedad3.set(numero($any($event.target).value))"
+            ></ion-input>
+          </ion-item>
+        </ion-list>
+        <div class="fila-botones">
+          <ion-button
+            expand="block"
+            [disabled]="problemasHumedad().length > 0 || guardando()"
+            (click)="registrarHumedad(e.clave)"
+            [attr.data-humedad]="e.clave"
+            class="registrar-humedad"
+          >
+            Registrar análisis
+          </ion-button>
+        </div>
+      }
+    }
+
+    <h2 class="titulo-seccion">Peso final</h2>
+    <div class="banner info">Registrar el peso final cierra la partida.</div>
+    <ion-list inset="true">
+      <ion-item>
+        <ion-input
+          label="Peso final (lb)"
+          labelPlacement="stacked"
+          type="number"
+          inputmode="decimal"
+          class="peso-final"
+          [value]="pesoFinal()"
+          (ionInput)="pesoFinal.set(numero($any($event.target).value))"
+        ></ion-input>
+      </ion-item>
+    </ion-list>
+    <div class="fila-botones">
+      <ion-button
+        expand="block"
+        [disabled]="!puedeCerrar()"
+        (click)="cerrar()"
+        class="cerrar-partida"
+      >
+        <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
+        Registrar peso y cerrar
+      </ion-button>
+    </div>
+  }
+</ion-content>
+
+<ion-modal
+  class="selector-flotante"
+  [style.--height]="alturaSelector()"
+  [isOpen]="selectorAbierto()"
+  (ionModalDidDismiss)="cerrarSelector()"
+>
+  <ng-template>
+    <app-selector
+      [titulo]="selectorTitulo()"
+      [opciones]="selectorOpciones()"
+      [seleccion]="selectorSeleccion()"
+      [vacioTexto]="selectorVacio()"
+      [conBuscador]="selectorBuscador()"
+      (confirmar)="onSeleccion($event)"
+      (cerrar)="cerrarSelector()"
+    ></app-selector>
+  </ng-template>
+</ion-modal>

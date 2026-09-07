@@ -80,6 +80,52 @@ export interface AmAbiertosResponse {
 }
 
 /**
+ * Un dia de cosecha que todavia no entro en ninguna partida de postcosecha.
+ * `cosecha_ids` es lo que hay que devolverle al servidor al crear la partida:
+ * v4 consume FILAS, no la fecha entera como hacia v3.
+ */
+export interface DiaPendienteApi {
+  fecha: string;
+  cosechas: number;
+  sacos: number;
+  peso: number;
+  cosecha_ids: number[];
+}
+
+export interface PostcosechaPendientesResponse {
+  server_time: string;
+  dias: DiaPendienteApi[];
+}
+
+/** Una partida en curso (sin peso final). */
+export interface PartidaApi {
+  id: number;
+  guid: string;
+  lot_code: string;
+  fecha_cosecha: string;
+  fecha_inicio: string;
+  peso_lote: number;
+  peso_mallas: number;
+  peso_baba: number;
+  comentario: string | null;
+  supervisor_id: number;
+  supervisor: string | null;
+  /** La ultima etapa registrada, o null si todavia no hay ninguna. */
+  etapa: string | null;
+  /** TODAS las etapas ya registradas: en la vida real se saltan. */
+  etapas: string[];
+  tiene_cal_ferm: boolean;
+  /** Etapas de secado que ya tienen su analisis de calidad. */
+  cal_secado: string[];
+  cosechas: number;
+}
+
+export interface PostcosechaAbiertasResponse {
+  server_time: string;
+  partidas: PartidaApi[];
+}
+
+/**
  * Cliente HTTP de la API V4. Toda llamada sale de aquí; nadie más arma URLs.
  * El alias del dispositivo viaja en X-Device-Alias (trazabilidad, no auth).
  */
@@ -123,6 +169,19 @@ export class ApiService {
       (fincaId !== null ? `&finca_id=${fincaId}` : '') +
       `&modulo=${modulo}`;
     return this.get<AmAbiertosResponse>(q);
+  }
+
+  /**
+   * Dias de cosecha sin partida. Sin guion en la ruta, por lo mismo que
+   * `am_abiertos`: CodeIgniter mapea el segmento de URI al nombre del metodo.
+   */
+  postcosechaPendientes(desde?: string): Promise<PostcosechaPendientesResponse> {
+    const q = 'postcosecha_pendientes' + (desde ? `?desde=${encodeURIComponent(desde)}` : '');
+    return this.get<PostcosechaPendientesResponse>(q);
+  }
+
+  postcosechaAbiertas(): Promise<PostcosechaAbiertasResponse> {
+    return this.get<PostcosechaAbiertasResponse>('postcosecha_abiertas');
   }
 
   sync(body: SyncRequest): Promise<SyncResponse> {

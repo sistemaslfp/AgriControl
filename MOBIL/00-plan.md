@@ -22,7 +22,7 @@ al día al **2026-09-02**.
 | 3 | **AM y PM** — el 80 % del uso diario | **HECHO** — `POST /v4/sync` y las pantallas `/am` y `/pm` |
 | 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
 | 5 | **Cosecha de Cacao** | **HECHO** — cierra una tarea AM: `tipo: cosecha` en `/v4/sync` y la pantalla `/cosecha` |
-| 6 | **Postcosecha** — servidor HECHO (migración, endpoints y los 5 tipos de sync). Faltan las pantallas; las fotos quedaron fuera a propósito | en curso |
+| 6 | **Postcosecha** — HECHO: migración, endpoints, los 5 tipos de sync y la pantalla. Las fotos quedaron fuera a propósito | hecho |
 | 7 | **Riego** — bitácora propia, no cierra tareas AM. `reg_riego` ya está y no se rehace | pendiente — faltan las capturas (#9) |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
 

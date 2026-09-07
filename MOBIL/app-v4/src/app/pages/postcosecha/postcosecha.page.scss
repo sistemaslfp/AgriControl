@@ -1,0 +1,18 @@
+.sin-numero {
+  color: var(--ion-color-warning-shade);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dia-cosecha.elegido {
+  --background: var(--ion-color-primary-tint);
+}
+
+.fila-botones.etapas ion-button {
+  margin-bottom: 6px;
+}
+
+.lot-code {
+  font-weight: 600;
+}

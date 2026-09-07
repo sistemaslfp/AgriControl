@@ -124,6 +124,41 @@ export class DatabaseService {
      );`,
     `CREATE INDEX IF NOT EXISTS idx_pm_cierre
        ON pm_cierre_local (trabajador_id, fecha, lote_id, subtarea_id);`,
+
+    // ---------------------------------------------------------------
+    // Espejo local de postcosecha (paso 6). Cubre dos cosas que el
+    // servidor no puede: una partida capturada sin señal --que todavia
+    // no tiene lot_code-- y las etapas ya cargadas en ESTE equipo, para
+    // no ofrecer dos veces la misma antes de que llegue el ACK.
+    //
+    // El lot_code NO se guarda aca: llega con la lista del servidor. Sin
+    // señal la pantalla dice "pendiente de número", que es la decision
+    // de Kevin del 2026-09-05.
+    // ---------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS pc_proceso_local (
+       guid          TEXT PRIMARY KEY,
+       fecha_cosecha TEXT NOT NULL,
+       fecha_inicio  TEXT NOT NULL,
+       supervisor_id INTEGER NOT NULL,
+       supervisor    TEXT,
+       peso_lote     REAL NOT NULL,
+       peso_mallas   REAL NOT NULL,
+       cosechas      INTEGER NOT NULL DEFAULT 0,
+       cerrada       INTEGER NOT NULL DEFAULT 0,
+       created_at    TEXT NOT NULL
+     );`,
+    `CREATE TABLE IF NOT EXISTS pc_etapa_local (
+       proceso_guid TEXT NOT NULL,
+       etapa        TEXT NOT NULL,
+       created_at   TEXT NOT NULL,
+       PRIMARY KEY (proceso_guid, etapa)
+     );`,
+    `CREATE TABLE IF NOT EXISTS pc_calidad_local (
+       proceso_guid TEXT NOT NULL,
+       etapa        TEXT NOT NULL,
+       created_at   TEXT NOT NULL,
+       PRIMARY KEY (proceso_guid, etapa)
+     );`,
   ];
 
   /** Abre (una sola vez) la conexión y aplica el esquema. */

@@ -358,11 +358,14 @@ Riego son en Jornal—, acá se registra el agua. Ver `02-bd-y-api.md` §Riego.
 
 ---
 
-## Postcosecha — el módulo más complejo
+## Postcosecha — HECHO (paso 6, 2026-09-05)
 
-Es una **máquina de estados por lote**, no un formulario. Pantalla
-"Registros Abiertos" lista los lotes en proceso con su `Etapa`, y
-`NUEVO REGISTRO` abre uno.
+Es una **máquina de estados por partida**, no un formulario. La pantalla
+`/postcosecha` tiene tres vistas: la lista de partidas en proceso, el pesaje que
+abre una nueva, y el detalle donde se registran etapas, calidad y peso final.
+
+**No cierra ninguna tarea AM**: el jornal de poscosecha lo paga el PM desde el
+ruteo por unidad. Acá se registra el proceso, igual que riego registra el agua.
 
 Flujo observado en las capturas:
 
@@ -382,25 +385,35 @@ Flujo observado en las capturas:
 
 Correcciones:
 
-- **`No. Proceso` lo escribe el usuario hoy** (`P-465`, lote `462`). Pasa a ser
-  **asignado por el servidor** con formato `dddnnaa` y **solo lectura** en la
-  app (ver `02-bd-y-api.md` §6). Esto obliga a que el pesaje se sincronice
-  antes de continuar, o a que la app muestre "pendiente de número" hasta el ACK.
-  **[DECIDIR]** cuál de las dos: bloquear hasta tener número es más simple y
-  rompe el offline; mostrar provisional es correcto y más trabajo.
+- **`No. Proceso` lo escribía el usuario** (`P-465`, lote `462`). Ahora lo
+  **asigna el servidor** con formato `dddnnaa`, y la app no lo pide.
+  **DECIDIDO (Kevin, 2026-09-05): la partida se crea igual sin señal y muestra
+  "pendiente de número" hasta el ACK.** No se bloquea el pesaje: es el paso que
+  arranca todo el proceso y bloquearlo rompía el offline justo ahí.
+- **El peso del lote tampoco se teclea**: sale de los días de cosecha elegidos,
+  y el peso baba se calcula (`lote − mallas`). Lo único que se pesa a mano son
+  las mallas vacías.
 - Los tiempos salen siempre `0 días, 0 horas, 0 minutos` porque inicio y fin se
   registran en el mismo instante. Con el selector de fecha/hora el supervisor
   registra el momento real. Es la razón principal por la que el selector entra
   en el alcance.
-- Las etapas escriben en tablas con `UNIQUE KEY (lot_id)`: una etapa por lote,
-  irrepetible. La UI debe reflejarlo — una vez cerrada, la etapa no se reabre
-  desde el teléfono.
-- **Fotos**: `CARGAR FOTO` en fermentación y secado → `z_postharvest_photos`
-  (`lot_id`, `stage`, `picture_name`, `picture_order`). Cola de subida propia,
-  ver `01-sincronizacion.md`.
-- La app permite iniciar postcosecha **sin conexión**, pero
-  `Seleccione Lotes` depende de `getPendingPostharvestLots` del servidor.
-  Hay que cachear esa lista en la última sincronización y avisar de su antigüedad.
+- Las etapas escriben en `pc_etapa` con `UNIQUE (partida, etapa)`: una etapa por
+  partida, irrepetible. Una vez registrada, el botón queda deshabilitado.
+- **La cadena `INICIAR X → INICIAR Y` se descartó: los datos la desmienten.** De
+  98 partidas de v3, presecado 75, fermentado 72, secado sol 54, secado máquina
+  73 y resultado 76; **42 tienen los dos secados y 13 no tienen ninguno**. Las
+  cuatro etapas se ofrecen desde el arranque y se registra la que corresponda.
+- El **corte de grano** aparece recién con el fermentado registrado, y el
+  **análisis de humedad** recién con cada secado: son análisis DE esa etapa.
+- **El peso final cierra la partida** y la saca de la lista.
+- **Fotos: FUERA de esta pasada** (Kevin, 2026-09-05). `CARGAR FOTO` necesita
+  una cola binaria con reintentos propios que hoy no existe. `pc_foto` ya está
+  creada y el botón no aparece hasta que la cola exista.
+- **`Seleccione Lotes` NO se resuelve offline y no se cachea**: el servidor es
+  el único que sabe qué cosechas ya entraron en otra partida, y elegir a ciegas
+  termina en un rechazo. Sin respuesta la pantalla lo dice y no deja seguir. Lo
+  que sí funciona sin señal es todo lo demás: una partida ya creada acepta
+  etapas, calidad y peso final desde el espejo local.
 
 ---
 

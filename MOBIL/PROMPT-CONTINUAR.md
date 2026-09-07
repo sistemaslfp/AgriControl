@@ -72,6 +72,15 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66. **No cierra ningún
   AM**: las cosechas cuyo AM quedó abierto van a `mig_descarte`, porque cerrarlas
   haría que V4 pagara filas que V3 no paga.
+- **Paso 6 — HECHO (2026-09-05), las dos mitades.** La pantalla
+  `/postcosecha` tiene lista de partidas en proceso, pesaje y detalle. El peso
+  del lote sale de los días de cosecha elegidos y el baba se calcula; el número
+  de proceso lo pone el servidor y hasta el ACK la partida dice "pendiente de
+  número". Las cuatro etapas se ofrecen sin orden obligatorio —los datos de v3
+  lo exigen: 42 partidas con los dos secados y 13 sin ninguno—, el corte de
+  grano aparece con el fermentado y la humedad con cada secado. El peso final
+  cierra. **33 comprobaciones e2e nuevas** en `postcosecha.spec.mjs` y las
+  cinco suites en verde.
 - **Paso 6, servidor — HECHO (2026-09-05).** `POST /v4/sync` acepta cinco tipos
   nuevos: `pc_proceso` (pesaje + las cosechas que lo componen), `pc_etapa`,
   `pc_calidad_ferm`, `pc_calidad_sec` y `pc_resultado` (peso final, cierra la

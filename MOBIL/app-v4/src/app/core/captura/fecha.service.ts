@@ -16,7 +16,7 @@ import { ClockService } from '../clock/clock.service';
  *   del usuario manda; el servidor lo anota con `fuera_de_ventana_horaria`.
  */
 
-export type TipoFecha = 'am' | 'pm' | 'cosecha';
+export type TipoFecha = 'am' | 'pm' | 'cosecha' | 'postcosecha';
 
 /**
  * Cosecha no tiene ventana horaria: se cosecha cuando se cosecha. Se devuelve
@@ -69,7 +69,11 @@ export class FechaService {
   }
 
   ventana(tipo: TipoFecha): { inicio: string; fin: string } {
-    return tipo === 'cosecha' ? SIN_VENTANA : this.bootstrap.datos().ventanas_horarias[tipo];
+    // Solo AM y PM tienen ventana horaria. Cosecha se cosecha cuando se
+    // cosecha, y una partida de postcosecha arranca cuando llega el cacao.
+    return tipo === 'am' || tipo === 'pm'
+      ? this.bootstrap.datos().ventanas_horarias[tipo]
+      : SIN_VENTANA;
   }
 
   /** `local` es 'YYYY-MM-DDTHH:mm(:ss)' tal como lo devuelve ion-datetime. */

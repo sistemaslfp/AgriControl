@@ -81,7 +81,7 @@ export class MenuPage implements OnInit {
     { titulo: 'PM', icono: 'moon-outline', accion: 'modulo', habilitada: true, ruta: '/pm' },
     { titulo: 'Cosecha', icono: 'leaf-outline', accion: 'modulo', habilitada: true, ruta: '/cosecha' },
     { titulo: 'Riego', icono: 'rainy-outline', accion: 'modulo', habilitada: false },
-    { titulo: 'Poscosecha', icono: 'time-outline', accion: 'modulo', habilitada: false },
+    { titulo: 'Poscosecha', icono: 'time-outline', accion: 'modulo', habilitada: true, ruta: '/postcosecha' },
     { titulo: 'Actualizar Maestros', icono: 'cloud-download-outline', accion: 'maestros', habilitada: true },
     // UNA celda para las dos mitades: ya abrian la misma pantalla, asi que dos
     // celdas separadas prometian dos lugares distintos. Va a lo ancho para que

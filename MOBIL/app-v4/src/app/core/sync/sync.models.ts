@@ -12,9 +12,11 @@ export type TipoRegistro =
   | 'pm'
   | 'cosecha'
   | 'riego'
-  | 'pc_lote'
+  | 'pc_proceso'
   | 'pc_etapa'
-  | 'pc_calidad';
+  | 'pc_calidad_ferm'
+  | 'pc_calidad_sec'
+  | 'pc_resultado';
 
 /** Fila de la tabla local sync_queue. */
 export interface RegistroCola {

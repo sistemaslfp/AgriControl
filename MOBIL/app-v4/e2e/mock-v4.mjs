@@ -18,6 +18,13 @@ let lotes = [];
 // ni /v4/am_abiertos ni la regla de "el PM espera si su AM no llego".
 let amRecibidos = new Map();   // am_guid -> {payload, personas:[ids]}
 let cerradas = new Set();      // `${am_guid}|${personal_id}`
+// Postcosecha: las partidas creadas por sync y los dias de cosecha que quedan.
+// El lot_code lo inventa el mock igual que el servidor: dddnnaa.
+let partidas = new Map();      // guid -> { id, lot_code, payload, etapas, calidades }
+let diasPendientes = [
+  { fecha: '2026-08-17', cosechas: 2, sacos: 9, peso: 2779.7, cosecha_ids: [22, 23] },
+  { fecha: '2026-08-20', cosechas: 1, sacos: 3, peso: 303.8, cosecha_ids: [31] },
+];
 
 // Espejo minimo de los catalogos, para poder resolver nombres en am_abiertos.
 const NOMBRES = { 214: 'ALAVA TOMALA ERICKA', 301: 'BRIONES MERO JUAN',
@@ -142,6 +149,37 @@ const server = http.createServer((req, res) => {
                { id: 400, nombre: 'PACARI PEREZ ANA', id_finca: 2, rol: 13, rol_app: '1' },
                { id: 27, nombre: 'MENDOZA CARLOS RUBEN', id_finca: 2, rol: 8, rol_app: '2' }] });
 
+  if (req.url.startsWith('/v4/postcosecha_pendientes')) {
+    const tomadas = new Set([...partidas.values()].flatMap((p) => p.payload.cosecha_ids ?? []));
+    return json(200, {
+      server_time: new Date().toISOString(),
+      dias: diasPendientes
+        .map((d) => ({ ...d, cosecha_ids: d.cosecha_ids.filter((i) => !tomadas.has(i)) }))
+        .filter((d) => d.cosecha_ids.length > 0),
+    });
+  }
+
+  if (req.url.startsWith('/v4/postcosecha_abiertas')) {
+    return json(200, {
+      server_time: new Date().toISOString(),
+      partidas: [...partidas.values()]
+        .filter((p) => !p.cerrada)
+        .map((p) => ({
+          id: p.id, guid: p.guid, lot_code: p.lot_code,
+          fecha_cosecha: p.fecha_cosecha, fecha_inicio: p.payload.fecha_inicio,
+          peso_lote: p.peso_lote, peso_mallas: Number(p.payload.peso_mallas),
+          peso_baba: Math.round((p.peso_lote - Number(p.payload.peso_mallas)) * 100) / 100,
+          comentario: p.payload.comentario ?? null,
+          supervisor_id: p.payload.supervisor_id, supervisor: NOMBRES[p.payload.supervisor_id] ?? null,
+          etapa: p.etapas.length ? p.etapas[p.etapas.length - 1] : null,
+          etapas: p.etapas,
+          tiene_cal_ferm: p.calidades.includes('fermentado'),
+          cal_secado: p.calidades.filter((x) => x !== 'fermentado'),
+          cosechas: (p.payload.cosecha_ids ?? []).length,
+        })),
+    });
+  }
+
   if (req.url === '/v4/sync' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c));
     return req.on('end', () => {
@@ -190,6 +228,44 @@ const server = http.createServer((req, res) => {
           cerradas.add(k);
           // El id que vuelve es SIEMPRE el del AM, tambien en cosecha.
           rs.push({ guid: r.guid, status: 'created', id: am.id });
+          continue;
+        }
+        if (r.tipo === 'pc_proceso') {
+          const p = r.payload ?? {};
+          const dia = diasPendientes.find((d) => (p.cosecha_ids ?? []).some((i) => d.cosecha_ids.includes(i)));
+          const id = ++contador;
+          // El consecutivo por dia, como pc_lot_code_seq.
+          const ddd = String(Math.floor((new Date(dia.fecha) - new Date(dia.fecha.slice(0, 4) + '-01-01')) / 86400000) + 1).padStart(3, '0');
+          const nn = String([...partidas.values()].filter((x) => x.fecha_cosecha === dia.fecha).length + 1).padStart(2, '0');
+          partidas.set(r.guid, {
+            id, guid: r.guid, lot_code: `${ddd}${nn}${dia.fecha.slice(2, 4)}`,
+            fecha_cosecha: dia.fecha, peso_lote: dia.peso, payload: p,
+            etapas: [], calidades: [], cerrada: false,
+          });
+          rs.push({ guid: r.guid, status: 'created', id, lot_code: partidas.get(r.guid).lot_code });
+          continue;
+        }
+        if (r.tipo === 'pc_etapa' || r.tipo === 'pc_calidad_ferm'
+            || r.tipo === 'pc_calidad_sec' || r.tipo === 'pc_resultado') {
+          // Sin la partida el guid se OMITE: la cola reintenta. Misma regla
+          // que el PM sin su AM.
+          const part = partidas.get(r.payload?.proceso_guid);
+          if (!part) continue;
+          if (r.tipo === 'pc_etapa') {
+            if (part.etapas.includes(r.payload.etapa)) {
+              rs.push({ guid: r.guid, status: 'rejected',
+                        reason: `la etapa ${r.payload.etapa} de la partida ${part.lot_code} ya estaba registrada` });
+              continue;
+            }
+            part.etapas.push(r.payload.etapa);
+          } else if (r.tipo === 'pc_calidad_ferm') {
+            part.calidades.push('fermentado');
+          } else if (r.tipo === 'pc_calidad_sec') {
+            part.calidades.push(r.payload.etapa);
+          } else {
+            part.cerrada = true;
+          }
+          rs.push({ guid: r.guid, status: 'created', id: part.id });
           continue;
         }
         const id = ++contador;
