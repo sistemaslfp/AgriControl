@@ -47,8 +47,31 @@ interface Ref {
   nombre: string;
 }
 
-/** Una partida en pantalla, venga del servidor o del espejo local. */
-export interface Partida {
+/** Lo que se registró de una etapa. */
+export interface EtapaInfo {
+  inicio: string | null;
+  fin: string | null;
+  comentario: string | null;
+}
+
+export interface CalFerm {
+  buena: number;
+  ligera: number;
+  violeta: number;
+}
+
+export interface CalSec {
+  humedad1: number;
+  humedad2: number;
+  humedad3: number;
+  promedio: number;
+  granos: number | null;
+  indice: number | null;
+  vanosPct: number | null;
+}
+
+/** Un registro de postcosecha en pantalla, del servidor o del espejo local. */
+export interface Registro {
   guid: string;
   /** null mientras el servidor no haya contestado: se muestra "pendiente". */
   lotCode: string | null;
@@ -59,8 +82,9 @@ export interface Partida {
   pesoMallas: number;
   pesoBaba: number;
   cosechas: number;
-  etapas: Set<string>;
-  calidades: Set<string>;
+  etapas: Map<string, EtapaInfo>;
+  calFerm: CalFerm | null;
+  calSec: Map<string, CalSec>;
   soloLocal: boolean;
 }
 
@@ -74,23 +98,40 @@ interface FormHumedad {
   h1: number | null;
   h2: number | null;
   h3: number | null;
+  granos: number | null;
+  vanosG: number | null;
 }
 
 /**
  * Las cinco ventanas del detalle, en el orden en que ocurren. `resultado` no
  * es una etapa que se registre suelta: la escribe `pc_resultado` junto con el
  * peso final.
+ *
+ * `calidad` dice qué análisis se captura en esa ventana. **Secado a máquina no
+ * captura ninguno** (Kevin, 2026-09-08): sólo inicio, fin y el tiempo empleado.
+ * OJO con el dato histórico, que va al revés: de los 67 análisis de secado de
+ * v3, **49 son de Secado Máquina** y 18 de Secado Sol. Por eso la ventana
+ * igual MUESTRA el análisis si el registro ya lo trae — deja de pedirlo, no de
+ * mostrarlo.
  */
-const ETAPAS: { clave: string; nombre: string }[] = [
-  { clave: 'presecado', nombre: 'Presecado' },
-  { clave: 'fermentado', nombre: 'Fermentado' },
-  { clave: 'secado_sol', nombre: 'Secado (sol)' },
-  { clave: 'secado_maq', nombre: 'Secado (máquina)' },
-  { clave: 'resultado', nombre: 'Peso final' },
+const ETAPAS: { clave: string; nombre: string; calidad: 'grano' | 'humedad' | null }[] = [
+  { clave: 'presecado', nombre: 'Presecado', calidad: null },
+  { clave: 'fermentado', nombre: 'Fermentado', calidad: 'grano' },
+  { clave: 'secado_sol', nombre: 'Secado (sol)', calidad: 'humedad' },
+  { clave: 'secado_maq', nombre: 'Secado (máquina)', calidad: null },
+  { clave: 'resultado', nombre: 'Peso final', calidad: null },
 ];
 
+/**
+ * La muestra de grano pesa 500 g. No es un supuesto: en las **67 filas** de
+ * `z_postharvest_dryingquality` el índice guardado por v3 es exactamente
+ * `500 / número de granos`, sin una sola excepción. De ahí salen los dos
+ * indicadores del secado.
+ */
+const MUESTRA_G = 500;
+
 const VACIO: FormEtapa = { inicio: '', fin: '', comentario: '' };
-const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null };
+const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null, granos: null, vanosG: null };
 
 /**
  * Postcosecha — el proceso del cacao, de la balanza al peso final.
@@ -105,13 +146,8 @@ const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null };
  * exactamente como v3 guardaba las etapas salteadas (de 98 partidas, 42
  * tienen los dos secados y 13 no tienen ninguno).
  *
- * Tres cosas que la pantalla NO hace, a propósito:
- *
- * - **No pide el número de proceso.** El `lot_code` (dddnnaa) lo asigna el
- *   servidor. Sin señal la partida se crea igual y muestra "pendiente de
- *   número" hasta el ACK (decisión de Kevin, 2026-09-05).
- * - **No pide el peso del lote.** Sale de las cosechas elegidas.
- * - **No obliga a un orden de etapas.**
+ * Al volver a una etapa ya registrada se muestran **sus datos**, no un cartel
+ * de "ya está": lo que el supervisor quiere ahí es leer lo que cargó.
  */
 @Component({
   selector: 'app-postcosecha',
@@ -154,17 +190,18 @@ export class PostcosechaPage implements OnInit {
   private readonly toast = inject(ToastController);
 
   readonly etapasDef = ETAPAS;
+  readonly muestraG = MUESTRA_G;
 
-  /** 'lista' | 'nueva' | 'detalle' */
-  readonly vista = signal<'lista' | 'nueva' | 'detalle'>('lista');
+  /** 'lista' | 'nuevo' | 'detalle' */
+  readonly vista = signal<'lista' | 'nuevo' | 'detalle'>('lista');
 
-  readonly partidas = signal<Partida[]>([]);
+  readonly registros = signal<Registro[]>([]);
   readonly cargandoLista = signal(false);
   readonly listaDesdeServidor = signal(false);
   readonly errorLista = signal<string | null>(null);
   readonly guardando = signal(false);
 
-  // --- Nueva partida (pesaje) ---
+  // --- Nuevo registro (pesaje) ---
   readonly fechaInicio = signal('');
   readonly horaInicio = signal('');
   readonly supervisor = signal<Ref | null>(null);
@@ -176,7 +213,7 @@ export class PostcosechaPage implements OnInit {
   readonly errorDias = signal<string | null>(null);
 
   // --- Detalle ---
-  readonly partida = signal<Partida | null>(null);
+  readonly registro = signal<Registro | null>(null);
   readonly paso = signal(0);
   private readonly formEtapa = signal<Record<string, FormEtapa>>({});
   private readonly formHumedad = signal<Record<string, FormHumedad>>({});
@@ -237,7 +274,7 @@ export class PostcosechaPage implements OnInit {
 
   readonly problemasPesaje = computed(() => {
     const p: string[] = [];
-    if (!this.supervisor()) p.push('Falta el supervisor de la partida.');
+    if (!this.supervisor()) p.push('Falta el supervisor del registro.');
     if (!this.fechaInicio() || !this.horaInicio()) p.push('Falta la fecha de inicio.');
     if (this.diasElegidos().length === 0) p.push('Elegí al menos un día de cosecha.');
     const m = this.pesoMallas();
@@ -272,17 +309,42 @@ export class PostcosechaPage implements OnInit {
   }
 
   // ------------------------------------------------------------------
-  // Lista de partidas abiertas
+  // Lista de registros abiertos
   // ------------------------------------------------------------------
 
   async cargarLista(): Promise<void> {
     this.cargandoLista.set(true);
     this.errorLista.set(null);
 
-    const locales = await this.local.abiertasLocales();
-    const mapa = new Map<string, Partida>();
+    const locales = await this.local.abiertosLocales();
+    const mapa = new Map<string, Registro>();
     for (const l of locales) {
       const cargado = await this.local.cargadoLocal(l.guid);
+      const etapas = new Map<string, EtapaInfo>();
+      for (const [clave, e] of cargado.etapas) {
+        etapas.set(clave, { inicio: e.inicio, fin: e.fin, comentario: e.comentario });
+      }
+      const calSec = new Map<string, CalSec>();
+      let calFerm: CalFerm | null = null;
+      for (const [clave, d] of cargado.calidades) {
+        if (clave === 'fermentado') {
+          calFerm = {
+            buena: Number(d['buena'] ?? 0),
+            ligera: Number(d['ligera'] ?? 0),
+            violeta: Number(d['violeta'] ?? 0),
+          };
+        } else {
+          calSec.set(clave, {
+            humedad1: Number(d['humedad_1'] ?? 0),
+            humedad2: Number(d['humedad_2'] ?? 0),
+            humedad3: Number(d['humedad_3'] ?? 0),
+            promedio: Number(d['humedad_promedio'] ?? 0),
+            granos: d['granos_muestra'] == null ? null : Number(d['granos_muestra']),
+            indice: d['indice_grano_g'] == null ? null : Number(d['indice_grano_g']),
+            vanosPct: d['granos_vacios_pct'] == null ? null : Number(d['granos_vacios_pct']),
+          });
+        }
+      }
       mapa.set(l.guid, {
         guid: l.guid,
         lotCode: null,
@@ -293,8 +355,9 @@ export class PostcosechaPage implements OnInit {
         pesoMallas: l.pesoMallas,
         pesoBaba: Math.round((l.pesoLote - l.pesoMallas) * 100) / 100,
         cosechas: l.cosechas,
-        etapas: cargado.etapas,
-        calidades: cargado.calidades,
+        etapas,
+        calFerm,
+        calSec,
         soloLocal: true,
       });
     }
@@ -304,39 +367,62 @@ export class PostcosechaPage implements OnInit {
         const r = await this.api.postcosechaAbiertas();
         for (const p of r.partidas) {
           // Gana el servidor: trae el lot_code y lo que cargaron otros equipos.
-          // Las etapas locales se suman, no se pisan: una etapa recién
-          // capturada sin señal todavía no está allá.
-          mapa.set(p.guid, this.aPartida(p, mapa.get(p.guid)));
+          // Lo local se suma, no se pisa: una etapa recién capturada sin señal
+          // todavía no está allá.
+          mapa.set(p.guid, this.aRegistro(p, mapa.get(p.guid)));
         }
         this.listaDesdeServidor.set(true);
       } catch {
         this.listaDesdeServidor.set(false);
         this.errorLista.set(
-          'Sin respuesta del servidor: se muestran solo las partidas de este equipo.',
+          'Sin respuesta del servidor: se muestran solo los registros de este equipo.',
         );
       }
     } else {
       this.listaDesdeServidor.set(false);
     }
 
-    this.partidas.set(
+    this.registros.set(
       [...mapa.values()].sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio)),
     );
     this.cargandoLista.set(false);
 
-    const abierta = this.partida();
-    if (abierta) {
-      const nueva = this.partidas().find((x) => x.guid === abierta.guid);
-      if (nueva) this.partida.set(nueva);
+    const abierto = this.registro();
+    if (abierto) {
+      const nuevo = this.registros().find((x) => x.guid === abierto.guid);
+      if (nuevo) this.registro.set(nuevo);
     }
   }
 
-  private aPartida(p: PartidaApi, previo?: Partida): Partida {
-    const etapas = new Set<string>(p.etapas ?? []);
-    const calidades = new Set<string>(p.cal_secado ?? []);
-    if (p.tiene_cal_ferm) calidades.add('fermentado');
-    for (const e of previo?.etapas ?? []) etapas.add(e);
-    for (const c of previo?.calidades ?? []) calidades.add(c);
+  private aRegistro(p: PartidaApi, previo?: Registro): Registro {
+    const etapas = new Map<string, EtapaInfo>();
+    for (const e of p.etapas ?? []) {
+      etapas.set(e.etapa, { inicio: e.inicio, fin: e.fin, comentario: e.comentario });
+    }
+    for (const [clave, info] of previo?.etapas ?? []) {
+      if (!etapas.has(clave)) etapas.set(clave, info);
+    }
+
+    const calSec = new Map<string, CalSec>();
+    for (const q of p.cal_secado ?? []) {
+      calSec.set(q.etapa, {
+        humedad1: q.humedad_1,
+        humedad2: q.humedad_2,
+        humedad3: q.humedad_3,
+        promedio: q.humedad_promedio,
+        granos: q.granos_muestra,
+        indice: q.indice_grano_g,
+        vanosPct: q.granos_vacios_pct,
+      });
+    }
+    for (const [clave, info] of previo?.calSec ?? []) {
+      if (!calSec.has(clave)) calSec.set(clave, info);
+    }
+
+    const calFerm: CalFerm | null = p.cal_ferm
+      ? { buena: p.cal_ferm.buena, ligera: p.cal_ferm.ligera, violeta: p.cal_ferm.violeta }
+      : (previo?.calFerm ?? null);
+
     return {
       guid: p.guid,
       lotCode: p.lot_code,
@@ -348,19 +434,20 @@ export class PostcosechaPage implements OnInit {
       pesoBaba: p.peso_baba,
       cosechas: p.cosechas,
       etapas,
-      calidades,
+      calFerm,
+      calSec,
       soloLocal: false,
     };
   }
 
   /**
-   * En qué etapa está la partida: la última registrada, por nombre. La lista
+   * En qué etapa está el registro: la última registrada, por nombre. La lista
    * decía "N etapa(s)" y eso no le sirve a nadie — lo que se pregunta al
-   * mirar la lista es en qué anda cada partida.
+   * mirar la lista es en qué anda cada uno.
    */
-  etapaDe(p: Partida): string {
+  etapaDe(r: Registro): string {
     for (let i = ETAPAS.length - 1; i >= 0; i--) {
-      if (p.etapas.has(ETAPAS[i].clave)) {
+      if (r.etapas.has(ETAPAS[i].clave)) {
         return ETAPAS[i].nombre;
       }
     }
@@ -368,11 +455,11 @@ export class PostcosechaPage implements OnInit {
   }
 
   // ------------------------------------------------------------------
-  // Nueva partida
+  // Nuevo registro
   // ------------------------------------------------------------------
 
-  async nueva(): Promise<void> {
-    this.vista.set('nueva');
+  async nuevo(): Promise<void> {
+    this.vista.set('nuevo');
     this.diasElegidos.set([]);
     this.pesoMallas.set(null);
     this.comentario.set('');
@@ -397,7 +484,7 @@ export class PostcosechaPage implements OnInit {
     } catch {
       // A diferencia del resto de la app, esta lista NO se puede resolver
       // offline: el servidor es el unico que sabe que cosechas ya entraron en
-      // otra partida, y elegir a ciegas termina en un rechazo.
+      // otro registro, y elegir a ciegas termina en un rechazo.
       this.errorDias.set('Sin respuesta del servidor: no se pueden traer los días de cosecha.');
     }
     this.cargandoDias.set(false);
@@ -437,21 +524,25 @@ export class PostcosechaPage implements OnInit {
     );
   }
 
+  /**
+   * El pesaje ARRANCA el presecado, como en v3: el botón de esa pantalla decía
+   * "INICIAR PRESECADO" y la fecha de inicio del presecado es la misma del
+   * pesaje. Van dos registros a la cola, en orden: el proceso y su etapa.
+   */
   async guardarPesaje(): Promise<void> {
     if (!this.puedeGuardarPesaje()) return;
     this.guardando.set(true);
     try {
       const inicio = this.fechas.conOffset(`${this.fechaInicio()}T${this.horaInicio()}:00`);
       const fechaCosecha = [...this.diasElegidos()].sort()[0];
-      const payload = {
+      const guid = await this.cola.enqueue('pc_proceso', {
         supervisor_id: this.supervisor()!.id,
         fecha_inicio: inicio,
         peso_mallas: this.pesoMallas(),
         cosecha_ids: this.cosechasElegidas(),
         comentario: this.comentario().trim(),
-      };
-      const guid = await this.cola.enqueue('pc_proceso', payload);
-      await this.local.registrarPartida({
+      });
+      await this.local.registrarProceso({
         guid,
         fechaCosecha,
         fechaInicio: inicio,
@@ -462,7 +553,17 @@ export class PostcosechaPage implements OnInit {
         cosechas: this.cosechasElegidas().length,
         cerrada: false,
       });
-      await this.aviso('Partida iniciada. El número de proceso llega con el envío.');
+
+      await this.cola.enqueue('pc_etapa', {
+        proceso_guid: guid,
+        etapa: 'presecado',
+        inicio,
+        fin: null,
+        comentario: '',
+      });
+      await this.local.registrarEtapa(guid, 'presecado', inicio, null, null);
+
+      await this.aviso('Registro iniciado en presecado. El número llega con el envío.');
     } finally {
       this.guardando.set(false);
     }
@@ -474,8 +575,8 @@ export class PostcosechaPage implements OnInit {
   // Detalle: una ventana por etapa, sin orden obligatorio
   // ------------------------------------------------------------------
 
-  abrir(p: Partida): void {
-    this.partida.set(p);
+  abrir(r: Registro): void {
+    this.registro.set(r);
     const ahora = this.fechas.ahoraLocal();
     const formularios: Record<string, FormEtapa> = {};
     const humedades: Record<string, FormHumedad> = {};
@@ -491,13 +592,13 @@ export class PostcosechaPage implements OnInit {
     this.pesoFinal.set(null);
     // Se abre en la etapa que sigue a la última registrada, pero se puede ir
     // a cualquiera: la barra de pasos no bloquea nada.
-    const hechas = ETAPAS.filter((e) => p.etapas.has(e.clave)).length;
+    const hechas = ETAPAS.filter((e) => r.etapas.has(e.clave)).length;
     this.paso.set(Math.min(hechas, ETAPAS.length - 1));
     this.vista.set('detalle');
   }
 
   volver(): void {
-    this.partida.set(null);
+    this.registro.set(null);
     this.vista.set('lista');
   }
 
@@ -512,11 +613,22 @@ export class PostcosechaPage implements OnInit {
   }
 
   etapaHecha(clave: string): boolean {
-    return this.partida()?.etapas.has(clave) ?? false;
+    return this.registro()?.etapas.has(clave) ?? false;
+  }
+
+  /** Los datos de una etapa ya registrada, para mostrarlos al volver. */
+  infoEtapa(clave: string): EtapaInfo | null {
+    return this.registro()?.etapas.get(clave) ?? null;
+  }
+
+  calSecDe(clave: string): CalSec | null {
+    return this.registro()?.calSec.get(clave) ?? null;
   }
 
   calidadHecha(clave: string): boolean {
-    return this.partida()?.calidades.has(clave) ?? false;
+    return clave === 'fermentado'
+      ? this.registro()?.calFerm != null
+      : this.registro()?.calSec.has(clave) ?? false;
   }
 
   // --- Formulario de la etapa visible ---
@@ -546,58 +658,97 @@ export class PostcosechaPage implements OnInit {
   }
 
   async registrarEtapa(clave: string): Promise<void> {
-    const p = this.partida();
-    if (!p || !this.puedeRegistrarEtapa(clave)) return;
+    const r = this.registro();
+    if (!r || !this.puedeRegistrarEtapa(clave)) return;
     this.guardando.set(true);
     try {
       const f = this.formEtapa()[clave];
-      const payload = {
-        proceso_guid: p.guid,
+      const inicio = this.fechas.conOffset(f.inicio);
+      const fin = f.fin ? this.fechas.conOffset(f.fin) : null;
+      const comentario = f.comentario.trim();
+      await this.cola.enqueue('pc_etapa', {
+        proceso_guid: r.guid,
         etapa: clave,
-        inicio: this.fechas.conOffset(f.inicio),
-        fin: f.fin ? this.fechas.conOffset(f.fin) : null,
-        comentario: f.comentario.trim(),
-      };
-      await this.cola.enqueue('pc_etapa', payload);
-      await this.local.registrarEtapa(p.guid, clave);
-      p.etapas.add(clave);
-      this.partida.set({ ...p });
+        inicio,
+        fin,
+        comentario,
+      });
+      await this.local.registrarEtapa(r.guid, clave, inicio, fin, comentario || null);
+      r.etapas.set(clave, { inicio, fin, comentario: comentario || null });
+      this.registro.set({ ...r });
       await this.aviso('Etapa registrada. Se envía sola cuando haya red.');
     } finally {
       this.guardando.set(false);
     }
   }
 
-  // --- Calidad ---
+  // --- Calidad de fermentación, con sus porcentajes ---
+
+  readonly totalGrano = computed(
+    () => (this.granoBuena() ?? 0) + (this.granoLigera() ?? 0) + (this.granoVioleta() ?? 0),
+  );
+
+  /** (parte * 100) / total, redondeado a dos decimales. 0 si no hay total. */
+  porcentaje(parte: number | null, total: number): number {
+    if (!total) return 0;
+    return Math.round(((parte ?? 0) * 100 * 100) / total) / 100;
+  }
 
   readonly problemasGrano = computed(() => {
     const v = [this.granoBuena(), this.granoLigera(), this.granoVioleta()];
     if (v.some((x) => x === null || x < 0)) return ['Cargá los tres conteos de grano.'];
-    if (v.reduce((a: number, x) => a + (x ?? 0), 0) === 0) {
-      return ['El corte de grano no puede ser todo ceros.'];
-    }
+    if (this.totalGrano() === 0) return ['El corte de grano no puede ser todo ceros.'];
     return [];
   });
 
   async registrarGrano(): Promise<void> {
-    const p = this.partida();
-    if (!p || this.problemasGrano().length > 0 || this.guardando()) return;
+    const r = this.registro();
+    if (!r || this.problemasGrano().length > 0 || this.guardando()) return;
     this.guardando.set(true);
     try {
+      // Los porcentajes NO viajan: se calculan de los tres conteos. Guardar un
+      // derivado es guardarse una inconsistencia futura.
+      const datos = {
+        buena: this.granoBuena() as number,
+        ligera: this.granoLigera() as number,
+        violeta: this.granoVioleta() as number,
+      };
       await this.cola.enqueue('pc_calidad_ferm', {
-        proceso_guid: p.guid,
+        proceso_guid: r.guid,
         fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
-        buena: this.granoBuena(),
-        ligera: this.granoLigera(),
-        violeta: this.granoVioleta(),
+        ...datos,
       });
-      await this.local.registrarCalidad(p.guid, 'fermentado');
-      p.calidades.add('fermentado');
-      this.partida.set({ ...p });
+      await this.local.registrarCalidad(r.guid, 'fermentado', datos);
+      r.calFerm = datos;
+      this.registro.set({ ...r });
       await this.aviso('Corte de grano registrado.');
     } finally {
       this.guardando.set(false);
     }
+  }
+
+  // --- Calidad de secado, con promedio, índice y % de vanos ---
+
+  promedioHumedad(clave: string): number {
+    const v = [
+      this.humedad(clave, 'h1'),
+      this.humedad(clave, 'h2'),
+      this.humedad(clave, 'h3'),
+    ];
+    if (v.some((x) => x === null)) return 0;
+    return Math.round(((v[0] as number) + (v[1] as number) + (v[2] as number)) / 3 * 100) / 100;
+  }
+
+  /** Índice de grano: gramos por grano en la muestra de 500 g. */
+  indiceGrano(clave: string): number {
+    const n = this.humedad(clave, 'granos');
+    return n ? Math.round((MUESTRA_G / n) * 1000) / 1000 : 0;
+  }
+
+  /** Porcentaje de vanos: los gramos vanos sobre los 500 g de la muestra. */
+  porcentajeVanos(clave: string): number {
+    const g = this.humedad(clave, 'vanosG');
+    return g ? Math.round(((g * 100) / MUESTRA_G) * 100) / 100 : 0;
   }
 
   problemasHumedad(clave: string): string[] {
@@ -616,21 +767,42 @@ export class PostcosechaPage implements OnInit {
   }
 
   async registrarHumedad(clave: string): Promise<void> {
-    const p = this.partida();
-    if (!p || !this.puedeRegistrarHumedad(clave)) return;
+    const r = this.registro();
+    if (!r || !this.puedeRegistrarHumedad(clave)) return;
     this.guardando.set(true);
     try {
-      await this.cola.enqueue('pc_calidad_sec', {
-        proceso_guid: p.guid,
-        etapa: clave,
-        fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
+      const granos = this.humedad(clave, 'granos');
+      // `humedad_promedio` es columna generada en la base: no se manda.
+      // `indice_grano_g` y `granos_vacios_pct` sí, porque son las columnas que
+      // v3 ya llenaba y los reportes leen.
+      const datos = {
         humedad_1: this.humedad(clave, 'h1'),
         humedad_2: this.humedad(clave, 'h2'),
         humedad_3: this.humedad(clave, 'h3'),
+        granos_muestra: granos,
+        indice_grano_g: granos ? this.indiceGrano(clave) : null,
+        granos_vacios_pct: this.humedad(clave, 'vanosG') === null ? null : this.porcentajeVanos(clave),
+      };
+      await this.cola.enqueue('pc_calidad_sec', {
+        proceso_guid: r.guid,
+        etapa: clave,
+        fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
+        ...datos,
       });
-      await this.local.registrarCalidad(p.guid, clave);
-      p.calidades.add(clave);
-      this.partida.set({ ...p });
+      await this.local.registrarCalidad(r.guid, clave, {
+        ...datos,
+        humedad_promedio: this.promedioHumedad(clave),
+      });
+      r.calSec.set(clave, {
+        humedad1: this.humedad(clave, 'h1') as number,
+        humedad2: this.humedad(clave, 'h2') as number,
+        humedad3: this.humedad(clave, 'h3') as number,
+        promedio: this.promedioHumedad(clave),
+        granos,
+        indice: granos ? this.indiceGrano(clave) : null,
+        vanosPct: this.humedad(clave, 'vanosG') === null ? null : this.porcentajeVanos(clave),
+      });
+      this.registro.set({ ...r });
       await this.aviso('Análisis de secado registrado.');
     } finally {
       this.guardando.set(false);
@@ -641,23 +813,23 @@ export class PostcosechaPage implements OnInit {
 
   readonly puedeCerrar = computed(() => (this.pesoFinal() ?? 0) > 0 && !this.guardando());
 
-  /** El peso final CIERRA la partida: el servidor deja además la etapa. */
+  /** El peso final CIERRA el registro: el servidor deja además la etapa. */
   async cerrar(): Promise<void> {
-    const p = this.partida();
-    if (!p || !this.puedeCerrar()) return;
+    const r = this.registro();
+    if (!r || !this.puedeCerrar()) return;
     this.guardando.set(true);
     try {
       await this.cola.enqueue('pc_resultado', {
-        proceso_guid: p.guid,
+        proceso_guid: r.guid,
         fecha: this.fechas.conOffset(this.fechas.ahoraLocal()),
         peso_final: this.pesoFinal(),
       });
-      await this.local.cerrarPartida(p.guid);
-      await this.aviso(`Partida cerrada con ${this.pesoFinal()} lb.`);
+      await this.local.cerrarProceso(r.guid);
+      await this.aviso(`Registro cerrado con ${this.pesoFinal()} lb.`);
     } finally {
       this.guardando.set(false);
     }
-    this.partida.set(null);
+    this.registro.set(null);
     this.vista.set('lista');
     await this.cargarLista();
   }
@@ -708,6 +880,38 @@ export class PostcosechaPage implements OnInit {
     if (typeof valor === 'string' && valor) {
       this.horaInicio.set(valor.length > 5 ? valor.slice(11, 16) : valor.slice(0, 5));
     }
+  }
+
+  /** 'YYYY-MM-DDTHH:mm:ss±hh:mm' o 'YYYY-MM-DD HH:mm:ss' -> 'YYYY-MM-DD HH:mm'. */
+  fechaCorta(valor: string | null): string {
+    if (!valor) return '—';
+    return valor.replace('T', ' ').slice(0, 16);
+  }
+
+  /**
+   * Tiempo empleado entre dos marcas. En v3 salía siempre "0 días, 0 horas"
+   * porque inicio y fin se escribían en el mismo instante; acá los dos los
+   * elige el supervisor, así que el número dice algo.
+   */
+  duracion(inicio: string | null, fin: string | null): string {
+    if (!inicio || !fin) return '—';
+    const a = new Date(inicio.replace(' ', 'T')).getTime();
+    const b = new Date(fin.replace(' ', 'T')).getTime();
+    if (Number.isNaN(a) || Number.isNaN(b) || b < a) return '—';
+    const min = Math.round((b - a) / 60000);
+    const d = Math.floor(min / 1440);
+    const h = Math.floor((min % 1440) / 60);
+    const m = min % 60;
+    const partes: string[] = [];
+    if (d) partes.push(`${d} d`);
+    if (h) partes.push(`${h} h`);
+    if (m || partes.length === 0) partes.push(`${m} min`);
+    return partes.join(' ');
+  }
+
+  /** El tiempo empleado de la etapa que se está cargando, en vivo. */
+  duracionForm(clave: string): string {
+    return this.duracion(this.campo(clave, 'inicio'), this.campo(clave, 'fin'));
   }
 
   numero(valor: unknown): number | null {

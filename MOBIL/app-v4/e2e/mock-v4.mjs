@@ -171,10 +171,10 @@ const server = http.createServer((req, res) => {
           peso_baba: Math.round((p.peso_lote - Number(p.payload.peso_mallas)) * 100) / 100,
           comentario: p.payload.comentario ?? null,
           supervisor_id: p.payload.supervisor_id, supervisor: NOMBRES[p.payload.supervisor_id] ?? null,
-          etapa: p.etapas.length ? p.etapas[p.etapas.length - 1] : null,
+          etapa: p.etapas.length ? p.etapas[p.etapas.length - 1].etapa : null,
           etapas: p.etapas,
-          tiene_cal_ferm: p.calidades.includes('fermentado'),
-          cal_secado: p.calidades.filter((x) => x !== 'fermentado'),
+          cal_ferm: p.calFerm,
+          cal_secado: p.calSec,
           cosechas: (p.payload.cosecha_ids ?? []).length,
         })),
     });
@@ -240,7 +240,7 @@ const server = http.createServer((req, res) => {
           partidas.set(r.guid, {
             id, guid: r.guid, lot_code: `${ddd}${nn}${dia.fecha.slice(2, 4)}`,
             fecha_cosecha: dia.fecha, peso_lote: dia.peso, payload: p,
-            etapas: [], calidades: [], cerrada: false,
+            etapas: [], calFerm: null, calSec: [], cerrada: false,
           });
           rs.push({ guid: r.guid, status: 'created', id, lot_code: partidas.get(r.guid).lot_code });
           continue;
@@ -252,16 +252,28 @@ const server = http.createServer((req, res) => {
           const part = partidas.get(r.payload?.proceso_guid);
           if (!part) continue;
           if (r.tipo === 'pc_etapa') {
-            if (part.etapas.includes(r.payload.etapa)) {
+            if (part.etapas.some((e) => e.etapa === r.payload.etapa)) {
               rs.push({ guid: r.guid, status: 'rejected',
                         reason: `la etapa ${r.payload.etapa} de la partida ${part.lot_code} ya estaba registrada` });
               continue;
             }
-            part.etapas.push(r.payload.etapa);
+            part.etapas.push({ etapa: r.payload.etapa, inicio: r.payload.inicio,
+                               fin: r.payload.fin ?? null, comentario: r.payload.comentario || null });
           } else if (r.tipo === 'pc_calidad_ferm') {
-            part.calidades.push('fermentado');
+            part.calFerm = { fecha_muestra: r.payload.fecha_muestra, buena: r.payload.buena,
+                             ligera: r.payload.ligera, violeta: r.payload.violeta };
           } else if (r.tipo === 'pc_calidad_sec') {
-            part.calidades.push(r.payload.etapa);
+            const q = r.payload;
+            // `humedad_promedio` es columna generada en la base real: el mock
+            // la calcula para devolver lo mismo que devolveria el servidor.
+            part.calSec.push({
+              etapa: q.etapa, fecha_muestra: q.fecha_muestra,
+              humedad_1: q.humedad_1, humedad_2: q.humedad_2, humedad_3: q.humedad_3,
+              humedad_promedio: Math.round(((q.humedad_1 + q.humedad_2 + q.humedad_3) / 3) * 1000) / 1000,
+              granos_muestra: q.granos_muestra ?? null,
+              indice_grano_g: q.indice_grano_g ?? null,
+              granos_vacios_pct: q.granos_vacios_pct ?? null,
+            });
           } else {
             part.cerrada = true;
           }

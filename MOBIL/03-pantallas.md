@@ -372,6 +372,37 @@ hizo, se pasa de largo y queda en blanco. Cada ventana lleva su propio análisis
 —el corte de grano en Fermentado, la humedad en cada secado, **con lecturas
 independientes por secado**—.
 
+**En pantalla se dice REGISTRO, no partida** (Kevin, 2026-09-08). La base y la
+API siguen diciendo `pc_proceso` / `partidas`.
+
+**Al volver a una etapa ya registrada se muestran SUS DATOS** —inicio, fin,
+comentarios, y el análisis si lo tiene—, no un cartel de "ya está": lo que el
+supervisor quiere ahí es leer lo que cargó. Por eso
+`GET /v4/postcosecha_abiertas` devuelve las etapas con sus columnas y no sólo
+sus nombres.
+
+**Los indicadores se calculan en vivo, mientras se teclea, y NO se guardan si
+son derivables:**
+
+- Fermentado: `(buena|ligera|violeta) × 100 ÷ (buena+ligera+violeta)`. Sólo
+  viajan los tres conteos.
+- Secado al sol: promedio de humedad (columna generada en la base), **índice de
+  granos = 500 ÷ número de granos** y **porcentaje de vanos = granos vanos (g)
+  × 100 ÷ 500**. La muestra de 500 g no es un supuesto: en las **67 filas** de
+  `z_postharvest_dryingquality` el índice que guardó v3 es exactamente
+  `500 / sample_bean_count`, sin una excepción. `indice_grano_g` y
+  `granos_vacios_pct` sí viajan, porque son las columnas que v3 ya llenaba y
+  los reportes leen; el promedio no.
+- **Secado a máquina NO pide datos de calidad** (Kevin, 2026-09-08): sólo
+  inicio, fin y el **tiempo empleado**, que se calcula en vivo mientras se
+  cargan las dos fechas y queda en la ficha de la etapa. **OJO con el
+  histórico, que va al revés**: de los 67 análisis de secado de v3, **49 son de
+  Secado Máquina** y 18 de Secado Sol. Por eso la ventana deja de PEDIR el
+  análisis pero sigue MOSTRÁNDOLO si el registro ya lo trae.
+- El **tiempo empleado** aparece en toda etapa que tenga fin. En v3 salía
+  siempre "0 días, 0 horas" porque inicio y fin se escribían en el mismo
+  instante; acá los elige el supervisor, así que el número dice algo.
+
 La versión anterior ponía las cuatro etapas como cuatro botones en la misma
 pantalla, y cada uno cambiaba su propio texto a "registrada". Kevin lo reportó
 como confuso: no se distinguía qué botón se había apretado.
@@ -389,6 +420,9 @@ Flujo observado en las capturas:
    (**el mismo selector de checkbox que el resto de la app**, con el peso y los
    sacos de cada día como detalle: `2026-08-17 · 2779.7 lb · 9 saco(s)`), Peso
    Mallas (vacías) y Comentarios. El peso del lote y el peso baba se calculan.
+   **El botón dice `INICIAR PRESECADO` y hace exactamente eso**: guardar el
+   registro ARRANCA el presecado con la misma fecha de inicio, como en v3. Van
+   dos registros a la cola, en orden: el proceso y su etapa.
 2. **Presecado** — muestra No. Proceso, Peso lote, Peso Mallas,
    **Peso Baba** (= peso lote − peso mallas, calculado), fecha inicio,
    comentarios → `INICIAR FERMENTADO`.

@@ -29,10 +29,10 @@
     </div>
   }
 
-  <!-- ==================== Lista de partidas abiertas ==================== -->
+  <!-- ==================== Lista de registros abiertos ==================== -->
   @if (vista() === 'lista') {
     <div class="cabecera-trabajador">
-      <h2 class="titulo-seccion">Partidas en proceso</h2>
+      <h2 class="titulo-seccion">Registros en proceso</h2>
       @if (cargandoLista()) {
         <ion-spinner name="crescent" class="spinner-boton"></ion-spinner>
       }
@@ -45,16 +45,16 @@
       </div>
     }
 
-    @if (!cargandoLista() && partidas().length === 0) {
-      <div class="banner info">No hay partidas en proceso.</div>
+    @if (!cargandoLista() && registros().length === 0) {
+      <div class="banner info">No hay registros en proceso.</div>
     } @else {
       <ion-list inset="true">
-        @for (p of partidas(); track p.guid) {
-          <ion-item button="true" detail="true" (click)="abrir(p)" class="partida">
+        @for (r of registros(); track r.guid) {
+          <ion-item button="true" detail="true" (click)="abrir(r)" class="registro">
             <ion-label>
               <h3>
-                @if (p.lotCode) {
-                  {{ p.lotCode }}
+                @if (r.lotCode) {
+                  {{ r.lotCode }}
                 } @else {
                   <span class="sin-numero">
                     <ion-icon name="hourglass-outline"></ion-icon>
@@ -62,25 +62,25 @@
                   </span>
                 }
               </h3>
-              <p>Cosecha del {{ p.fechaCosecha }} · {{ p.cosechas }} registro(s)</p>
-              <p>{{ p.pesoLote }} lb · baba {{ p.pesoBaba }} lb</p>
+              <p>Cosecha del {{ r.fechaCosecha }} · {{ r.cosechas }} registro(s) de cosecha</p>
+              <p>{{ r.pesoLote }} lb · baba {{ r.pesoBaba }} lb</p>
             </ion-label>
-            <ion-note slot="end" class="etapa-actual">{{ etapaDe(p) }}</ion-note>
+            <ion-note slot="end" class="etapa-actual">{{ etapaDe(r) }}</ion-note>
           </ion-item>
         }
       </ion-list>
     }
 
     <div class="fila-botones">
-      <ion-button expand="block" (click)="nueva()" class="nueva-partida">
+      <ion-button expand="block" (click)="nuevo()" class="nuevo-registro">
         <ion-icon slot="start" name="add-outline"></ion-icon>
-        Nueva partida
+        Nuevo registro
       </ion-button>
     </div>
   }
 
-  <!-- ==================== Pesaje: nueva partida ==================== -->
-  @if (vista() === 'nueva') {
+  <!-- ==================== Pesaje: nuevo registro ==================== -->
+  @if (vista() === 'nuevo') {
     <ion-list inset="true">
       <ion-item>
         <ion-label>Fecha de inicio</ion-label>
@@ -187,8 +187,9 @@
     </ion-list>
 
     <div class="banner info">
-      El número de proceso lo asigna el servidor: aparece cuando el registro se
-      envía.
+      Al guardar, el registro <strong>arranca en presecado</strong> con esta
+      misma fecha de inicio. El número de proceso lo asigna el servidor: aparece
+      cuando el registro se envía.
     </div>
 
     @if (problemasPesaje().length > 0) {
@@ -206,22 +207,22 @@
         expand="block"
         [disabled]="!puedeGuardarPesaje()"
         (click)="guardarPesaje()"
-        class="iniciar-partida"
+        class="iniciar-registro"
       >
         <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
-        Iniciar partida
+        Iniciar presecado
       </ion-button>
     </div>
   }
 
   <!-- ==================== Detalle: una ventana por etapa ==================== -->
-  @if (vista() === 'detalle' && partida(); as p) {
+  @if (vista() === 'detalle' && registro(); as r) {
     <ion-list inset="true">
       <ion-item>
         <ion-label>
           <h3 class="lot-code">
-            @if (p.lotCode) {
-              {{ p.lotCode }}
+            @if (r.lotCode) {
+              {{ r.lotCode }}
             } @else {
               <span class="sin-numero">
                 <ion-icon name="hourglass-outline"></ion-icon>
@@ -229,8 +230,8 @@
               </span>
             }
           </h3>
-          <p>Cosecha del {{ p.fechaCosecha }} · {{ p.cosechas }} registro(s)</p>
-          <p>Lote {{ p.pesoLote }} lb · mallas {{ p.pesoMallas }} lb · baba {{ p.pesoBaba }} lb</p>
+          <p>Cosecha del {{ r.fechaCosecha }} · {{ r.cosechas }} registro(s) de cosecha</p>
+          <p>Lote {{ r.pesoLote }} lb · mallas {{ r.pesoMallas }} lb · baba {{ r.pesoBaba }} lb</p>
         </ion-label>
       </ion-item>
     </ion-list>
@@ -243,15 +244,30 @@
     <!-- ---------- Etapas 1..4 ---------- -->
     @if (etapa.clave !== 'resultado') {
       @if (etapaHecha(etapa.clave)) {
-        <div class="banner info registrada">
-          <ion-icon name="checkmark-circle-outline"></ion-icon>
-          Etapa registrada. No se puede volver a enviar.
-        </div>
+        @if (infoEtapa(etapa.clave); as info) {
+          <ion-list inset="true" class="info-etapa">
+            <ion-item>
+              <ion-label>Inicio</ion-label>
+              <ion-note slot="end" class="info-inicio">{{ fechaCorta(info.inicio) }}</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Fin</ion-label>
+              <ion-note slot="end" class="info-fin">{{ fechaCorta(info.fin) }}</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Tiempo empleado</ion-label>
+              <ion-note slot="end" class="info-duracion">
+                {{ duracion(info.inicio, info.fin) }}
+              </ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Comentarios</ion-label>
+              <ion-note slot="end">{{ info.comentario || '—' }}</ion-note>
+            </ion-item>
+          </ion-list>
+        }
       } @else {
-        <div class="banner info sin-registrar">
-          Sin registrar. <strong>Si esta etapa no se realizó, seguí a la
-          siguiente</strong>: se guarda en blanco y la partida avanza igual.
-        </div>
+
 
         <ion-list inset="true">
           <ion-item>
@@ -273,6 +289,10 @@
               [value]="campo(etapa.clave, 'fin')"
               (ionInput)="setCampo(etapa.clave, 'fin', $any($event.target).value)"
             ></ion-input>
+          </ion-item>
+          <ion-item>
+            <ion-label>Tiempo empleado</ion-label>
+            <ion-note slot="end" class="ind-duracion">{{ duracionForm(etapa.clave) }}</ion-note>
           </ion-item>
           <ion-item>
             <ion-input
@@ -299,11 +319,31 @@
         </div>
       }
 
-      <!-- Calidad del fermentado: no depende de que la etapa esté registrada -->
-      @if (etapa.clave === 'fermentado') {
+      <!-- Corte de grano: vive en fermentado y no depende de que la etapa esté -->
+      @if (etapa.calidad === 'grano') {
         <h3 class="titulo-seccion">Corte de grano</h3>
-        @if (calidadHecha('fermentado')) {
-          <div class="banner info">Corte de grano ya registrado.</div>
+        @if (r.calFerm; as q) {
+          @let tot = q.buena + q.ligera + q.violeta;
+          <ion-list inset="true" class="info-grano">
+            <ion-item>
+              <ion-label>Buena</ion-label>
+              <ion-note slot="end" class="pct-buena">
+                {{ q.buena }} · {{ porcentaje(q.buena, tot) }}%
+              </ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Ligera</ion-label>
+              <ion-note slot="end" class="pct-ligera">
+                {{ q.ligera }} · {{ porcentaje(q.ligera, tot) }}%
+              </ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Violeta</ion-label>
+              <ion-note slot="end" class="pct-violeta">
+                {{ q.violeta }} · {{ porcentaje(q.violeta, tot) }}%
+              </ion-note>
+            </ion-item>
+          </ion-list>
         } @else {
           <ion-list inset="true">
             <ion-item>
@@ -328,6 +368,29 @@
               ></ion-input>
             </ion-item>
           </ion-list>
+
+          <h4 class="titulo-seccion">Indicador de fermentación</h4>
+          <ion-list inset="true" class="indicadores">
+            <ion-item>
+              <ion-label>Buena fermentación</ion-label>
+              <ion-note slot="end" class="pct-buena">
+                {{ porcentaje(granoBuena(), totalGrano()) }}%
+              </ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Ligera fermentación</ion-label>
+              <ion-note slot="end" class="pct-ligera">
+                {{ porcentaje(granoLigera(), totalGrano()) }}%
+              </ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Violeta</ion-label>
+              <ion-note slot="end" class="pct-violeta">
+                {{ porcentaje(granoVioleta(), totalGrano()) }}%
+              </ion-note>
+            </ion-item>
+          </ion-list>
+
           <div class="fila-botones">
             <ion-button
               expand="block"
@@ -343,34 +406,92 @@
       }
 
       <!-- Humedad de cada secado, con su propio juego de lecturas -->
-      @if (etapa.clave === 'secado_sol' || etapa.clave === 'secado_maq') {
-        <h3 class="titulo-seccion">Humedad</h3>
-        @if (calidadHecha(etapa.clave)) {
-          <div class="banner info">Análisis ya registrado para esta etapa.</div>
-        } @else {
+      @if (etapa.calidad === 'humedad' || calSecDe(etapa.clave)) {
+        <h3 class="titulo-seccion">Datos de calidad</h3>
+        @if (calSecDe(etapa.clave); as q) {
+          <ion-list inset="true" class="info-humedad">
+            <ion-item>
+              <ion-label>Humedad 1 / 2 / 3</ion-label>
+              <ion-note slot="end">{{ q.humedad1 }} · {{ q.humedad2 }} · {{ q.humedad3 }}</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Promedio de humedad</ion-label>
+              <ion-note slot="end" class="info-promedio">{{ q.promedio }}%</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Número de granos</ion-label>
+              <ion-note slot="end">{{ q.granos ?? '—' }}</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Índice de granos (g)</ion-label>
+              <ion-note slot="end" class="info-indice">{{ q.indice ?? '—' }}</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Porcentaje de vanos</ion-label>
+              <ion-note slot="end" class="info-vanos">{{ q.vanosPct ?? '—' }}%</ion-note>
+            </ion-item>
+          </ion-list>
+        } @else if (etapa.calidad === 'humedad') {
           <ion-list inset="true">
             <ion-item>
               <ion-input
-                label="Lectura 1" labelPlacement="stacked" type="number" inputmode="decimal"
+                label="Humedad 1" labelPlacement="stacked" type="number" inputmode="decimal"
                 class="humedad-1" [value]="humedad(etapa.clave, 'h1')"
                 (ionInput)="setHumedad(etapa.clave, 'h1', $any($event.target).value)"
               ></ion-input>
             </ion-item>
             <ion-item>
               <ion-input
-                label="Lectura 2" labelPlacement="stacked" type="number" inputmode="decimal"
+                label="Humedad 2" labelPlacement="stacked" type="number" inputmode="decimal"
                 class="humedad-2" [value]="humedad(etapa.clave, 'h2')"
                 (ionInput)="setHumedad(etapa.clave, 'h2', $any($event.target).value)"
               ></ion-input>
             </ion-item>
             <ion-item>
               <ion-input
-                label="Lectura 3" labelPlacement="stacked" type="number" inputmode="decimal"
+                label="Humedad 3" labelPlacement="stacked" type="number" inputmode="decimal"
                 class="humedad-3" [value]="humedad(etapa.clave, 'h3')"
                 (ionInput)="setHumedad(etapa.clave, 'h3', $any($event.target).value)"
               ></ion-input>
             </ion-item>
+            <ion-item>
+              <ion-input
+                label="Número de granos" labelPlacement="stacked" type="number"
+                class="num-granos" [value]="humedad(etapa.clave, 'granos')"
+                (ionInput)="setHumedad(etapa.clave, 'granos', $any($event.target).value)"
+              ></ion-input>
+            </ion-item>
+            <ion-item>
+              <ion-input
+                label="Granos vanos (gramos)" labelPlacement="stacked" type="number"
+                inputmode="decimal"
+                class="granos-vanos" [value]="humedad(etapa.clave, 'vanosG')"
+                (ionInput)="setHumedad(etapa.clave, 'vanosG', $any($event.target).value)"
+              ></ion-input>
+            </ion-item>
           </ion-list>
+
+          <h4 class="titulo-seccion">Indicadores</h4>
+          <ion-list inset="true" class="indicadores">
+            <ion-item>
+              <ion-label>Promedio de humedad</ion-label>
+              <ion-note slot="end" class="ind-promedio">
+                {{ promedioHumedad(etapa.clave) }}%
+              </ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Índice de granos (g)</ion-label>
+              <ion-note slot="end" class="ind-indice">{{ indiceGrano(etapa.clave) }}</ion-note>
+            </ion-item>
+            <ion-item>
+              <ion-label>Porcentaje de vanos</ion-label>
+              <ion-note slot="end" class="ind-vanos">{{ porcentajeVanos(etapa.clave) }}%</ion-note>
+            </ion-item>
+          </ion-list>
+          <p class="nota-muestra">
+            El índice y el porcentaje salen de la muestra de {{ muestraG }} g.
+          </p>
+
           <div class="fila-botones">
             <ion-button
               expand="block"
@@ -380,7 +501,7 @@
               [attr.data-humedad]="etapa.clave"
               class="registrar-humedad"
             >
-              Registrar análisis
+              Registrar datos de calidad
             </ion-button>
           </div>
         }
@@ -390,8 +511,7 @@
     <!-- ---------- Ventana 5: peso final ---------- -->
     @if (etapa.clave === 'resultado') {
       <div class="banner info">
-        Registrar el peso final <strong>cierra la partida</strong>. Las etapas
-        que no se hayan registrado quedan en blanco: no se realizaron.
+        Registrar el peso final <strong>cierra el registro</strong>.
       </div>
       <ion-list inset="true">
         <ion-item>
@@ -411,7 +531,7 @@
           expand="block"
           [disabled]="!puedeCerrar()"
           (click)="cerrar()"
-          class="cerrar-partida"
+          class="cerrar-registro"
         >
           <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
           Registrar peso y cerrar
@@ -419,7 +539,7 @@
       </div>
     }
 
-    <!-- Resumen de lo que lleva la partida, siempre a la vista -->
+    <!-- Resumen de lo que lleva el registro, siempre a la vista -->
     <h3 class="titulo-seccion">Estado de las etapas</h3>
     <ion-list inset="true" class="resumen-etapas">
       @for (e of etapasDef; track e.clave) {

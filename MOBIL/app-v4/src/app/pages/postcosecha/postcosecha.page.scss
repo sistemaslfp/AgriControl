@@ -17,3 +17,17 @@
 .resumen-etapas ion-item.actual {
   --background: var(--ion-color-light);
 }
+
+.indicadores ion-note,
+.info-etapa ion-note,
+.info-grano ion-note,
+.info-humedad ion-note {
+  font-weight: 600;
+  color: var(--ion-color-dark);
+}
+
+.nota-muestra {
+  margin: 4px 16px 0;
+  font-size: 0.8rem;
+  color: var(--ion-color-medium);
+}

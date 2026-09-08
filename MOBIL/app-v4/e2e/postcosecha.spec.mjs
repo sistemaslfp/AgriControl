@@ -9,8 +9,8 @@
  *  - la lista dice EN QUE ETAPA esta cada partida, no cuantas lleva;
  *  - el detalle es una ventana por etapa y **ninguna bloquea a la otra**:
  *    registrar presecado no marca fermentado, y se puede saltear una etapa;
- *  - el corte de grano y la humedad viven en la ventana de su etapa, cada
- *    secado con sus propias lecturas;
+ *  - el corte de grano vive en fermentado y la humedad en el secado al SOL;
+ *    el secado a maquina no pide calidad, solo inicio, fin y el tiempo;
  *  - el peso final cierra la partida y la saca de la lista.
  *
  * Requiere: build de desarrollo en :8099 y mock-v4.mjs en :8098.
@@ -91,10 +91,10 @@ ok('00 la celda Poscosecha ya no esta deshabilitada',
 await p.goto(`${APP}/postcosecha`, { waitUntil: 'networkidle' });
 await t(2000);
 ok('01 la pantalla abre', await p.locator('ion-title', { hasText: 'Postcosecha' }).isVisible());
-ok('02 sin partidas lo dice, no deja la lista muda',
-  (await p.locator(`${raiz} .banner.info`, { hasText: 'No hay partidas' }).count()) === 1);
+ok('02 sin registros lo dice, no deja la lista muda',
+  (await p.locator(`${raiz} .banner.info`, { hasText: 'No hay registros' }).count()) === 1);
 
-await boton('Nueva partida').click();
+await boton('Nuevo registro').click();
 await t(1500);
 
 // Los dias van en el MISMO selector de checkbox que el resto de la app.
@@ -134,31 +134,31 @@ ok('09 el peso baba se calcula, no se pide',
   (await inputDe('peso-baba').inputValue()) === '2744.7',
   await inputDe('peso-baba').inputValue());
 
-ok('10 sin supervisor no se puede iniciar', await deshabilitado(boton('Iniciar partida')));
+ok('10 sin supervisor no se puede iniciar', await deshabilitado(boton('Iniciar presecado')));
 await campo('Supervisor').click();
 await t(500);
 await p.locator('ion-modal ion-radio', { hasText: 'HOLGUIN' }).first().click();
 await esperarModalCerrado();
 await t(400);
-ok('11 con supervisor el boton se habilita', !(await deshabilitado(boton('Iniciar partida'))));
+ok('11 con supervisor el boton se habilita', !(await deshabilitado(boton('Iniciar presecado'))));
 
 await inputDe('peso-mallas').fill('9999');
 await inputDe('peso-mallas').blur();
 await t(400);
 ok('12 mallas mas pesadas que el lote se bloquean',
-  await deshabilitado(boton('Iniciar partida')) &&
+  await deshabilitado(boton('Iniciar presecado')) &&
     (await p.locator(`${raiz} .banner.alerta`).innerText()).includes('mallas pesan'),
   (await p.locator(`${raiz} .banner.alerta`).innerText()).slice(0, 60));
 await inputDe('peso-mallas').fill('35');
 await inputDe('peso-mallas').blur();
 await t(400);
 
-await boton('Iniciar partida').click();
+await boton('Iniciar presecado').click();
 await t(2500);
 
 const recibidos = (await lotes()).flatMap((l) => l.records ?? []);
 const proc = recibidos.filter((r) => r.tipo === 'pc_proceso');
-ok('13 la partida viaja como pc_proceso', proc.length === 1, `n=${proc.length}`);
+ok('13 el registro viaja como pc_proceso', proc.length === 1, `n=${proc.length}`);
 const pl = proc[0]?.payload ?? {};
 ok('14 el payload lleva las cosechas, no la fecha ni el peso',
   JSON.stringify(pl.cosecha_ids) === '[22,23]' && pl.peso_mallas === 35 && pl.supervisor_id === 26,
@@ -172,13 +172,22 @@ ok('16 fecha_inicio viaja ISO-8601 CON offset',
 // ------------------------------------------------------------------
 // 2. La lista dice EN QUE ETAPA esta, y el numero lo pone el servidor
 // ------------------------------------------------------------------
-const tarjeta = p.locator(`${raiz} .partida`).first();
-ok('17 la partida vuelve a la lista', (await p.locator(`${raiz} .partida`).count()) === 1);
+// El pesaje ARRANCA el presecado, como en v3.
+const presecado = recibidos.filter(
+  (r) => r.tipo === 'pc_etapa' && r.payload.etapa === 'presecado',
+);
+ok('16b el pesaje arranca el presecado solo', presecado.length === 1, `n=${presecado.length}`);
+ok('16c el presecado hereda la fecha de inicio del pesaje',
+  presecado[0]?.payload.inicio === pl.fecha_inicio,
+  `${presecado[0]?.payload.inicio} vs ${pl.fecha_inicio}`);
+
+const tarjeta = p.locator(`${raiz} .registro`).first();
+ok('17 el registro vuelve a la lista', (await p.locator(`${raiz} .registro`).count()) === 1);
 ok('18 ya con ACK la tarjeta muestra el lot_code del servidor',
   (await tarjeta.innerText()).includes('2290126'),
   (await tarjeta.innerText()).replace(/\n/g, ' ').slice(0, 60));
-ok('19 la lista dice la ETAPA, no cuantas lleva',
-  (await p.locator(`${raiz} .etapa-actual`).first().innerText()).trim() === 'Sin iniciar',
+ok('19 la lista dice la ETAPA en la que esta, no cuantas lleva',
+  (await p.locator(`${raiz} .etapa-actual`).first().innerText()).trim() === 'Presecado',
   await p.locator(`${raiz} .etapa-actual`).first().innerText());
 ok('20 el dia consumido ya no se ofrece para otra partida',
   await (async () => {
@@ -193,16 +202,20 @@ await tarjeta.click();
 await t(1200);
 ok('21 el detalle abre con el numero y los pesos',
   (await p.locator(`${raiz} .lot-code`).innerText()).includes('2290126'));
-ok('22 abre en la primera ventana', (await ventana().innerText()).trim() === 'Presecado',
-  await ventana().innerText());
-ok('23 cada ventana ofrece SOLO su etapa', (await btnEtapa('presecado').count()) === 1 &&
-  (await btnEtapa('fermentado').count()) === 0);
+ok('22 abre en la ventana que sigue al presecado ya iniciado',
+  (await ventana().innerText()).trim() === 'Fermentado', await ventana().innerText());
 
-await btnEtapa('presecado').click();
-await t(1800);
-ok('24 registrada, la ventana lo dice y no ofrece mandarla otra vez',
-  (await p.locator(`${raiz} .banner.registrada`).count()) === 1 &&
+// Volver a una etapa registrada muestra SUS DATOS, no un cartel de "ya esta".
+await p.locator(`${raiz} ion-button.paso-anterior`).first().click();
+await t(600);
+ok('23 volver a presecado muestra los datos de la etapa, no un cartel',
+  (await ventana().innerText()).trim() === 'Presecado' &&
+    (await p.locator(`${raiz} .info-etapa`).count()) === 1 &&
     (await btnEtapa('presecado').count()) === 0);
+ok('24 la ficha de la etapa trae su hora de inicio',
+  /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(
+    await p.locator(`${raiz} .info-inicio`).innerText()),
+  await p.locator(`${raiz} .info-inicio`).innerText());
 
 // LA REGRESION QUE REPORTO KEVIN: despues de presecado, fermentado quedaba
 // como "registrada" y no se podia entrar.
@@ -226,7 +239,7 @@ await btnEtapa('secado_sol').click();
 await t(1800);
 
 const etapas = (await lotes()).flatMap((l) => l.records ?? []).filter((r) => r.tipo === 'pc_etapa');
-ok('29 solo viajaron las dos etapas registradas, no la salteada',
+ok('29 solo viajaron las etapas registradas, no la salteada',
   etapas.length === 2 && etapas.map((e) => e.payload.etapa).join(',') === 'presecado,secado_sol',
   etapas.map((e) => e.payload.etapa).join(','));
 ok('30 la etapa viaja con el guid de la partida, no con su id',
@@ -235,26 +248,54 @@ ok('30 la etapa viaja con el guid de la partida, no con su id',
 // ------------------------------------------------------------------
 // 4. Calidad: cada secado con sus propias lecturas
 // ------------------------------------------------------------------
-ok('31 la humedad vive en la ventana de su secado',
+ok('31 los datos de calidad viven en la ventana de su secado',
   (await p.locator(`${raiz} ion-button[data-humedad="secado_sol"]`).count()) === 1);
 await inputDe('humedad-1').fill('7.2');
 await inputDe('humedad-2').fill('7.5');
 await inputDe('humedad-3').fill('7');
-await inputDe('humedad-3').blur();
-await t(400);
+await inputDe('num-granos').fill('400');
+await inputDe('granos-vanos').fill('12.5');
+await inputDe('granos-vanos').blur();
+await t(500);
+// promedio (7.2+7.5+7)/3 = 7.23; indice 500/400 = 1.25; vanos 12.5*100/500 = 2.5
+ok('31b los tres indicadores del secado se calculan solos',
+  (await p.locator(`${raiz} .ind-promedio`).innerText()).includes('7.23') &&
+    (await p.locator(`${raiz} .ind-indice`).innerText()).includes('1.25') &&
+    (await p.locator(`${raiz} .ind-vanos`).innerText()).includes('2.5'),
+  [await p.locator(`${raiz} .ind-promedio`).innerText(),
+   await p.locator(`${raiz} .ind-indice`).innerText(),
+   await p.locator(`${raiz} .ind-vanos`).innerText()].join(' / '));
 await p.locator(`${raiz} ion-button[data-humedad="secado_sol"]`).click();
 await t(1800);
 
-ok('32 el secado maquina arranca con sus lecturas VACIAS, no las del sol',
+// Secado a maquina: sin datos de calidad, solo inicio, fin y el tiempo
+// empleado (Kevin, 2026-09-08).
+ok('32 el secado a maquina no pide datos de calidad',
   await (async () => {
     await irAEtapa('Secado (máquina)');
-    return (await inputDe('humedad-1').inputValue()) === '';
+    return (await p.locator(`${raiz} .humedad-1`).count()) === 0 &&
+      (await p.locator(`${raiz} .registrar-humedad`).count()) === 0;
+  })());
+ok('32b el secado a maquina muestra el tiempo empleado, en vivo',
+  await (async () => {
+    await inputDe('etapa-inicio').fill('2026-09-05T08:00');
+    await inputDe('etapa-fin').fill('2026-09-06T11:30');
+    await inputDe('etapa-fin').blur();
+    await t(500);
+    return (await p.locator(`${raiz} .ind-duracion`).innerText()).includes('1 d 3 h 30 min');
   })(),
-  await inputDe('humedad-1').inputValue());
+  await p.locator(`${raiz} .ind-duracion`).innerText());
+await btnEtapa('secado_maq').click();
+await t(1800);
+ok('32c registrado, la ficha conserva el tiempo empleado',
+  (await p.locator(`${raiz} .info-duracion`).innerText()).includes('1 d 3 h 30 min'),
+  await p.locator(`${raiz} .info-duracion`).innerText());
 
 const cs = (await lotes()).flatMap((l) => l.records ?? []).filter((r) => r.tipo === 'pc_calidad_sec');
-ok('33 el analisis viaja con su etapa',
-  cs.length === 1 && cs[0].payload.etapa === 'secado_sol' && cs[0].payload.humedad_1 === 7.2,
+ok('33 el analisis viaja con su etapa y sus dos indicadores guardables',
+  cs.length === 1 && cs[0].payload.etapa === 'secado_sol' && cs[0].payload.humedad_1 === 7.2 &&
+    cs[0].payload.granos_muestra === 400 && cs[0].payload.indice_grano_g === 1.25 &&
+    cs[0].payload.granos_vacios_pct === 2.5,
   JSON.stringify(cs[0]?.payload ?? {}));
 ok('34 la app NO manda el promedio: lo calcula la base',
   !('humedad_promedio' in (cs[0]?.payload ?? {})));
@@ -282,11 +323,26 @@ await inputDe('grano-buena').fill('8');
 await inputDe('grano-ligera').fill('3');
 await inputDe('grano-violeta').fill('1');
 await inputDe('grano-violeta').blur();
-await t(400);
+await t(500);
+// (parte * 100) / total, con total = 12: 66.67 / 25 / 8.33
+ok('36b el indicador de fermentacion se calcula solo, mientras se teclea',
+  (await p.locator(`${raiz} .indicadores .pct-buena`).innerText()).includes('66.67') &&
+    (await p.locator(`${raiz} .indicadores .pct-ligera`).innerText()).includes('25') &&
+    (await p.locator(`${raiz} .indicadores .pct-violeta`).innerText()).includes('8.33'),
+  [await p.locator(`${raiz} .indicadores .pct-buena`).innerText(),
+   await p.locator(`${raiz} .indicadores .pct-ligera`).innerText(),
+   await p.locator(`${raiz} .indicadores .pct-violeta`).innerText()].join(' / '));
+
 await boton('Registrar corte de grano').click();
 await t(1800);
-ok('37 registrado el corte, el formulario desaparece',
-  (await p.locator(`${raiz} .registrar-grano`).count()) === 0);
+ok('37 registrado el corte, se muestran los conteos con su porcentaje',
+  (await p.locator(`${raiz} .registrar-grano`).count()) === 0 &&
+    (await p.locator(`${raiz} .info-grano .pct-buena`).innerText()).includes('66.67'),
+  await p.locator(`${raiz} .info-grano .pct-buena`).innerText());
+const cf = (await lotes()).flatMap((l) => l.records ?? []).filter((r) => r.tipo === 'pc_calidad_ferm');
+ok('37b los porcentajes NO viajan: se calculan',
+  cf.length === 1 && !('buena_pct' in cf[0].payload) && cf[0].payload.buena === 8,
+  JSON.stringify(cf[0]?.payload ?? {}));
 
 // ------------------------------------------------------------------
 // 5. El peso final cierra
@@ -297,9 +353,9 @@ await inputDe('peso-final').blur();
 await t(400);
 await boton('Registrar peso y cerrar').click();
 await t(2500);
-ok('39 cerrada, la partida sale de la lista',
-  (await p.locator(`${raiz} .partida`).count()) === 0,
-  `tarjetas=${await p.locator(`${raiz} .partida`).count()}`);
+ok('39 cerrado, el registro sale de la lista',
+  (await p.locator(`${raiz} .registro`).count()) === 0,
+  `tarjetas=${await p.locator(`${raiz} .registro`).count()}`);
 
 const res = (await lotes()).flatMap((l) => l.records ?? []).filter((r) => r.tipo === 'pc_resultado');
 ok('40 el cierre viaja como pc_resultado con el peso',

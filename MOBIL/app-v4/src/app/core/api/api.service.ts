@@ -97,7 +97,40 @@ export interface PostcosechaPendientesResponse {
   dias: DiaPendienteApi[];
 }
 
-/** Una partida en curso (sin peso final). */
+/** Una etapa ya registrada, con lo que se cargó en ella. */
+export interface EtapaApi {
+  etapa: string;
+  inicio: string;
+  fin: string | null;
+  comentario: string | null;
+}
+
+/** El corte de grano del fermentado. Los porcentajes NO viajan: se calculan. */
+export interface CalidadFermApi {
+  fecha_muestra: string;
+  buena: number;
+  ligera: number;
+  violeta: number;
+}
+
+/**
+ * El análisis de un secado. `humedad_promedio` la calcula la base (columna
+ * generada); `indice_grano_g` y `granos_vacios_pct` salen de la muestra de
+ * 500 g (ver la pantalla de postcosecha).
+ */
+export interface CalidadSecApi {
+  etapa: string;
+  fecha_muestra: string;
+  humedad_1: number;
+  humedad_2: number;
+  humedad_3: number;
+  humedad_promedio: number;
+  granos_muestra: number | null;
+  indice_grano_g: number | null;
+  granos_vacios_pct: number | null;
+}
+
+/** Un registro de postcosecha en curso (sin peso final). */
 export interface PartidaApi {
   id: number;
   guid: string;
@@ -112,11 +145,11 @@ export interface PartidaApi {
   supervisor: string | null;
   /** La ultima etapa registrada, o null si todavia no hay ninguna. */
   etapa: string | null;
-  /** TODAS las etapas ya registradas: en la vida real se saltan. */
-  etapas: string[];
-  tiene_cal_ferm: boolean;
-  /** Etapas de secado que ya tienen su analisis de calidad. */
-  cal_secado: string[];
+  /** TODAS las etapas ya registradas, con sus datos: en la vida real se saltan. */
+  etapas: EtapaApi[];
+  cal_ferm: CalidadFermApi | null;
+  /** Un analisis por cada secado que ya lo tenga. */
+  cal_secado: CalidadSecApi[];
   cosechas: number;
 }
 

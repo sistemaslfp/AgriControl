@@ -72,6 +72,19 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66. **No cierra ningún
   AM**: las cosechas cuyo AM quedó abierto van a `mig_descarte`, porque cerrarlas
   haría que V4 pagara filas que V3 no paga.
+- **Paso 6, secado a máquina sin calidad (2026-09-08).** Esa ventana pasó a ser
+  sólo inicio, fin y **tiempo empleado**; el análisis de humedad quedó únicamente
+  en el secado al sol. Si un registro ya trae el análisis de máquina, se muestra
+  igual. **Dato en contra, medido**: de los 67 análisis de secado de v3, 49 son
+  de Secado Máquina. **48 comprobaciones e2e.**
+- **Paso 6, segunda ronda de ajustes (2026-09-08).** En pantalla se dice
+  **registro** y no partida; el pesaje **arranca el presecado** solo; volver a
+  una etapa registrada muestra **sus datos** (inicio, fin, comentarios y su
+  análisis) en vez de un cartel; el fermentado calcula los **porcentajes de
+  grano** en vivo; y el secado suma **número de granos** y **granos vanos (g)**
+  con sus indicadores **índice de granos (500 ÷ granos)** y **% de vanos
+  (vanos × 100 ÷ 500)**. `GET /v4/postcosecha_abiertas` ahora devuelve las
+  etapas y las calidades con sus columnas. **45 comprobaciones e2e.**
 - **Paso 6, ajustes de pantalla (2026-09-07).** El detalle pasó a ser **una
   ventana por etapa, deslizable y no excluyente**: se puede saltear una etapa y
   seguir, y lo salteado queda en blanco. Los días de cosecha se eligen con el

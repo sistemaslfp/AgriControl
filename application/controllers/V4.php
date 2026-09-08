@@ -188,17 +188,6 @@ class V4 extends RestController
                               p.supervisor_id, s.nombre AS supervisor,
                               (SELECT e.etapa FROM pc_etapa e
                                 WHERE e.pc_proceso_id = p.id ORDER BY e.orden DESC LIMIT 1) AS etapa,
-                              -- Las etapas YA registradas, para que la pantalla no
-                              -- ofrezca dos veces la misma. Van todas y no solo la
-                              -- ultima porque en la vida real se saltan: de 98
-                              -- partidas de v3, 42 tienen los dos secados y 13
-                              -- ninguno.
-                              (SELECT GROUP_CONCAT(e.etapa ORDER BY e.orden) FROM pc_etapa e
-                                WHERE e.pc_proceso_id = p.id) AS etapas,
-                              (SELECT COUNT(*) FROM pc_calidad_fermentacion q
-                                WHERE q.pc_proceso_id = p.id) AS tiene_cal_ferm,
-                              (SELECT GROUP_CONCAT(q.etapa) FROM pc_calidad_secado q
-                                WHERE q.pc_proceso_id = p.id) AS cal_secado,
                               (SELECT COUNT(*) FROM pc_proceso_cosecha x WHERE x.pc_proceso_id = p.id) AS cosechas", FALSE)
                     ->from('pc_proceso p')
                     ->join('z_personal s', 's.id = p.supervisor_id', 'left')
@@ -221,13 +210,39 @@ class V4 extends RestController
         $filas = $this->castRows($q->result(), array(
             'id' => 'int', 'supervisor_id' => 'int', 'cosechas' => 'int',
             'peso_lote' => 'float', 'peso_mallas' => 'float', 'peso_baba' => 'float',
-            'tiene_cal_ferm' => 'bool',
         ));
-        // Las listas viajan como arrays, no como el texto del GROUP_CONCAT: el
-        // cliente no tiene por que saber que aca hubo un concat.
+        if (empty($filas)) {
+            $this->response(array('server_time' => date('c'), 'partidas' => array()), 200);
+            return;
+        }
+
+        // Los hijos van en TRES consultas y se cosen en PHP, no en una
+        // subconsulta por fila: con GROUP_CONCAT alcanzaba para saber que
+        // etapas hay, pero la pantalla ahora muestra los datos de la etapa ya
+        // registrada y eso son columnas, no nombres.
+        $ids = array();
         foreach ($filas as $f) {
-            $f->etapas     = ($f->etapas === NULL || $f->etapas === '') ? array() : explode(',', $f->etapas);
-            $f->cal_secado = ($f->cal_secado === NULL || $f->cal_secado === '') ? array() : explode(',', $f->cal_secado);
+            $ids[] = (int) $f->id;
+        }
+        $etapas   = $this->pc_hijos($db, $ids, 'pc_etapa',
+            'pc_proceso_id, etapa, inicio, fin, comentario', 'orden',
+            array('pc_proceso_id' => 'int'));
+        $cal_ferm = $this->pc_hijos($db, $ids, 'pc_calidad_fermentacion',
+            'pc_proceso_id, fecha_muestra, buena, ligera, violeta', 'id',
+            array('pc_proceso_id' => 'int', 'buena' => 'int', 'ligera' => 'int', 'violeta' => 'int'));
+        $cal_sec  = $this->pc_hijos($db, $ids, 'pc_calidad_secado',
+            'pc_proceso_id, etapa, fecha_muestra, humedad_1, humedad_2, humedad_3,
+             humedad_promedio, granos_muestra, indice_grano_g, granos_vacios_pct', 'id',
+            array('pc_proceso_id' => 'int', 'granos_muestra' => 'int',
+                  'humedad_1' => 'float', 'humedad_2' => 'float', 'humedad_3' => 'float',
+                  'humedad_promedio' => 'float', 'indice_grano_g' => 'float',
+                  'granos_vacios_pct' => 'float'));
+
+        foreach ($filas as $f) {
+            $f->etapas     = $this->pc_de($etapas, $f->id);
+            $f->cal_secado = $this->pc_de($cal_sec, $f->id);
+            $ferm          = $this->pc_de($cal_ferm, $f->id);
+            $f->cal_ferm   = empty($ferm) ? NULL : $ferm[0];
         }
         $this->response(array('server_time' => date('c'), 'partidas' => $filas), 200);
     }
@@ -989,6 +1004,32 @@ class V4 extends RestController
         if ($q === FALSE) { return FALSE; }
         $f = $q->row();
         return $f ? $f : NULL;
+    }
+
+    /**
+     * Los hijos de un conjunto de partidas, en una sola consulta. Devuelve las
+     * filas casteadas; `pc_de()` las reparte despues por partida.
+     */
+    private function pc_hijos($db, $ids, $tabla, $columnas, $orden, $tipos)
+    {
+        $q = $db->select($columnas, FALSE)->from($tabla)
+                ->where_in('pc_proceso_id', empty($ids) ? array(0) : $ids)
+                ->order_by($orden)->get();
+        return ($q === FALSE) ? array() : $this->castRows($q->result(), $tipos);
+    }
+
+    /** Las filas hijas de UNA partida, sin el id del padre repetido adentro. */
+    private function pc_de($filas, $id)
+    {
+        $salida = array();
+        foreach ($filas as $f) {
+            if ((int) $f->pc_proceso_id === (int) $id) {
+                $copia = clone $f;
+                unset($copia->pc_proceso_id);
+                $salida[] = $copia;
+            }
+        }
+        return $salida;
     }
 
     /** El lot_code de una partida ya guardada. */

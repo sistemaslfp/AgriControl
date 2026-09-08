@@ -147,15 +147,22 @@ export class DatabaseService {
        cerrada       INTEGER NOT NULL DEFAULT 0,
        created_at    TEXT NOT NULL
      );`,
+    // `inicio`/`fin`/`comentario` y `datos` no son de control: son lo que la
+    // pantalla MUESTRA al volver a una etapa ya registrada, mientras el ACK
+    // no llegó y el servidor todavía no la conoce.
     `CREATE TABLE IF NOT EXISTS pc_etapa_local (
        proceso_guid TEXT NOT NULL,
        etapa        TEXT NOT NULL,
+       inicio       TEXT,
+       fin          TEXT,
+       comentario   TEXT,
        created_at   TEXT NOT NULL,
        PRIMARY KEY (proceso_guid, etapa)
      );`,
     `CREATE TABLE IF NOT EXISTS pc_calidad_local (
        proceso_guid TEXT NOT NULL,
        etapa        TEXT NOT NULL,
+       datos        TEXT,
        created_at   TEXT NOT NULL,
        PRIMARY KEY (proceso_guid, etapa)
      );`,
@@ -216,6 +223,10 @@ export class DatabaseService {
       'ALTER TABLE am_persona_local ADD COLUMN modulos TEXT;',
       'ALTER TABLE am_persona_local ADD COLUMN captura_guid TEXT;',
       'ALTER TABLE cat_subtarea ADD COLUMN id_finca INTEGER;',
+      'ALTER TABLE pc_etapa_local ADD COLUMN inicio TEXT;',
+      'ALTER TABLE pc_etapa_local ADD COLUMN fin TEXT;',
+      'ALTER TABLE pc_etapa_local ADD COLUMN comentario TEXT;',
+      'ALTER TABLE pc_calidad_local ADD COLUMN datos TEXT;',
     ];
     for (const sql of alters) {
       try {
