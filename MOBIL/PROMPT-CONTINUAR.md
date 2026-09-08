@@ -72,6 +72,36 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   367 y `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66. **No cierra ningún
   AM**: las cosechas cuyo AM quedó abierto van a `mig_descarte`, porque cerrarlas
   haría que V4 pagara filas que V3 no paga.
+- **Paso 7 — RIEGO, HECHO (2026-09-08).** Pantalla `/riego` y `tipo: riego` en
+  `/v4/sync`. Es una **bitácora**: no lee tareas AM, no elige trabajador y no
+  toca `reg_am`. **No copia el formulario de v3 fila por fila**: carga por lote
+  con varios módulos de una vez, porque un parte real son 18-25 filas (mediana
+  18 sobre 382 partes, máximo 900). Tiempo con los **seis chips** que cubren el
+  94,6 % de las 9.778 filas de v3, en **minutos enteros**; volumen visible y
+  **opcional** (sólo 2 filas de v3 lo tienen); **sin tarea ni subtarea**
+  (columnas muertas). Repetir (lote, módulo) **avisa y no bloquea**.
+  **34 comprobaciones e2e** y verificado con curl contra CI3 + la base real:
+  `created`, `duplicate`, y rechazos por módulo de otro lote, lote de otra
+  finca, supervisor inexistente, tiempo ausente o fuera de rango, volumen
+  negativo y fecha futura — cada uno con su marca en `reg_flag`.
+- **Etapa de postcosecha: INICIO Y FIN OBLIGATORIOS (2026-09-08, Kevin).** Sin
+  los dos, la etapa no se registra, y el botón deshabilitado **dice qué falta**.
+  También se bloquean el fin anterior al inicio y las fechas futuras (5 min de
+  tolerancia por la deriva del reloj). `sync_pc_etapa` rechaza `fin` ausente; la
+  columna sigue admitiendo NULL sólo por la data migrada de v3.
+  **Consecuencia: el pesaje ya NO registra el presecado** — nacía con `fin: null`
+  y no había forma de cerrarlo (`UNIQUE (partida, etapa)`). El presecado se
+  registra en el detalle con el inicio precargado con la fecha del pesaje, y
+  mientras tanto la lista dice `Presecado en curso`. **50 comprobaciones e2e.**
+- **Registros: el chip es un pendiente, no una estadística (2026-09-08, Kevin).**
+  `AM 3` —una sola cuenta—, un chip sólo por módulo con algo sin subir, sólo en
+  la pestaña Pendientes, y **desaparece con el ACK**. El filtro por módulo se
+  limpia al pasar a Enviados: sin chip que lo diga, recortaba la lista sin
+  explicación. **34 comprobaciones e2e.**
+- **La comprobación 26 de postcosecha venía ROJA desde el commit 701633c** (esa
+  misma mañana): sacó `.banner.sin-registrar` del HTML y dejó la comprobación
+  afirmándola. Segunda vez que pasa lo mismo. **Correr las cinco suites, no las
+  que uno cree afectadas.**
 - **Paso 6, secado a máquina sin calidad (2026-09-08).** Esa ventana pasó a ser
   sólo inicio, fin y **tiempo empleado**; el análisis de humedad quedó únicamente
   en el secado al sol. Si un registro ya trae el análisis de máquina, se muestra
@@ -119,16 +149,10 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 
 ## Lo siguiente, en orden
 
-1. **Paso 6 — Postcosecha** o **paso 7 — Riego**, y el orden del plan no
-   coincide con el uso: en agosto de 2026 hubo **106 partes reales de riego
-   contra 60 de cosecha** (las 279 brutas eran 173 reenvíos), y postcosecha
-   lleva **4 partidas en todo 2026** (77 en 2024).
-   Riego está bloqueado sólo por las capturas de pantalla (pendiente #9) y su
-   tabla `reg_riego` ya existe y **no hay que rehacerla**: riego es una bitácora
-   propia, no cierra tareas AM (ver `00-plan.md` y `02-bd-y-api.md` §Riego).
-   Postcosecha es el módulo más caro y el menos usado — y antes de construirlo
-   conviene auditar el DDL de `pc_*` contra los datos reales, que es exactamente
-   lo que le faltó a `reg_cosecha`.
+1. **Los pasos 1 a 7 están hechos.** Lo que queda del plan es el paso 8
+   (migración del histórico y corte), diferido sin fecha, y los flecos de abajo.
+   **Riego fue lo último grande** (2026-09-08); de postcosecha sólo faltan las
+   fotos, que Kevin dejó fuera a propósito.
 2. **Los dos flecos de cosecha**: `Supervisor de cosecha` (subtarea 24, unidad
    **Jornal**) aparece en la pantalla de cosecha y no tiene sacos que pesar —hay
    que decidir si vuelve al PM o si se puede cerrar sin sacos—, y falta la vista

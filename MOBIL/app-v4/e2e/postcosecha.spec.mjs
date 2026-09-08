@@ -54,6 +54,14 @@ const cerrarTocandoFuera = async () => {
   await esperarModalCerrado();
   await t(250);
 };
+/** 'YYYY-MM-DDTHH:mm' + N minutos, en el mismo formato del input. */
+const masMinutos = (local, min) => {
+  const d = new Date(local);
+  d.setMinutes(d.getMinutes() + min);
+  const z = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+};
+
 /** Va a la ventana de una etapa por su nombre, con la flecha de pasos. */
 async function irAEtapa(nombre) {
   for (let i = 0; i < 6; i++) {
@@ -172,14 +180,14 @@ ok('16 fecha_inicio viaja ISO-8601 CON offset',
 // ------------------------------------------------------------------
 // 2. La lista dice EN QUE ETAPA esta, y el numero lo pone el servidor
 // ------------------------------------------------------------------
-// El pesaje ARRANCA el presecado, como en v3.
+// El pesaje abre la PARTIDA y nada mas (Kevin, 2026-09-08). Antes mandaba el
+// presecado con fin NULL: con el fin obligatorio esa etapa nacia registrada y
+// sin cerrar, y no habia forma de completarla.
 const presecado = recibidos.filter(
   (r) => r.tipo === 'pc_etapa' && r.payload.etapa === 'presecado',
 );
-ok('16b el pesaje arranca el presecado solo', presecado.length === 1, `n=${presecado.length}`);
-ok('16c el presecado hereda la fecha de inicio del pesaje',
-  presecado[0]?.payload.inicio === pl.fecha_inicio,
-  `${presecado[0]?.payload.inicio} vs ${pl.fecha_inicio}`);
+ok('16b el pesaje ya NO registra el presecado por su cuenta',
+  presecado.length === 0, `n=${presecado.length}`);
 
 const tarjeta = p.locator(`${raiz} .registro`).first();
 ok('17 el registro vuelve a la lista', (await p.locator(`${raiz} .registro`).count()) === 1);
@@ -187,7 +195,7 @@ ok('18 ya con ACK la tarjeta muestra el lot_code del servidor',
   (await tarjeta.innerText()).includes('2290126'),
   (await tarjeta.innerText()).replace(/\n/g, ' ').slice(0, 60));
 ok('19 la lista dice la ETAPA en la que esta, no cuantas lleva',
-  (await p.locator(`${raiz} .etapa-actual`).first().innerText()).trim() === 'Presecado',
+  (await p.locator(`${raiz} .etapa-actual`).first().innerText()).trim() === 'Presecado en curso',
   await p.locator(`${raiz} .etapa-actual`).first().innerText());
 ok('20 el dia consumido ya no se ofrece para otra partida',
   await (async () => {
@@ -202,13 +210,59 @@ await tarjeta.click();
 await t(1200);
 ok('21 el detalle abre con el numero y los pesos',
   (await p.locator(`${raiz} .lot-code`).innerText()).includes('2290126'));
-ok('22 abre en la ventana que sigue al presecado ya iniciado',
-  (await ventana().innerText()).trim() === 'Fermentado', await ventana().innerText());
+ok('22 abre en el presecado, que es la etapa que falta registrar',
+  (await ventana().innerText()).trim() === 'Presecado', await ventana().innerText());
+
+// ------------------------------------------------------------------
+// 3b. LOS BLOQUEOS DE LA ETAPA (Kevin, 2026-09-08)
+// ------------------------------------------------------------------
+// El inicio del presecado no se teclea: es la fecha del pesaje, que la app ya
+// conoce. Precargar "ahora" obligaba a corregir a mano un dato propio.
+const inicioPre = await inputDe('etapa-inicio').inputValue();
+ok('22b el presecado abre con el inicio del pesaje ya cargado',
+  inicioPre === pl.fecha_inicio.slice(0, 16), `${inicioPre} vs ${pl.fecha_inicio}`);
+
+// SIN FIN NO SE REGISTRA. Es el agujero de v3: etapas abiertas para siempre y
+// un tiempo empleado que quedaba en "—" para el reporte.
+ok('22c sin fecha de fin la etapa no se puede registrar',
+  (await deshabilitado(btnEtapa('presecado'))) &&
+    (await p.locator(`${raiz} .problemas-etapa`).innerText()).includes('fin'),
+  (await p.locator(`${raiz} .problemas-etapa`).innerText()).replace(/\n/g, ' ').slice(0, 80));
+
+await inputDe('etapa-fin').fill(masMinutos(inicioPre, -60));
+await inputDe('etapa-fin').blur();
+await t(400);
+ok('22d un fin anterior al inicio se bloquea y se dice por que',
+  (await deshabilitado(btnEtapa('presecado'))) &&
+    (await p.locator(`${raiz} .problemas-etapa`).innerText()).includes('antes de empezar'),
+  (await p.locator(`${raiz} .problemas-etapa`).innerText()).replace(/\n/g, ' ').slice(0, 80));
+
+await inputDe('etapa-fin').fill(masMinutos(inicioPre, 1440));
+await inputDe('etapa-fin').blur();
+await t(400);
+ok('22e un fin en el futuro se bloquea: no se registra lo que no paso',
+  (await deshabilitado(btnEtapa('presecado'))) &&
+    (await p.locator(`${raiz} .problemas-etapa`).innerText()).includes('futuro'),
+  (await p.locator(`${raiz} .problemas-etapa`).innerText()).replace(/\n/g, ' ').slice(0, 80));
+
+await inputDe('etapa-fin').fill(masMinutos(inicioPre, 2));
+await inputDe('etapa-fin').blur();
+await t(400);
+ok('22f con inicio y fin validos el boton se habilita y el aviso desaparece',
+  !(await deshabilitado(btnEtapa('presecado'))) &&
+    (await p.locator(`${raiz} .problemas-etapa`).count()) === 0);
+await btnEtapa('presecado').click();
+await t(1800);
+
+const presecadoEnviado = (await lotes())
+  .flatMap((l) => l.records ?? [])
+  .filter((r) => r.tipo === 'pc_etapa' && r.payload.etapa === 'presecado');
+ok('22g el presecado viaja con su fin, nunca con null',
+  presecadoEnviado.length === 1 && !!presecadoEnviado[0].payload.fin,
+  JSON.stringify(presecadoEnviado[0]?.payload ?? {}));
 
 // Volver a una etapa registrada muestra SUS DATOS, no un cartel de "ya esta".
-await p.locator(`${raiz} ion-button.paso-anterior`).first().click();
-await t(600);
-ok('23 volver a presecado muestra los datos de la etapa, no un cartel',
+ok('23 el presecado registrado muestra sus datos, no un cartel',
   (await ventana().innerText()).trim() === 'Presecado' &&
     (await p.locator(`${raiz} .info-etapa`).count()) === 1 &&
     (await btnEtapa('presecado').count()) === 0);
@@ -216,24 +270,40 @@ ok('24 la ficha de la etapa trae su hora de inicio',
   /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(
     await p.locator(`${raiz} .info-inicio`).innerText()),
   await p.locator(`${raiz} .info-inicio`).innerText());
+ok('24b la ficha ya no puede quedar con el fin en "—"',
+  !(await p.locator(`${raiz} .info-fin`).innerText()).includes('—') &&
+    !(await p.locator(`${raiz} .info-duracion`).innerText()).includes('—'),
+  `${await p.locator(`${raiz} .info-fin`).innerText()} / ${await p.locator(`${raiz} .info-duracion`).innerText()}`);
 
 // LA REGRESION QUE REPORTO KEVIN: despues de presecado, fermentado quedaba
 // como "registrada" y no se podia entrar.
 ok('25 pasar a fermentado sigue siendo posible', await irAEtapa('Fermentado'));
+// OJO con lo que se afirma aca: fermentado tiene que estar SIN REGISTRAR
+// (formulario en blanco, sin ficha), no habilitado -- su boton esta
+// deshabilitado por su propia falta de fin, no por el presecado.
+// La version anterior miraba `.banner.sin-registrar`, una clase que el commit
+// 701633c saco del HTML: la comprobacion venia fallando desde entonces sin que
+// nadie la mirara. Misma leccion de siempre.
 ok('26 fermentado NO figura como registrada por haber hecho presecado',
-  (await p.locator(`${raiz} .banner.sin-registrar`).count()) === 1 &&
+  (await p.locator(`${raiz} .info-etapa`).count()) === 0 &&
     (await btnEtapa('fermentado').count()) === 1 &&
-    !(await deshabilitado(btnEtapa('fermentado'))),
+    (await inputDe('etapa-fin').inputValue()) === '',
   (await ventana().innerText()).trim());
 
 // Se SALTEA fermentado a proposito y se va al secado: no debe bloquear nada.
 ok('27 se puede saltear una etapa sin registrarla', await irAEtapa('Secado (sol)'));
 ok('28 la etapa salteada no deja rastro ni bloquea',
   (await btnEtapa('secado_sol').count()) === 1 &&
-    !(await deshabilitado(btnEtapa('secado_sol'))));
+    (await p.locator(`${raiz} .info-etapa`).count()) === 0 &&
+    // Lo unico que falta para habilitarla es SU inicio y SU fin, no el
+    // fermentado que se salteo.
+    (await p.locator(`${raiz} .problemas-etapa`).innerText()).includes('fin'),
+  (await p.locator(`${raiz} .problemas-etapa`).innerText()).replace(/\n/g, ' ').slice(0, 60));
 
 await inputDe('etapa-inicio').fill('2026-09-05T08:00');
 await inputDe('etapa-inicio').blur();
+await inputDe('etapa-fin').fill('2026-09-05T16:30');
+await inputDe('etapa-fin').blur();
 await t(300);
 await btnEtapa('secado_sol').click();
 await t(1800);

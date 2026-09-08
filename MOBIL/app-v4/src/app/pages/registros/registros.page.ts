@@ -35,12 +35,11 @@ import { EstadoRegistro, RegistroColaVista, TipoRegistro } from '../../core/sync
 /** Las dos mitades de la pantalla. */
 export type Vista = 'pendientes' | 'enviados';
 
-/** Un chip de modulo, con las dos cuentas: `AM 3/12`. */
+/** Un chip de modulo con lo que le falta subir: `AM 3`. */
 export interface ChipTipo {
   tipo: TipoRegistro;
   etiqueta: string;
   pendientes: number;
-  enviados: number;
 }
 
 /**
@@ -160,28 +159,28 @@ export class RegistrosPage implements OnInit {
   readonly ultimoError = this.cola.ultimoError;
 
   /**
-   * Un chip POR MODULO, con las dos cuentas: `AM 3/12` = 3 pendientes y 12
-   * enviados.
+   * Un chip POR MODULO CON TRABAJO SIN SUBIR: `AM 3` = a AM le faltan 3.
    *
-   * Antes los chips salian de la pestana que se estaba mirando, asi que para
-   * saber si a AM le faltaba enviar algo habia que cambiar de pestana. Como las
-   * dos mitades ya comparten ventana, el chip comparte las dos cuentas: se ve
-   * de un vistazo donde falta trabajo sin tocar nada.
+   * Kevin, 2026-09-08: el chip es un pendiente, no una estadistica. Antes
+   * llevaba las dos cuentas (`AM 3/12`) y sobrevivia al envio como `AM 0/12`,
+   * asi que la pantalla terminaba llena de chips que ya no pedian nada y habia
+   * que leer un cero para saberlo. Ahora un chip solo existe mientras haya algo
+   * que subir y desaparece con el ACK: sin chips = no falta nada.
+   *
+   * Lo enviado no se pierde de vista: sigue contado en el segmento
+   * "Enviados (N)" y listado en su pestana.
    */
   readonly chips = computed<ChipTipo[]>(() => {
-    const acc = new Map<TipoRegistro, { pendientes: number; enviados: number }>();
+    const acc = new Map<TipoRegistro, number>();
     for (const t of this.todas()) {
-      const c = acc.get(t.tipo) ?? { pendientes: 0, enviados: 0 };
-      const n = t.registros.length;
-      if (t.estado === 'PENDIENTE' || t.estado === 'ENVIANDO') {
-        c.pendientes += n;
-      } else {
-        c.enviados += n;
+      if (t.estado !== 'PENDIENTE' && t.estado !== 'ENVIANDO') {
+        continue;
       }
-      acc.set(t.tipo, c);
+      acc.set(t.tipo, (acc.get(t.tipo) ?? 0) + t.registros.length);
     }
     return [...acc.entries()]
-      .map(([tipo, c]) => ({ tipo, etiqueta: this.etiquetaTipo(tipo), ...c }))
+      .filter(([, pendientes]) => pendientes > 0)
+      .map(([tipo, pendientes]) => ({ tipo, etiqueta: this.etiquetaTipo(tipo), pendientes }))
       .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta));
   });
 
@@ -235,9 +234,15 @@ export class RegistrosPage implements OnInit {
   }
 
   cambiarVista(v: Vista): void {
-    // No recarga: `tarjetas` es un computed sobre lo ya cargado. Y el filtro de
-    // modulo NO se limpia a proposito -- si alguien filtro por AM y cambia de
-    // pestana, quiere ver los AM del otro lado, no todo de nuevo.
+    // No recarga: `tarjetas` es un computed sobre lo ya cargado.
+    //
+    // El filtro SI se limpia al pasar a Enviados. Antes se conservaba a
+    // proposito, pero con los chips viviendo solo en Pendientes el filtro
+    // quedaria activo sin nada en pantalla que lo diga ni forma de sacarlo:
+    // una lista recortada que parece incompleta.
+    if (v === 'enviados') {
+      this.filtroTipo.set(null);
+    }
     this.vista.set(v);
   }
 
@@ -254,6 +259,13 @@ export class RegistrosPage implements OnInit {
     // lados por un estado que dura segundos. La tarjeta si distingue cual es.
     const filas = await this.cola.listar(['PENDIENTE', 'ENVIANDO', 'ENVIADO', 'RECHAZADO']);
     this.todas.set(await this.agrupar(filas));
+    // Si el modulo por el que se estaba filtrando ya no tiene pendientes, su
+    // chip desaparecio: dejar el filtro puesto esconderia el resto de la lista
+    // sin nada que lo explique.
+    const f = this.filtroTipo();
+    if (f !== null && !this.chips().some((c) => c.tipo === f)) {
+      this.filtroTipo.set(null);
+    }
     this.cargando.set(false);
   }
 
@@ -328,9 +340,14 @@ export class RegistrosPage implements OnInit {
    */
   private clave(r: RegistroColaVista): string {
     const p = r.payload;
+    // Riego manda `modulo_id` en singular --su tabla guarda uno solo-- y el
+    // resto `modulo_ids`. Sin contemplar los dos, los N modulos de un mismo
+    // lote caian en una sola tarjeta y el parte parecia la mitad de lo que es.
     const modulos = Array.isArray(p['modulo_ids'])
       ? [...(p['modulo_ids'] as unknown[])].map(String).sort().join(',')
-      : '';
+      : p['modulo_id'] != null
+        ? String(p['modulo_id'])
+        : '';
     // Un cierre PM no describe un trabajo propio: hereda el del AM que cierra,
     // y lo unico que lo identifica es a que AM apunta.
     if (r.tipo === 'pm') {
@@ -373,13 +390,24 @@ export class RegistrosPage implements OnInit {
 
       const moduloIds = Array.isArray(p['modulo_ids'])
         ? (p['modulo_ids'] as unknown[]).map(Number).filter((x) => x > 0)
-        : [];
+        : p['modulo_id'] != null
+          ? [Number(p['modulo_id'])].filter((x) => x > 0)
+          : [];
       const nombresMod = moduloIds.length > 0
         ? await this.catalogo.nombresModulo(moduloIds)
         : new Map<number, string>();
 
+      // En riego no hay trabajador: el parte lo entrega el supervisor, y es el
+      // unico nombre que la tarjeta puede mostrar.
       const ids = registros
-        .map((r) => Number(r.payload['personal_id'] ?? r.payload['trabajador_id'] ?? 0))
+        .map((r) =>
+          Number(
+            r.payload['personal_id'] ??
+              r.payload['trabajador_id'] ??
+              r.payload['supervisor_id'] ??
+              0,
+          ),
+        )
         .filter((x) => x > 0);
       const nombres = await this.catalogo.nombresPersonal(ids);
       // Si el catalogo no tiene a alguien --se descargo despues, o se dio de
@@ -417,8 +445,13 @@ export class RegistrosPage implements OnInit {
           .filter((x) => !!x)
           .join(' · ') || 'Sin datos de catálogo',
         // La TAREA da el contexto que la subtarea sola no tiene: "Cosecha de
-        // mazorca" puede colgar de mas de una tarea.
-        labor: [sub?.tareaNombre, sub?.nombre].filter((x) => !!x).join(' / '),
+        // mazorca" puede colgar de mas de una tarea. Riego no tiene subtarea
+        // --las columnas de v3 estan muertas-- y lo que lo describe es el
+        // tiempo regado.
+        labor:
+          primero.tipo === 'riego'
+            ? this.tiempoRiego(p['tiempo_riego_min'])
+            : [sub?.tareaNombre, sub?.nombre].filter((x) => !!x).join(' / '),
         personas:
           listaPersonas.length === 0
             ? ''
@@ -433,6 +466,17 @@ export class RegistrosPage implements OnInit {
       });
     }
     return salida;
+  }
+
+  /** Minutos -> '01:30 de riego'. Vacio si el payload no lo trae. */
+  private tiempoRiego(valor: unknown): string {
+    const min = Number(valor ?? 0);
+    if (!Number.isFinite(min) || min <= 0) {
+      return '';
+    }
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} de riego`;
   }
 
   etiquetaTipo(t: TipoRegistro): string {

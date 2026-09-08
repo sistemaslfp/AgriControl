@@ -341,20 +341,80 @@ programación de la mañana, no se vuelve a cargar.
 
 ---
 
-## Riego
-
-Sin capturas. **[PENDIENTE]** capturas para el detalle de pantalla
-(pendiente #9).
+## Riego — HECHO (paso 7, 2026-09-08)
 
 **No es como Cosecha ni como el PM: es una bitácora** (Kevin, 2026-09-03). No
 elige una tarea AM ni cierra nada — el supervisor entrega su parte de riego y
-la pantalla lo registra. Campos según `z_riego`: supervisor, fecha, hora,
-finca, lote, módulo, tiempo de riego, volumen, observaciones. (`codigo_tarea` y
-`codigo_subtarea` valen '0' en las 9.778 filas: están muertos.)
+la pantalla lo registra.
 
 **Las tareas de riego del AM se siguen cerrando desde el PM**, y eso no se
 contradice: ahí se paga el jornal de la persona —las 7 subtareas de la tarea
 Riego son en Jornal—, acá se registra el agua. Ver `02-bd-y-api.md` §Riego.
+
+La captura de v3 (`agricontrol/capturas/riego.jpeg`) es: `Fecha Riego`, `Finca`
+y `Supervisor` arriba, y debajo `Registro #1` con Lote, Módulo, Tiempo de
+Riego, Volumen de riego y Observaciones.
+
+### La corrección que manda: NO se copia el formulario fila por fila
+
+**Un parte real son 18-25 filas.** Medido sobre las 9.778 de `z_riego`: 382
+partes (fecha, finca, supervisor), **mediana 18**, promedio 25,6, máximo 900.
+Con el formulario de v3 eso son 25 pasadas de cinco campos cada una.
+
+La pantalla nueva carga **por lote, con varios módulos de una vez**: se elige el
+lote, se marcan los módulos regados con el selector múltiple de siempre y se
+pone el tiempo → **se generan las N filas de golpe**, y cada una se corrige
+después. El lote y el tiempo **no se limpian** al agregar: lo normal es seguir
+con otro lote al mismo tiempo de riego.
+
+### Los campos, uno por uno, contra la data real
+
+- **Fecha del riego** — retroactividad 7 días, futuro prohibido. (`z_riego.hora`
+  vale '0' en las 9.778 filas: **no hay hora de origen**, así que la hora del
+  registro es la de la carga.)
+- **Finca** y **Supervisor** — arriba, una vez por parte. En todo el histórico
+  hay **un solo supervisor** (`supervisor = 2` en las 9.778 filas): es el
+  encargado de registrar, y Kevin lo confirmó.
+- **Lote** y **Módulo** — el módulo sólo aparece si el lote lo tiene. Las 9.778
+  filas de v3 tienen módulo, así que es la vía normal, pero la columna admite
+  NULL y hay lotes sin módulos.
+- **Tiempo de riego** — **seis chips**: 00:30, 00:45, 01:00, 01:30, 02:00 y
+  02:30, que son **9.246 de las 9.778 filas (94,6 %)**; el resto se carga en el
+  campo libre `HH:MM`. Viaja en **minutos enteros** (`tiempo_riego_min`), nunca
+  como texto: sumar y comparar duraciones como VARCHAR es el mismo defecto que
+  `fecha VARCHAR(10)`.
+- **Volumen de riego** — visible y **opcional** (Kevin, 2026-09-08). En las
+  9.778 filas de v3 **sólo 2 lo tienen cargado**: se conserva la columna y viaja
+  en 0 cuando no se llena.
+- **Observaciones** — opcional; el 9,7 % de las filas de v3 las trae.
+- **Sin Tarea ni Subtarea** (Kevin, 2026-09-08): *"omitamos tarea y subtarea que
+  no se enlazan con nada"*. `codigo_tarea` y `codigo_subtarea` valen '0' en las
+  9.778 filas. `reg_riego.subtarea_id` se escribe NULL, igual que en la
+  migración.
+
+### Lo que avisa y lo que bloquea
+
+- **Bloquea**: sin fecha, finca, supervisor o sin una sola fila no se guarda; y
+  una fila sin tiempo tampoco.
+- **Avisa, no bloquea**: el mismo (lote, módulo) cargado dos veces en el parte
+  —**1.086 de 6.211 combinaciones de v3 tienen más de una fila**, así que regar
+  dos veces el mismo día pasa de verdad— y una fila de más de 6 h, cuando el
+  riego más largo del histórico es 04:00.
+- **Cambiar la finca borra lo cargado**: los lotes y los módulos son de una
+  finca, y arrastrarlos mandaría filas de otra finca al servidor.
+
+### El envío
+
+**Una fila = un registro `riego` en la cola**, con su guid y su propio ACK. Sin
+`captura_guid`: `reg_riego` no tiene esa columna y **no se inventa una**; las
+filas de un parte se reconocen por fecha + finca + supervisor, que es como se
+leen los partes de v3. El payload es
+`{fecha_proceso, finca_id, supervisor_id, lote_id, modulo_id, tiempo_riego_min,
+volumen_riego, observaciones}`.
+
+En **Registros** la tarjeta dice `Riego · Lote 1 · Mód. 03`, el tiempo regado
+(`00:45 de riego`) y el supervisor, que es el único nombre que hay: en riego no
+existe el trabajador.
 
 ---
 
@@ -420,9 +480,10 @@ Flujo observado en las capturas:
    (**el mismo selector de checkbox que el resto de la app**, con el peso y los
    sacos de cada día como detalle: `2026-08-17 · 2779.7 lb · 9 saco(s)`), Peso
    Mallas (vacías) y Comentarios. El peso del lote y el peso baba se calculan.
-   **El botón dice `INICIAR PRESECADO` y hace exactamente eso**: guardar el
-   registro ARRANCA el presecado con la misma fecha de inicio, como en v3. Van
-   dos registros a la cola, en orden: el proceso y su etapa.
+   **El botón dice `INICIAR PRESECADO`**: abre la partida en presecado con esa
+   fecha de inicio, como en v3. **Desde el 2026-09-08 va UN solo registro a la
+   cola, el proceso**; la etapa `presecado` se registra en el detalle, con el
+   inicio ya cargado con esa misma fecha (ver *Fin obligatorio*, abajo).
 2. **Presecado** — muestra No. Proceso, Peso lote, Peso Mallas,
    **Peso Baba** (= peso lote − peso mallas, calculado), fecha inicio,
    comentarios → `INICIAR FERMENTADO`.
@@ -468,6 +529,36 @@ Correcciones:
 
 ---
 
+### Fin obligatorio: una etapa se registra cuando TERMINÓ (Kevin, 2026-09-08)
+
+Hasta acá una etapa se registraba con sólo el inicio y el fin decía
+`(opcional)`. Resultado: exactamente el agujero de v3 —etapas abiertas para
+siempre— y con él un `Tiempo empleado` en `—` para el reporte.
+
+Ahora, en la app y en el servidor:
+
+- **Inicio y fin obligatorios.** Sin los dos, el botón queda deshabilitado y
+  **se escribe qué falta**: un botón muerto sin motivo es la queja de siempre.
+- **El fin no puede ser anterior al inicio** (el servidor ya lo rechazaba;
+  bloquearlo en la app evita un RECHAZADO que nadie mira hasta el día siguiente).
+- **Ni el inicio ni el fin pueden estar en el futuro**, con 5 minutos de
+  tolerancia por la deriva del reloj del teléfono. Es la misma política de
+  fechas del resto de la app: *futuro: prohibido, sin interruptor*.
+- **`sync_pc_etapa` rechaza `fin` ausente.** La columna sigue admitiendo NULL
+  porque la data migrada de v3 tiene etapas abiertas, pero por `/v4/sync` ya no
+  entra ninguna más.
+
+**Lo que esto obligó a cambiar: el pesaje ya no registra el presecado.** Con el
+fin obligatorio, una etapa que nacía registrada y sin fin quedaba en un
+callejón sin salida —`registrarEtapa()` no vuelve a tocar una etapa hecha y el
+servidor rechaza el segundo envío por `UNIQUE (partida, etapa)`—. El presecado
+se registra ahora como cualquier otra etapa, con el inicio precargado con la
+fecha del pesaje. Mientras no se cierre, la lista dice **`Presecado en curso`**.
+
+**Lo que NO se valida, a propósito:** que el inicio caiga después del pesaje. El
+cacao entra a presecado cuando llega, que puede ser antes de que alguien lo
+pese; bloquear eso deja al supervisor sin forma de registrar lo que pasó.
+
 ## Registros Pendientes / Registros Enviados — HECHO (paso 4)
 
 **Una sola pantalla** (`/registros`), con un segmento arriba para las dos
@@ -494,11 +585,15 @@ mentiría en cualquiera de los dos.
 - **Tres estados, tres indicadores.** El reloj de arena único no distinguía
   PENDIENTE de ENVIANDO de RECHAZADO. Ahora cada uno tiene ícono, color y la
   palabra escrita — el ícono solo no le sirve a quien no lo conoce.
-- **Un chip por módulo con las DOS cuentas**, `AM 3/12`: 3 pendientes y 12
-  enviados. Como las dos mitades comparten ventana, el chip comparte las dos
-  cuentas y se ve dónde falta trabajo sin cambiar de pestaña. Las cuentas se
-  distinguen por color, no por posición: `3/12` sin color obliga a recordar cuál
-  es cuál, y un cero se apaga para que resalte lo que sí tiene algo.
+- **Un chip por módulo CON TRABAJO SIN SUBIR**, `AM 3`, y sólo en la pestaña
+  Pendientes (Kevin, 2026-09-08). **El chip es un pendiente, no una
+  estadística**: existe mientras haya algo que enviar y desaparece con el ACK.
+  Sin chips = no falta nada. Antes llevaba las dos cuentas (`AM 3/12`) y
+  sobrevivía al envío como `AM 0/12`: la pantalla terminaba llena de chips que
+  ya no pedían nada y había que leer un cero para saberlo. Lo enviado sigue
+  contado en el segmento `Enviados (N)` y listado en su pestaña.
+  **El filtro por módulo se limpia al pasar a Enviados**: sin chip que lo diga,
+  un filtro activo recorta la lista sin explicación y sin forma de sacarlo.
 - **El menú tiene UNA celda, `Pendientes / Enviados`**, a lo ancho de la grilla.
   Eran dos celdas que abrían la misma pantalla, o sea que prometían dos lugares
   distintos. Además estaban en `habilitada: false` desde el paso 1: se veían

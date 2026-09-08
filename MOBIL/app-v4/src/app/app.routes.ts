@@ -19,6 +19,10 @@ export const routes: Routes = [
       import('./pages/cosecha/cosecha.page').then((m) => m.CosechaPage),
   },
   {
+    path: 'riego',
+    loadComponent: () => import('./pages/riego/riego.page').then((m) => m.RiegoPage),
+  },
+  {
     path: 'postcosecha',
     loadComponent: () =>
       import('./pages/postcosecha/postcosecha.page').then((m) => m.PostcosechaPage),

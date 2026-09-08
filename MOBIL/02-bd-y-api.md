@@ -295,7 +295,22 @@ puente no está dimensionado y no se inventa uno por las dudas.
 
 `tiempo_riego` va en minutos enteros, no en `'HH:MM'` como VARCHAR: sumar y
 comparar duraciones como texto es el mismo defecto que `fecha VARCHAR(10)`.
-Falta el detalle de pantalla, que espera las capturas (pendiente #9).
+
+**`POST /v4/sync` con `tipo: riego` — HECHO el 2026-09-08.** Payload:
+`{fecha_proceso, finca_id, supervisor_id, lote_id, modulo_id, tiempo_riego_min,
+volumen_riego, observaciones}`. Lo que valida `sync_riego`:
+
+- finca activa, supervisor activo (`eregistro`), lote **de esa finca** y, si
+  viene, módulo **de ese lote** — la misma trampa que en AM: cada lote tiene su
+  propio "1".
+- `tiempo_riego_min` **obligatorio**, de 1 a 1440 (la columna es SMALLINT y un
+  riego de más de un día es un dedazo: el máximo real de v3 son 4 h).
+- `volumen_riego` opcional, `>= 0`, por defecto 0.
+- I1: fecha futura → rechazo duro, igual que en AM.
+- `subtarea_id` se escribe **NULL** siempre, y **no hay `captura_guid`**: esa
+  columna no existe en `reg_riego` y no se inventa.
+- El id público de `results` es el de `reg_riego`, no el de ningún AM: riego no
+  cierra nada.
 
 ### Postcosecha
 

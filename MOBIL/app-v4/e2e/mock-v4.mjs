@@ -36,7 +36,7 @@ const SUBTAREAS = { 88: 'COSECHA CACAO', 90: 'PODA DE FORMACION', 91: 'COSECHA E
 const UNIDAD_DE_SUBTAREA = { 88: 4, 90: 2, 91: 4 };   // 4 Libra, 2 Jornal
 const MODULO_DE_SUBTAREA = { 88: 'cosecha', 90: 'pm', 91: 'cosecha' };
 const LOTES = { 1: '1', 5: '5', 6: 'Administrativos' };
-const MODULOS = { 2: '02' };
+const MODULOS = { 2: '02', 3: '03' };
 
 const server = http.createServer((req, res) => {
   const cors = {
@@ -130,7 +130,10 @@ const server = http.createServer((req, res) => {
             { id: 5, lote: '5', finca_id: 1, ha: 8.0, tiene_modulos: false },
             { id: 1, lote: '1', finca_id: 1, ha: 12.5, tiene_modulos: true },
             { id: 20, lote: '1', finca_id: 2, ha: 25.1, tiene_modulos: false }],
-    modulos: [{ id: 2, modulo: '02', lote_id: 1, ha: 3.2 }],
+    // DOS modulos en el lote 1: con uno solo, la carga de riego por lote con
+    // varios modulos marcados no se ejercita nunca.
+    modulos: [{ id: 2, modulo: '02', lote_id: 1, ha: 3.2 },
+              { id: 3, modulo: '03', lote_id: 1, ha: 2.8 }],
     cultivos: [{ id: 1, nombre: 'CACAO' }],
     tareas: [{ id: 3, nombre: 'COSECHA', cultivos_id: 1 },
              { id: 4, nombre: 'MANTENIMIENTO', cultivos_id: 1 }],

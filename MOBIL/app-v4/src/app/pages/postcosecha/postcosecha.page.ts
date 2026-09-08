@@ -444,6 +444,9 @@ export class PostcosechaPage implements OnInit {
    * En qué etapa está el registro: la última registrada, por nombre. La lista
    * decía "N etapa(s)" y eso no le sirve a nadie — lo que se pregunta al
    * mirar la lista es en qué anda cada uno.
+   *
+   * Sin ninguna etapa registrada NO se dice "Sin iniciar": el pesaje ya puso
+   * el cacao en presecado, lo que falta es cerrar esa etapa con su fin.
    */
   etapaDe(r: Registro): string {
     for (let i = ETAPAS.length - 1; i >= 0; i--) {
@@ -451,7 +454,7 @@ export class PostcosechaPage implements OnInit {
         return ETAPAS[i].nombre;
       }
     }
-    return 'Sin iniciar';
+    return 'Presecado en curso';
   }
 
   // ------------------------------------------------------------------
@@ -525,9 +528,15 @@ export class PostcosechaPage implements OnInit {
   }
 
   /**
-   * El pesaje ARRANCA el presecado, como en v3: el botón de esa pantalla decía
-   * "INICIAR PRESECADO" y la fecha de inicio del presecado es la misma del
-   * pesaje. Van dos registros a la cola, en orden: el proceso y su etapa.
+   * El pesaje abre la PARTIDA y nada más.
+   *
+   * Hasta el 2026-09-08 mandaba además la etapa `presecado` con `fin: null`,
+   * porque en v3 el botón decía "INICIAR PRESECADO". Con el fin obligatorio
+   * eso quedaba en un callejón sin salida: la etapa nacía registrada y sin
+   * fin, `registrarEtapa()` no la vuelve a tocar y el servidor rechaza el
+   * segundo envío por `UNIQUE (partida, etapa)`. Ahora el presecado se
+   * registra como cualquier otra etapa, en el detalle, con el inicio ya
+   * cargado con la fecha del pesaje y el fin cuando de verdad terminó.
    */
   async guardarPesaje(): Promise<void> {
     if (!this.puedeGuardarPesaje()) return;
@@ -554,16 +563,10 @@ export class PostcosechaPage implements OnInit {
         cerrada: false,
       });
 
-      await this.cola.enqueue('pc_etapa', {
-        proceso_guid: guid,
-        etapa: 'presecado',
-        inicio,
-        fin: null,
-        comentario: '',
-      });
-      await this.local.registrarEtapa(guid, 'presecado', inicio, null, null);
-
-      await this.aviso('Registro iniciado en presecado. El número llega con el envío.');
+      await this.aviso(
+        'Partida abierta en presecado. Registrá la etapa cuando termine; ' +
+        'el número llega con el envío.',
+      );
     } finally {
       this.guardando.set(false);
     }
@@ -581,7 +584,13 @@ export class PostcosechaPage implements OnInit {
     const formularios: Record<string, FormEtapa> = {};
     const humedades: Record<string, FormHumedad> = {};
     for (const e of ETAPAS) {
-      formularios[e.clave] = { ...VACIO, inicio: ahora };
+      // El presecado arranca con el pesaje, no con el momento en que alguien
+      // abre el detalle: precargar "ahora" ahí obligaba a corregir a mano una
+      // fecha que la app ya conoce.
+      formularios[e.clave] = {
+        ...VACIO,
+        inicio: e.clave === 'presecado' ? this.paraInput(r.fechaInicio) : ahora,
+      };
       humedades[e.clave] = { ...SIN_HUMEDAD };
     }
     this.formEtapa.set(formularios);
@@ -653,8 +662,54 @@ export class PostcosechaPage implements OnInit {
     this.formHumedad.set({ ...actual, [clave]: { ...previo, [campo]: this.numero(valor) } });
   }
 
+  /**
+   * Por qué NO se puede registrar esta etapa. Lista, no booleano: el botón
+   * deshabilitado sin decir qué falta es la queja de siempre.
+   *
+   * **El fin es obligatorio (Kevin, 2026-09-08).** Hasta ahora alcanzaba con
+   * el inicio y el fin decía "(opcional)": el resultado era exactamente el
+   * agujero de v3 —etapas abiertas para siempre— y con él el tiempo empleado
+   * quedaba en "—" para el reporte. Una etapa se registra CUANDO TERMINÓ; si
+   * todavía está en curso, no se registra.
+   *
+   * El futuro se bloquea por la misma política de fechas del resto de la app
+   * ("futuro: prohibido, sin interruptor", `FechaService`), con cinco minutos
+   * de tolerancia por la deriva del reloj del teléfono.
+   *
+   * Lo que NO se valida a propósito: que el inicio caiga después del pesaje.
+   * El cacao entra a presecado cuando llega, que puede ser antes de que
+   * alguien lo pese, y bloquear eso deja al supervisor sin forma de registrar
+   * lo que realmente pasó.
+   */
+  problemasEtapa(clave: string): string[] {
+    const p: string[] = [];
+    const inicio = this.campo(clave, 'inicio');
+    const fin = this.campo(clave, 'fin');
+    if (!inicio) p.push('Falta la fecha y hora de inicio.');
+    if (!fin) p.push('Falta la fecha y hora de fin: la etapa se registra cuando terminó.');
+    if (inicio && fin) {
+      const a = new Date(inicio).getTime();
+      const b = new Date(fin).getTime();
+      if (Number.isNaN(a) || Number.isNaN(b)) {
+        p.push('Revisá las fechas: alguna no es una fecha válida.');
+      } else if (b < a) {
+        p.push('La etapa termina antes de empezar.');
+      }
+    }
+    const tope = new Date(this.fechas.ahoraLocal()).getTime() + 5 * 60_000;
+    for (const [etiqueta, valor] of [['inicio', inicio], ['fin', fin]] as const) {
+      const t = valor ? new Date(valor).getTime() : NaN;
+      if (!Number.isNaN(t) && t > tope) {
+        p.push(`El ${etiqueta} está en el futuro: no se puede registrar algo que no pasó.`);
+      }
+    }
+    return p;
+  }
+
   puedeRegistrarEtapa(clave: string): boolean {
-    return !this.etapaHecha(clave) && this.campo(clave, 'inicio') !== '' && !this.guardando();
+    return (
+      !this.etapaHecha(clave) && this.problemasEtapa(clave).length === 0 && !this.guardando()
+    );
   }
 
   async registrarEtapa(clave: string): Promise<void> {
@@ -664,6 +719,8 @@ export class PostcosechaPage implements OnInit {
     try {
       const f = this.formEtapa()[clave];
       const inicio = this.fechas.conOffset(f.inicio);
+      // `puedeRegistrarEtapa()` ya garantizó que hay fin; el `null` queda sólo
+      // como red por si alguien llama al método desde otro lado.
       const fin = f.fin ? this.fechas.conOffset(f.fin) : null;
       const comentario = f.comentario.trim();
       await this.cola.enqueue('pc_etapa', {
@@ -880,6 +937,15 @@ export class PostcosechaPage implements OnInit {
     if (typeof valor === 'string' && valor) {
       this.horaInicio.set(valor.length > 5 ? valor.slice(11, 16) : valor.slice(0, 5));
     }
+  }
+
+  /**
+   * La misma marca, pero como la quiere un `input[type=datetime-local]`:
+   * 'YYYY-MM-DDTHH:mm', sin segundos ni offset.
+   */
+  paraInput(valor: string | null): string {
+    if (!valor) return '';
+    return valor.replace(' ', 'T').slice(0, 16);
   }
 
   /** 'YYYY-MM-DDTHH:mm:ss±hh:mm' o 'YYYY-MM-DD HH:mm:ss' -> 'YYYY-MM-DD HH:mm'. */

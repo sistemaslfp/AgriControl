@@ -1,0 +1,296 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/menu" text=""></ion-back-button>
+    </ion-buttons>
+    <ion-title>Riego</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (sinHoraVerificada()) {
+    <div class="banner aviso">
+      Este equipo nunca sincronizó la hora con el servidor. Se puede capturar,
+      pero los registros viajan marcados como no verificables.
+    </div>
+  }
+
+  <!-- ==================== Encabezado del parte ==================== -->
+  <ion-list inset="true">
+    <ion-item>
+      <ion-label>Fecha del riego</ion-label>
+      <ion-datetime-button slot="end" datetime="fechaRiego"></ion-datetime-button>
+    </ion-item>
+    <ion-item button="true" detail="true" (click)="abrirFinca()" class="elegir-finca">
+      <ion-label>
+        Finca
+        <p>{{ finca()?.nombre ?? 'Sin elegir' }}</p>
+      </ion-label>
+    </ion-item>
+    <ion-item button="true" detail="true" (click)="abrirSupervisor()" class="elegir-supervisor">
+      <ion-icon slot="start" name="person-outline"></ion-icon>
+      <ion-label>
+        Supervisor
+        <p>{{ supervisor()?.nombre ?? 'Sin elegir' }}</p>
+      </ion-label>
+    </ion-item>
+  </ion-list>
+
+  <ion-modal [keepContentsMounted]="true">
+    <ng-template>
+      <ion-datetime
+        id="fechaRiego"
+        presentation="date"
+        locale="es-EC"
+        [showDefaultButtons]="true"
+        doneText="Listo"
+        cancelText="Cancelar"
+        [value]="fecha()"
+        [min]="limites().min"
+        [max]="limites().max"
+        (ionChange)="setFecha($any($event.detail).value)"
+      ></ion-datetime>
+    </ng-template>
+  </ion-modal>
+
+  <!-- ==================== Agregar riegos ====================
+       Por LOTE con varios módulos de una vez: un parte real son 18-25 filas
+       (mediana 18 sobre los 382 partes de z_riego). Una pasada por fila, como
+       en v3, son 25 formularios. -->
+  <h2 class="titulo-seccion">Agregar riego</h2>
+  <ion-list inset="true">
+    <ion-item button="true" detail="true" (click)="abrirLote()" class="elegir-lote">
+      <ion-label>
+        Lote
+        <p>{{ lote()?.nombre ?? 'Sin elegir' }}</p>
+      </ion-label>
+    </ion-item>
+    @if (loteTieneModulos()) {
+      <ion-item button="true" detail="true" (click)="abrirModulos()" class="elegir-modulos">
+        <ion-label>
+          Módulos regados
+          <p>{{ resumenModulos() }}</p>
+        </ion-label>
+      </ion-item>
+    }
+  </ion-list>
+
+  <!-- Los seis tiempos frecuentes son el 94,6 % de las 9.778 filas de v3: un
+       toque para el caso normal, y el campo libre para el resto. -->
+  <div class="tiempos">
+    <span class="etiqueta-tiempo">Tiempo de riego</span>
+    <div class="chips-tiempo">
+      @for (t of tiemposFrecuentes; track t) {
+        <ion-button
+          size="small"
+          class="chip-tiempo"
+          [fill]="minutos() === t ? 'solid' : 'outline'"
+          [attr.aria-pressed]="minutos() === t"
+          [attr.data-min]="t"
+          (click)="setMinutos(t)"
+        >
+          {{ hhmm(t) }}
+        </ion-button>
+      }
+    </div>
+    <ion-item lines="none" class="tiempo-libre-item">
+      <ion-input
+        label="Otro (HH:MM)"
+        labelPlacement="stacked"
+        type="time"
+        class="tiempo-libre"
+        [value]="hhmm(minutos())"
+        (ionInput)="setTiempoLibre($any($event.target).value)"
+      ></ion-input>
+    </ion-item>
+  </div>
+
+  @if (lote() && problemasFila().length > 0) {
+    <div class="banner alerta problemas-fila">
+      <ul>
+        @for (x of problemasFila(); track x) {
+          <li>{{ x }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  <div class="fila-botones">
+    <ion-button
+      expand="block"
+      class="agregar-riego"
+      [disabled]="!puedeAgregar()"
+      (click)="agregar()"
+    >
+      <ion-icon slot="start" name="add-outline"></ion-icon>
+      Agregar {{ modulos().length > 1 ? modulos().length + ' registros' : 'registro' }}
+    </ion-button>
+  </div>
+
+  <!-- ==================== El parte ==================== -->
+  <div class="cabecera-tarea">
+    <h2 class="titulo-seccion">Riegos del parte ({{ filas().length }})</h2>
+    @if (filas().length > 0) {
+      <ion-note class="total-tiempo">{{ hhmm(totalMinutos()) }} en total</ion-note>
+    }
+  </div>
+
+  @if (filas().length === 0) {
+    <div class="banner info sin-filas">
+      Todavía no hay riegos cargados. Elegí un lote, marcá los módulos regados
+      y agregalos: se puede corregir cada uno después.
+    </div>
+  } @else {
+    <ion-list inset="true">
+      @for (f of filas(); track f.n) {
+        <ion-item class="fila-riego" lines="full">
+          <ion-icon slot="start" name="water-outline" color="primary"></ion-icon>
+          <ion-label>
+            <strong>{{ etiqueta(f) }}</strong>
+            <p class="tiempo-fila">{{ hhmm(f.minutos) }}</p>
+            @if (f.volumen !== null) {
+              <p>Volumen: {{ f.volumen }}</p>
+            }
+            @if (f.observaciones) {
+              <p class="obs-fila">{{ f.observaciones }}</p>
+            }
+          </ion-label>
+          <ion-button
+            slot="end"
+            fill="clear"
+            class="editar-fila"
+            [attr.aria-label]="'Editar ' + etiqueta(f)"
+            (click)="alternarEdicion(f.n)"
+          >
+            <ion-icon slot="icon-only" name="create-outline"></ion-icon>
+          </ion-button>
+          <ion-button
+            slot="end"
+            fill="clear"
+            color="danger"
+            class="quitar-fila"
+            [attr.aria-label]="'Quitar ' + etiqueta(f)"
+            (click)="quitar(f.n)"
+          >
+            <ion-icon slot="icon-only" name="trash-outline"></ion-icon>
+          </ion-button>
+        </ion-item>
+
+        @if (editando() === f.n) {
+          <div class="editor-fila" [attr.data-fila]="f.n">
+            <div class="chips-tiempo">
+              @for (t of tiemposFrecuentes; track t) {
+                <ion-button
+                  size="small"
+                  class="chip-tiempo-fila"
+                  [fill]="f.minutos === t ? 'solid' : 'outline'"
+                  (click)="setMinutosFila(f.n, t)"
+                >
+                  {{ hhmm(t) }}
+                </ion-button>
+              }
+            </div>
+            <ion-list inset="true">
+              <ion-item>
+                <ion-input
+                  label="Tiempo (HH:MM)"
+                  labelPlacement="stacked"
+                  type="time"
+                  class="tiempo-fila-libre"
+                  [value]="hhmm(f.minutos)"
+                  (ionInput)="setTiempoLibreFila(f.n, $any($event.target).value)"
+                ></ion-input>
+              </ion-item>
+              <!-- Opcional a propósito: en las 9.778 filas de v3 sólo 2 tienen
+                   volumen cargado. Se conserva el campo, no se exige. -->
+              <ion-item>
+                <ion-input
+                  label="Volumen de riego (opcional)"
+                  labelPlacement="stacked"
+                  type="number"
+                  inputmode="decimal"
+                  class="volumen-fila"
+                  [value]="f.volumen"
+                  (ionInput)="setVolumen(f.n, $any($event.target).value)"
+                ></ion-input>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label="Observaciones"
+                  labelPlacement="stacked"
+                  class="obs-fila-input"
+                  [value]="f.observaciones"
+                  (ionInput)="setObservaciones(f.n, $any($event.target).value)"
+                ></ion-input>
+              </ion-item>
+            </ion-list>
+          </div>
+        }
+      }
+    </ion-list>
+  }
+
+  <!-- Avisos que NO bloquean: regar dos veces el mismo módulo en un día pasa
+       de verdad (1.086 de 6.211 combinaciones de v3). Se avisa, no se prohíbe. -->
+  @if (avisos().length > 0) {
+    <div class="banner aviso avisos-parte">
+      <ul>
+        @for (a of avisos(); track a) {
+          <li>{{ a }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (problemas().length > 0) {
+    <div class="banner alerta problemas-parte">
+      <ul>
+        @for (x of problemas(); track x) {
+          <li>{{ x }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+</ion-content>
+
+<ion-footer>
+  <ion-toolbar>
+    <ion-buttons slot="end">
+      <ion-button
+        expand="block"
+        fill="solid"
+        color="primary"
+        class="guardar-riego"
+        [disabled]="!puedeGuardar()"
+        (click)="guardar()"
+      >
+        <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
+        Guardar parte
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-footer>
+
+<!-- La ventana flotante va FUERA del ion-content, como en el resto de la app:
+     dentro, el ion-modal queda atrapado por el scroll del contenido. -->
+<ion-modal
+  class="selector-flotante"
+  [style.--height]="alturaSelector()"
+  [isOpen]="selectorAbierto()"
+  (ionModalDidDismiss)="cerrarSelector()"
+>
+  <ng-template>
+    <app-selector
+      [titulo]="selectorTitulo()"
+      [opciones]="selectorOpciones()"
+      [seleccion]="selectorSeleccion()"
+      [multiple]="selectorMultiple()"
+      [vacioTexto]="selectorVacio()"
+      [conBuscador]="selectorBuscador()"
+      (confirmar)="onSeleccion($event)"
+      (cambio)="onCambio($event)"
+      (cerrar)="cerrarSelector()"
+    ></app-selector>
+  </ng-template>
+</ion-modal>

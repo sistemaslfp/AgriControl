@@ -16,7 +16,7 @@ import { ClockService } from '../clock/clock.service';
  *   del usuario manda; el servidor lo anota con `fuera_de_ventana_horaria`.
  */
 
-export type TipoFecha = 'am' | 'pm' | 'cosecha' | 'postcosecha';
+export type TipoFecha = 'am' | 'pm' | 'cosecha' | 'riego' | 'postcosecha';
 
 /**
  * Cosecha no tiene ventana horaria: se cosecha cuando se cosecha. Se devuelve

@@ -34,10 +34,26 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   sigue gris. Hay que anclar con `/^Cosecha$/`. Para contar filas de saco,
   `hasText: 'Saco '` cuenta de más: se usa `.numero-saco`.
 
+- **`riego.spec.mjs`** — `MOBIL/03-pantallas.md` §Riego: que la pantalla es una
+  **bitácora** (no pide trabajador ni tarea), que un lote con dos módulos genera
+  **dos filas de una vez**, que el tiempo sale de los seis chips y viaja en
+  **minutos**, que el volumen es opcional y viaja en 0, que el payload **no**
+  lleva `subtarea_id` ni `captura_guid`, que repetir (lote, módulo) **avisa sin
+  bloquear** y que cambiar la finca borra lo cargado. 34 comprobaciones.
+
+  **Ojo con el localizador del lote**: `hasText: '5'` matchea primero al lote 1,
+  porque su detalle dice "12.5 ha". Hay que pedir `'Lote 5'` entero.
+
   **`am-pm.spec.mjs` usa PODA DE FORMACION y no COSECHA CACAO** en las tareas
   que después cierra el PM, justamente porque el PM ya no cierra cosecha. Y
-  `cola.spec.mjs` encola `riego` donde antes encolaba `cosecha`: ese tipo dejó
-  de ser genérico, el mock lo trata como cierre de un AM.
+  `cola.spec.mjs` encola `riego` para probar **la mecánica del ACK**: ahí el
+  tipo da igual y el mock ACKea cualquier cosa. Desde el 2026-09-08 el servidor
+  real **sí** implementa `riego` y valida su payload, así que esos registros de
+  prueba no pasarían por un servidor de verdad.
+
+  **El mock GUARDA ESTADO entre corridas** (los días de cosecha consumidos no
+  vuelven): correr `postcosecha.spec.mjs` dos veces sin reiniciarlo da 7 fallos
+  que no son del código. Reiniciar el mock entre suites.
 
 No corren en CI ni hacen falta para desarrollar.
 
@@ -54,7 +70,12 @@ node e2e/cola.spec.mjs
 node e2e/am-pm.spec.mjs
 node e2e/registros.spec.mjs
 node e2e/cosecha.spec.mjs
+node e2e/postcosecha.spec.mjs
+node e2e/riego.spec.mjs
 ```
+
+**Las seis se corren juntas**: dos veces una regla nueva dejó suites rojas
+durante un día porque sólo se corrió la que parecía afectada.
 
 Si el entorno ya tiene un Chromium instalado y no se quiere descargar otro,
 `PW_CHROMIUM=/ruta/al/chrome node e2e/am-pm.spec.mjs`.

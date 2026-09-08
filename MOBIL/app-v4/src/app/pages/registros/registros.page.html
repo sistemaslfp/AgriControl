@@ -66,11 +66,11 @@
   </div>
 
   <!--
-    Un chip por módulo con las DOS cuentas: pendientes / enviados. Como las dos
-    mitades comparten ventana, el chip comparte las dos cuentas y se ve dónde
-    falta trabajo sin cambiar de pestaña.
+    Un chip por módulo CON TRABAJO SIN SUBIR, y sólo en Pendientes. El chip es
+    un pendiente, no una estadística: en cuanto el módulo llega al servidor su
+    chip desaparece. Sin chips = no falta nada por enviar.
   -->
-  @if (chips().length > 0) {
+  @if (vista() === 'pendientes' && chips().length > 0) {
     <div class="chips-tipo">
       @for (c of chips(); track c.tipo) {
         <ion-chip
@@ -78,15 +78,11 @@
           [outline]="filtroTipo() !== c.tipo"
           (click)="filtrar(c.tipo)"
           [attr.aria-pressed]="filtroTipo() === c.tipo"
-          [attr.aria-label]="
-            c.etiqueta + ': ' + c.pendientes + ' pendientes, ' + c.enviados + ' enviados'
-          "
+          [attr.aria-label]="c.etiqueta + ': ' + c.pendientes + ' sin enviar'"
         >
           <ion-label>
             {{ c.etiqueta }}
-            <span class="cuenta pend" [class.cero]="c.pendientes === 0">{{ c.pendientes }}</span
-            ><span class="barra">/</span
-            ><span class="cuenta env" [class.cero]="c.enviados === 0">{{ c.enviados }}</span>
+            <span class="cuenta pend">{{ c.pendientes }}</span>
           </ion-label>
         </ion-chip>
       }

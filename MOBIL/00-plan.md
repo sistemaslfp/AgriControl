@@ -23,7 +23,7 @@ al día al **2026-09-02**.
 | 4 | **Pendientes / Enviados** con los tres estados reales | **HECHO** — pantalla `/registros`, una sola para las dos mitades |
 | 5 | **Cosecha de Cacao** | **HECHO** — cierra una tarea AM: `tipo: cosecha` en `/v4/sync` y la pantalla `/cosecha` |
 | 6 | **Postcosecha** — HECHO: migración, endpoints, los 5 tipos de sync y la pantalla. Las fotos quedaron fuera a propósito | hecho |
-| 7 | **Riego** — bitácora propia, no cierra tareas AM. `reg_riego` ya está y no se rehace | pendiente — faltan las capturas (#9) |
+| 7 | **Riego** — bitácora propia, no cierra tareas AM | **HECHO** (2026-09-08) — `tipo: riego` en `/v4/sync` y la pantalla `/riego`. `reg_riego` no se tocó |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
 
 La migración de la ventana de agosto está **hecha y verificada**
@@ -279,9 +279,14 @@ con una bandera.
 | # | Pendiente | Dónde |
 |---|---|---|
 | 1 | Las cinco ventanas de retroactividad (AM/PM 3 d, Cosecha 7 d, Riego 7 d, Postcosecha 30 d) | 01 §Integridad de fechas |
-| 9 | Capturas de pantalla del módulo Riego | 03 §Riego |
 
 ## Cerrados con datos
+
+- **#9 — las capturas de Riego llegaron (2026-09-08)**: `Fecha Riego`, `Finca`,
+  `Supervisor` y `Registro #N` con Lote, Módulo, Tiempo de Riego, Volumen y
+  Observaciones. La pantalla nueva **no la copia fila por fila**: carga por lote
+  con varios módulos de una vez, porque un parte real son 18-25 filas (mediana
+  18 sobre 382 partes de `z_riego`, máximo 900). Ver `03-pantallas.md` §Riego.
 
 - **#7 — el botón `ADICIONAL` de Cosecha agregaba otro trabajador al mismo
   encabezado** (2026-09-03). **2.710 de los 3.641 encabezados de

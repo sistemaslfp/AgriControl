@@ -162,13 +162,14 @@ const segEnv = await p.locator(`${raiz} ion-segment-button[value="enviados"]`).i
 ok('08g el contador de la pestaña coincide con lo que hay en la lista',
   segPend.includes('(3)') && segEnv.includes('(0)'), `${segPend} | ${segEnv}`);
 
-// --- el chip: un modulo, las dos cuentas ---
+// --- el chip: un modulo, lo que le falta subir ---
 const chips = p.locator(`${raiz} ion-chip.chip-modulo`);
-ok('08e hay un solo chip por módulo, no uno por pestaña',
+ok('08e hay un chip por módulo con pendientes, no uno por registro',
   (await chips.count()) === 1, `chips=${await chips.count()}`);
 const textoChip = await chips.first().innerText();
-ok('08f el chip lleva pendientes y enviados separados por "/"',
-  /AM\s*3\s*\/\s*0/.test(textoChip.replace(/\n/g, ' ')), textoChip);
+// El chip es un PENDIENTE, no una estadistica: una sola cuenta y sin "0/3".
+ok('08f el chip lleva sólo lo que falta subir, sin la cuenta de enviados',
+  /AM\s*3/.test(textoChip.replace(/\n/g, ' ')) && !textoChip.includes('/'), textoChip);
 
 // ------------------------------------------------------------------
 // 3. Descartar un PENDIENTE
@@ -210,6 +211,10 @@ ok('14 el botón de la barra envía la cola, no sólo recarga la lista',
 ok('15 vaciada la cola, Pendientes lo dice en vez de quedar en blanco',
   (await p.locator(`${raiz} .sin-registros`).innerText()).includes('llegó al servidor'),
   await p.locator(`${raiz} .sin-registros`).innerText());
+// LO QUE PIDIO KEVIN (2026-09-08): subido al servidor, el chip se va. Antes
+// quedaba como "AM 0/3" y habia que leer un cero para saber que no pedia nada.
+ok('15b enviado todo, el chip del módulo desaparece',
+  (await chips.count()) === 0, `chips=${await chips.count()}`);
 
 // ------------------------------------------------------------------
 // 5. Enviados y rechazados
@@ -220,6 +225,8 @@ ok('16 lo enviado aparece en la otra pestaña',
   (await tarjetas().count()) >= 1, `tarjetas=${await tarjetas().count()}`);
 ok('17 un ENVIADO no ofrece descartar: ya está en el servidor',
   (await p.locator(`${raiz} ion-item.tarjeta-registro ion-button.descartar`).count()) === 0);
+ok('17b la pestaña Enviados no muestra chips: ahí no falta subir nada',
+  (await chips.count()) === 0, `chips=${await chips.count()}`);
 
 // Un rechazo real, con su motivo.
 await modo('rechaza');

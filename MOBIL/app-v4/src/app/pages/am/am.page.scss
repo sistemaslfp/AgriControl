@@ -84,24 +84,11 @@
   font-size: 0.86rem;
 }
 
-/* El chip lleva las dos cuentas: pendientes / enviados. Se distinguen por
-   color, no por posicion: "3/12" sin color obliga a recordar cual es cual. */
+/* El chip lleva UNA cuenta: lo que a ese modulo le falta subir. El cero no
+   existe -- un modulo sin pendientes no tiene chip. */
 .chip-modulo .cuenta {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-.chip-modulo .cuenta.pend {
+  margin-left: 4px;
   color: var(--ion-color-warning-shade, #b8860b);
-}
-.chip-modulo .cuenta.env {
-  color: var(--ion-color-success-shade, #1a7f37);
-}
-/* Un cero no es una alerta: se apaga para que resalte lo que si tiene algo. */
-.chip-modulo .cuenta.cero {
-  color: var(--ion-color-medium);
-  font-weight: 400;
-}
-.chip-modulo .barra {
-  color: var(--ion-color-medium);
-  margin: 0 1px;
 }

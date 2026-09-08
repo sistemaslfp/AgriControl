@@ -187,8 +187,9 @@
     </ion-list>
 
     <div class="banner info">
-      Al guardar, el registro <strong>arranca en presecado</strong> con esta
-      misma fecha de inicio. El número de proceso lo asigna el servidor: aparece
+      Al guardar se abre la partida <strong>en presecado</strong>: la etapa se
+      registra en el detalle, con el inicio ya cargado con esta fecha y el fin
+      cuando termine. El número de proceso lo asigna el servidor: aparece
       cuando el registro se envía.
     </div>
 
@@ -276,16 +277,19 @@
               labelPlacement="stacked"
               type="datetime-local"
               class="etapa-inicio"
+              [attr.max]="limites().max"
               [value]="campo(etapa.clave, 'inicio')"
               (ionInput)="setCampo(etapa.clave, 'inicio', $any($event.target).value)"
             ></ion-input>
           </ion-item>
           <ion-item>
             <ion-input
-              label="Fin (opcional)"
+              label="Fin"
               labelPlacement="stacked"
               type="datetime-local"
               class="etapa-fin"
+              [attr.max]="limites().max"
+              [attr.min]="campo(etapa.clave, 'inicio')"
               [value]="campo(etapa.clave, 'fin')"
               (ionInput)="setCampo(etapa.clave, 'fin', $any($event.target).value)"
             ></ion-input>
@@ -304,6 +308,18 @@
             ></ion-input>
           </ion-item>
         </ion-list>
+
+        <!-- El boton deshabilitado sin decir que falta es la queja de siempre:
+             el motivo va escrito, igual que en el pesaje. -->
+        @if (problemasEtapa(etapa.clave).length > 0) {
+          <div class="banner alerta problemas-etapa">
+            <ul>
+              @for (x of problemasEtapa(etapa.clave); track x) {
+                <li>{{ x }}</li>
+              }
+            </ul>
+          </div>
+        }
 
         <div class="fila-botones">
           <ion-button

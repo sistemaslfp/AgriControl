@@ -467,17 +467,17 @@ class V4 extends RestController
     //                arregla: payload inválido, catálogo inexistente, I1.
     //
     // Un guid que NO aparece en `results` se queda PENDIENTE en el teléfono y
-    // se reintenta. Eso es deliberado y se usa en dos casos: los tipos que
-    // todavía no se implementan (riego, postcosecha) y los errores de base.
-    // Un error de base nunca es `rejected`: reenviar sí lo arregla.
+    // se reintenta. Eso es deliberado y se usa en dos casos: un tipo que
+    // todavía no se implementa y los errores de base. Un error de base nunca
+    // es `rejected`: reenviar sí lo arregla.
     //
-    // Implementados: `am`, `pm` y `cosecha`.
+    // Implementados: `am`, `pm`, `cosecha`, `riego` y los cinco de postcosecha.
 
     /** Tope de registros por lote. Uno más grande se rechaza entero con 413. */
     const SYNC_MAX_RECORDS = 200;
 
     /** Tipos que se saben recibir. El resto se omite de `results`. */
-    private static $SYNC_TIPOS = array('am', 'pm', 'cosecha',
+    private static $SYNC_TIPOS = array('am', 'pm', 'cosecha', 'riego',
         'pc_proceso', 'pc_etapa', 'pc_calidad_ferm', 'pc_calidad_sec', 'pc_resultado');
 
     /** Las cinco etapas de una partida y su orden. */
@@ -651,6 +651,8 @@ class V4 extends RestController
                 $res = $this->sync_pm($db, $guid, $payload, $cad, $alias, $offset, $ahora);
             } elseif ($tipo === 'cosecha') {
                 $res = $this->sync_cosecha($db, $guid, $payload, $cad, $alias, $offset, $ahora);
+            } elseif ($tipo === 'riego') {
+                $res = $this->sync_riego($db, $guid, $payload, $cad, $alias, $offset, $ahora);
             } elseif ($tipo === 'pc_proceso') {
                 $res = $this->sync_pc_proceso($db, $guid, $payload, $cad, $alias, $offset, $ahora);
             } elseif ($tipo === 'pc_etapa') {
@@ -834,8 +836,16 @@ class V4 extends RestController
         if ($inicio === NULL) {
             return $this->sync_rechazo($guid, 'inicio ausente o no es ISO-8601');
         }
+        // El fin es OBLIGATORIO desde el 2026-09-08 (Kevin): una etapa se
+        // registra cuando termino. La columna sigue admitiendo NULL porque la
+        // data migrada de v3 tiene etapas abiertas, pero por /v4/sync ya no
+        // entra ninguna mas.
         $fin = $this->sync_fecha(isset($p['fin']) ? $p['fin'] : NULL);
-        if ($fin !== NULL && $fin < $inicio) {
+        if ($fin === NULL) {
+            return $this->sync_rechazo($guid,
+                'fin ausente o no es ISO-8601: una etapa se registra cuando termino');
+        }
+        if ($fin < $inicio) {
             return $this->sync_rechazo($guid, 'la etapa termina antes de empezar');
         }
 
@@ -1086,6 +1096,10 @@ class V4 extends RestController
         } elseif ($tipo === 'cosecha') {
             $q = $db->select('reg_am_id AS id')->from('reg_cosecha')
                     ->where('guid', $guid)->limit(1)->get();
+        } elseif ($tipo === 'riego') {
+            // Riego NO cierra nada: su id publico es el suyo propio, no el de
+            // ningun AM. Es una bitacora, no un cierre.
+            $q = $db->select('id')->from('reg_riego')->where('guid', $guid)->limit(1)->get();
         } elseif ($tipo === 'pm') {
             $q = $db->select('id')->from('reg_am')->where('cierre_guid', $guid)->limit(1)->get();
         } else {
@@ -1565,6 +1579,133 @@ class V4 extends RestController
     }
 
     /** Lista de {numero, libras}. NULL si viene mal, array() si no viene. */
+    // -----------------------------------------------------------------
+    // RIEGO — bitacora, no cierre
+    // -----------------------------------------------------------------
+
+    /**
+     * Un parte de riego: cuanta agua fue a que lote y por cuanto tiempo.
+     *
+     * **No cierra ninguna tarea AM y no toca `reg_am`** (Kevin, 2026-09-03).
+     * Las tareas de riego del personal las cierra el PM --sus 7 subtareas son
+     * en Jornal--; esto registra el AGUA. Por eso `reg_riego` lleva finca,
+     * supervisor, lote y modulo PROPIOS: no es denormalizacion, es su unica
+     * fuente de verdad.
+     *
+     * Sin `subtarea_id` a proposito: en las 9.778 filas de `z_riego`
+     * `codigo_tarea` y `codigo_subtarea` valen '0'. Son columnas muertas y no
+     * se resucitan (Kevin, 2026-09-08).
+     *
+     * Tampoco lleva `captura_guid`: la tabla no tiene esa columna y no se
+     * inventa una. Las N filas de un parte se reconocen por
+     * (fecha, finca, supervisor), que es como se leen los partes de v3.
+     */
+    private function sync_riego($db, $guid, $p, $cad, $alias, $offset, $ahora)
+    {
+        $fecha = $this->sync_fecha(isset($p['fecha_proceso']) ? $p['fecha_proceso'] : NULL);
+        if ($fecha === NULL) {
+            return $this->sync_rechazo($guid, 'fecha_proceso ausente o no es ISO-8601');
+        }
+
+        $ids = array();
+        foreach (array('finca_id', 'supervisor_id', 'lote_id') as $campo) {
+            $v = $this->sync_int($p, $campo);
+            if ($v === NULL) {
+                return $this->sync_rechazo($guid, $campo . ' ausente o no es un entero positivo');
+            }
+            $ids[$campo] = $v;
+        }
+
+        // No se reusa sync_valida_catalogos(): ese exige subtarea y cultivo,
+        // que en riego no existen. Se validan los cuatro que si.
+        if (!$this->sync_existe($db, 'z_finca', $ids['finca_id'], "estado IN ('1','A')")) {
+            return $this->sync_rechazo($guid, 'la finca '
+                . $this->sync_nombre($db, 'z_finca', 'nombre', $ids['finca_id'])
+                . ' no existe o esta inactiva');
+        }
+        if (!$this->sync_personal_activo($db, $ids['supervisor_id'])) {
+            return $this->sync_rechazo($guid, 'el supervisor '
+                . $this->sync_nombre($db, 'z_personal', 'nombre', $ids['supervisor_id'])
+                . ' no existe o esta dado de baja');
+        }
+        $lote = $db->select('finca_id')->from('z_lote')
+                   ->where('id', $ids['lote_id'])->where("estado IN ('1','A')", NULL, FALSE)
+                   ->limit(1)->get();
+        $lote = ($lote === FALSE) ? NULL : $lote->row();
+        if (!$lote) {
+            return $this->sync_rechazo($guid, 'el lote '
+                . $this->sync_nombre($db, 'z_lote', 'lote', $ids['lote_id'])
+                . ' no existe o esta inactivo');
+        }
+        if ((int) $lote->finca_id !== $ids['finca_id']) {
+            return $this->sync_rechazo($guid, 'el lote '
+                . $this->sync_nombre($db, 'z_lote', 'lote', $ids['lote_id'])
+                . ' no pertenece a la finca '
+                . $this->sync_nombre($db, 'z_finca', 'nombre', $ids['finca_id']));
+        }
+
+        // El modulo es opcional --hay lotes sin modulos-- pero si viene, tiene
+        // que ser DE ESE LOTE: cada lote tiene su propio "1".
+        $modulo_id = NULL;
+        if (isset($p['modulo_id']) && $p['modulo_id'] !== NULL && $p['modulo_id'] !== '') {
+            $modulo_id = $this->sync_int($p, 'modulo_id');
+            if ($modulo_id === NULL) {
+                return $this->sync_rechazo($guid, 'modulo_id no es un entero positivo');
+            }
+            if (!$this->sync_modulo_de_lote($db, $modulo_id, $ids['lote_id'])) {
+                return $this->sync_rechazo($guid,
+                    $this->sync_motivo_modulo($db, $modulo_id, $ids['lote_id']));
+            }
+        }
+
+        // I1: el unico rechazo duro por fecha, igual que en AM.
+        if ($fecha->getTimestamp() > $ahora + 7200) {
+            return $this->sync_rechazo($guid,
+                'la fecha del riego es futura: no se puede registrar trabajo que todavia no ocurrio');
+        }
+
+        // El tiempo ES el dato del parte: sin el no queda nada que registrar.
+        // Tope de 24 h porque la columna es SMALLINT y porque un riego de mas
+        // de un dia es un error de tipeo (el maximo real de v3 son 4 h).
+        $minutos = $this->sync_int($p, 'tiempo_riego_min');
+        if ($minutos === NULL || $minutos > 1440) {
+            return $this->sync_rechazo($guid,
+                'tiempo_riego_min ausente o fuera de rango: son minutos, de 1 a 1440');
+        }
+
+        // El volumen es opcional y por defecto 0: en las 9.778 filas de v3
+        // solo 2 lo tienen cargado. Se conserva la columna, no se exige.
+        $volumen = 0;
+        if (isset($p['volumen_riego']) && $p['volumen_riego'] !== NULL && $p['volumen_riego'] !== '') {
+            if (!is_numeric($p['volumen_riego']) || (float) $p['volumen_riego'] < 0) {
+                return $this->sync_rechazo($guid, 'volumen_riego no es un numero positivo');
+            }
+            $volumen = (float) $p['volumen_riego'];
+        }
+
+        $ok = $db->insert('reg_riego', array(
+            'guid'                => $guid,
+            'fecha_proceso'       => $fecha->format('Y-m-d H:i:s'),
+            'finca_id'            => $ids['finca_id'],
+            'supervisor_id'       => $ids['supervisor_id'],
+            'lote_id'             => $ids['lote_id'],
+            'modulo_id'           => $modulo_id,
+            'subtarea_id'         => NULL,
+            'tiempo_riego_min'    => $minutos,
+            'volumen_riego'       => $volumen,
+            'observaciones'       => $this->sync_texto($p, 'observaciones', 500),
+            'device_alias'        => $alias,
+            'created_at_device'   => $cad->format('Y-m-d H:i:s'),
+            'received_at_server'  => date('Y-m-d H:i:s', $ahora),
+            'device_clock_offset' => $offset,
+            'origen'              => 'app',
+        ));
+        if ($ok === FALSE) {
+            return $this->sync_error_insert($db, $guid, 'riego');
+        }
+        return array('guid' => $guid, 'status' => 'created', 'id' => (int) $db->insert_id());
+    }
+
     private function sync_sacos($p)
     {
         if (!isset($p['sacos'])) {

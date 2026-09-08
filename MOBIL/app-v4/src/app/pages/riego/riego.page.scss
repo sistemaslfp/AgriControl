@@ -1,0 +1,51 @@
+/* Los seis tiempos frecuentes, en fila y envolviendo: un toque para el 94,6 %
+   de los casos. */
+.chips-tiempo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.tiempos {
+  margin: 8px 4px 0;
+}
+
+.etiqueta-tiempo {
+  font-size: 0.82rem;
+  color: var(--ion-color-medium-shade);
+}
+
+.chip-tiempo,
+.chip-tiempo-fila {
+  --padding-start: 10px;
+  --padding-end: 10px;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.tiempo-libre-item {
+  --padding-start: 0;
+}
+
+.total-tiempo {
+  font-weight: 600;
+  color: var(--ion-color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fila-riego .tiempo-fila {
+  font-weight: 600;
+  color: var(--ion-color-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.fila-riego .obs-fila {
+  white-space: normal;
+  font-size: 0.82rem;
+}
+
+.editor-fila {
+  padding: 0 12px 8px;
+  background: var(--ion-color-step-50, #fafafa);
+}
