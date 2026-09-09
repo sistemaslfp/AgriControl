@@ -143,8 +143,7 @@
 
             <!-- El UUID no va acá: no le dice nada a quien mira la lista. Sigue
                  siendo la única forma de rastrear un registro entre el teléfono
-                 y el servidor -- por eso vive en Detalle Registro, que se abre
-                 tocando la tarjeta. -->
+                 y el servidor, así que vive en Detalle Registro. -->
           </ion-label>
 
           @if (t.estado === 'PENDIENTE') {
@@ -153,7 +152,7 @@
               fill="clear"
               color="danger"
               class="descartar"
-              (click)="$event.stopPropagation(); descartar(t)"
+              (click)="descartar(t)"
               [attr.aria-label]="'Descartar ' + t.lote + ' ' + t.labor"
             >
               <ion-icon slot="icon-only" name="trash-outline"></ion-icon>
@@ -172,24 +171,3 @@
     </div>
   }
 </ion-content>
-
-<!--
-  Detalle Registro: el payload campo por campo, con el UUID. Ventana
-  flotante, no una pantalla nueva -- mismo patron que el selector de PM/AM.
-  Altura fija por porcentaje y no calculada como en `selector-flotante`: acá
-  el contenido es de largo variable (1 a N registros, cada uno con su lista
-  de campos) y lo que importa es que entre scroll, no que la ventana quede a
-  medida.
--->
-<ion-modal
-  class="detalle-flotante"
-  [isOpen]="detalleTarjeta() !== null"
-  (ionModalDidDismiss)="cerrarDetalle()"
->
-  <ng-template>
-    <app-detalle-registro
-      [tarjeta]="detalleTarjeta()"
-      (cerrar)="cerrarDetalle()"
-    ></app-detalle-registro>
-  </ng-template>
-</ion-modal>

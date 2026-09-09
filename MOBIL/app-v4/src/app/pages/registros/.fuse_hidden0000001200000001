@@ -30,10 +30,6 @@ import {
 } from 'ionicons/icons';
 
 import { CatalogQueryService } from '../../core/catalog/catalog-query.service';
-import {
-  DetalleRegistroComponent,
-  RegistroDetalleTarjeta,
-} from '../../shared/detalle-registro.component';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { EstadoRegistro, RegistroColaVista, TipoRegistro } from '../../core/sync/sync.models';
 
@@ -78,7 +74,6 @@ export interface TarjetaRegistros {
   templateUrl: './registros.page.html',
   styleUrls: ['../am/am.page.scss'],
   imports: [
-    DetalleRegistroComponent,
     IonBackButton,
     IonButton,
     IonButtons,
@@ -89,7 +84,6 @@ export interface TarjetaRegistros {
     IonItem,
     IonLabel,
     IonList,
-    IonModal,
     IonSegment,
     IonSegmentButton,
     IonSpinner,
@@ -117,13 +111,6 @@ export class RegistrosPage implements OnInit {
   private readonly todas = signal<TarjetaRegistros[]>([]);
   /** null = todos los tipos. */
   readonly filtroTipo = signal<TipoRegistro | null>(null);
-  /**
-   * La tarjeta abierta en Detalle Registro, o null si la ventana esta
-   * cerrada. Guarda la tarjeta entera y no el guid: Detalle Registro pinta
-   * de la misma tarjeta que ya esta en pantalla, sin volver a consultar la
-   * cola.
-   */
-  readonly detalleTarjeta = signal<RegistroDetalleTarjeta | null>(null);
 
   /** Las de la pestana que se esta mirando. PENDIENTE y ENVIANDO van juntas. */
   readonly tarjetas = computed(() =>
@@ -262,18 +249,6 @@ export class RegistrosPage implements OnInit {
 
   filtrar(t: TipoRegistro | null): void {
     this.filtroTipo.set(this.filtroTipo() === t ? null : t);
-  }
-
-  /**
-   * Abre Detalle Registro con la tarjeta tocada. No vuelve a resolver nada
-   * contra el catalogo: pinta el payload tal cual esta guardado.
-   */
-  abrirDetalle(t: TarjetaRegistros): void {
-    this.detalleTarjeta.set(t);
-  }
-
-  cerrarDetalle(): void {
-    this.detalleTarjeta.set(null);
   }
 
   // ------------------------------------------------------------------

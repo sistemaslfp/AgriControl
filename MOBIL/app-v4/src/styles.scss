@@ -53,3 +53,22 @@ ion-modal.selector-flotante {
 .alert-message {
   white-space: pre-line;
 }
+
+
+/* =====================================================================
+   Detalle flotante (app-detalle-registro dentro de un ion-modal)
+
+   Misma idea que el selector flotante de arriba, pero con altura fija por
+   porcentaje en vez de calculada: el selector tiene una lista corta y
+   conocida de opciones, y el detalle puede traer de 1 a N registros con su
+   lista de campos cada uno -- lo que importa es que el contenido entre con
+   scroll, no que la ventana quede exacta.
+   ===================================================================== */
+ion-modal.detalle-flotante {
+  --width: 92%;
+  --max-width: 480px;
+  --height: 80%;
+  --max-height: 640px;
+  --border-radius: 14px;
+  --box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32);
+}

@@ -167,16 +167,13 @@ ok('08h tocar la tarjeta abre Detalle Registro', await detalleAbierto());
 const detalle = p.locator('app-detalle-registro');
 const textoDetalle = await detalle.innerText();
 ok('08i el detalle SI muestra el UUID de cada registro (la tarjeta no)',
-  (textoDetalle.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []).length >= 2,
+  (textoDetalle.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []).length === 2,
   textoDetalle.slice(0, 300));
 ok('08j el detalle separa un bloque por persona de la tarjeta',
   textoDetalle.includes('Registro 1 de 2') && textoDetalle.includes('Registro 2 de 2'),
   textoDetalle.slice(0, 300));
-ok('08k el detalle NO muestra ningún id ni guid del payload (Kevin, 2026-09-09)',
-  !/Finca id|Cultivo id|Subtarea id|Trabajador id|Responsable id|Captura guid|Am guid|Modulo ids?|Personal id|Lote id|Id en el servidor/i.test(textoDetalle),
-  textoDetalle.slice(0, 400));
-ok('08k2 el detalle SI muestra los campos que no son id, tal cual viajan',
-  textoDetalle.includes('Fecha del proceso'), textoDetalle.slice(0, 400));
+ok('08k el detalle muestra el payload campo por campo, tal cual viaja',
+  /Subtarea[\s\S]*88/.test(textoDetalle), textoDetalle.slice(0, 400));
 await p.locator('app-detalle-registro ion-button.boton-cerrar').click();
 await t(500);
 ok('08l "Cerrar" cierra Detalle Registro', !(await detalleAbierto()));

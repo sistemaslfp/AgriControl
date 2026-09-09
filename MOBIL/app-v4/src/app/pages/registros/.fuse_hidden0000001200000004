@@ -264,18 +264,6 @@ export class RegistrosPage implements OnInit {
     this.filtroTipo.set(this.filtroTipo() === t ? null : t);
   }
 
-  /**
-   * Abre Detalle Registro con la tarjeta tocada. No vuelve a resolver nada
-   * contra el catalogo: pinta el payload tal cual esta guardado.
-   */
-  abrirDetalle(t: TarjetaRegistros): void {
-    this.detalleTarjeta.set(t);
-  }
-
-  cerrarDetalle(): void {
-    this.detalleTarjeta.set(null);
-  }
-
   // ------------------------------------------------------------------
 
   async cargar(): Promise<void> {
