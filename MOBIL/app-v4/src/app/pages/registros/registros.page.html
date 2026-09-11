@@ -58,7 +58,11 @@
     "Próxima Sincronización: 09:05:48" a las 11:54 — una hora fija no puede
     decir la verdad cuando el temporizador se cuelga.
   -->
-  <div class="banner" [class.aviso]="!online()" [class.info]="online()">
+  <div
+    class="banner"
+    [class.aviso]="servidorAlcanzable() === false"
+    [class.info]="servidorAlcanzable() !== false"
+  >
     {{ estadoCola() }}
     @if (ultimoError()) {
       <p class="pendiente">Último error: {{ ultimoError() }}</p>

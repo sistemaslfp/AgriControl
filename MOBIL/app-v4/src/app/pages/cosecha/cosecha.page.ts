@@ -612,7 +612,15 @@ export class CosechaPage implements OnInit {
           total_peso: totalPeso,
           observaciones: c.observaciones.trim(),
         };
-        const guid = await this.cola.enqueue('cosecha', payload);
+        const meta = {
+          loteId: a.loteId,
+          lote: a.lote,
+          subtareaId: a.subtareaId,
+          subtarea: a.subtarea,
+          modulos: a.modulos,
+          trabajador: a.trabajador,
+        };
+        const guid = await this.cola.enqueue('cosecha', payload, meta);
         guids.push(guid);
         // El mismo espejo local que el PM: una tarea cerrada no vuelve a la
         // lista aunque el envio siga pendiente.

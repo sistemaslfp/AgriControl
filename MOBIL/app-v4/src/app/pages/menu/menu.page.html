@@ -2,12 +2,16 @@
   <ion-toolbar color="primary">
     <ion-title>LAgricontrol</ion-title>
     <ion-buttons slot="end">
-      <!-- Estado de red: dato que el supervisor necesita antes de irse del campo -->
+      <!--
+        Estado del SERVIDOR, no de internet: el dato que el supervisor
+        necesita antes de irse del campo es si lo que cargó ya llegó, y en la
+        finca no hay internet ni hace falta.
+      -->
       <ion-icon
-        [name]="sync.online() ? 'cloud-outline' : 'cloud-offline-outline'"
-        [class.offline]="!sync.online()"
+        [name]="sync.servidorAlcanzable() === false ? 'cloud-offline-outline' : 'cloud-outline'"
+        [class.offline]="sync.servidorAlcanzable() === false"
         class="icono-red"
-        aria-label="Estado de red"
+        aria-label="Estado del servidor"
       ></ion-icon>
       <ion-button routerLink="/configuracion" aria-label="Configuración">
         <ion-icon slot="icon-only" name="settings-outline"></ion-icon>

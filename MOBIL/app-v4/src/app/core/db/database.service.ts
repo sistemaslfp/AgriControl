@@ -47,7 +47,8 @@ export class DatabaseService {
        server_id         INTEGER,
        motivo_rechazo    TEXT,
        flags             TEXT,
-       acked_at          TEXT
+       acked_at          TEXT,
+       meta              TEXT
      );`,
     `CREATE INDEX IF NOT EXISTS idx_queue_estado_fecha
        ON sync_queue (estado, created_at_device);`,
@@ -227,6 +228,7 @@ export class DatabaseService {
       'ALTER TABLE pc_etapa_local ADD COLUMN fin TEXT;',
       'ALTER TABLE pc_etapa_local ADD COLUMN comentario TEXT;',
       'ALTER TABLE pc_calidad_local ADD COLUMN datos TEXT;',
+      'ALTER TABLE sync_queue ADD COLUMN meta TEXT;',
     ];
     for (const sql of alters) {
       try {

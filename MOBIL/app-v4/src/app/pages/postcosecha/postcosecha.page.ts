@@ -544,13 +544,19 @@ export class PostcosechaPage implements OnInit {
     try {
       const inicio = this.fechas.conOffset(`${this.fechaInicio()}T${this.horaInicio()}:00`);
       const fechaCosecha = [...this.diasElegidos()].sort()[0];
-      const guid = await this.cola.enqueue('pc_proceso', {
-        supervisor_id: this.supervisor()!.id,
-        fecha_inicio: inicio,
-        peso_mallas: this.pesoMallas(),
-        cosecha_ids: this.cosechasElegidas(),
-        comentario: this.comentario().trim(),
-      });
+      // El lot_code todavia no existe: lo asigna el servidor recien con el
+      // ACK (ver aplicarResultados()), asi que meta arranca sin el.
+      const guid = await this.cola.enqueue(
+        'pc_proceso',
+        {
+          supervisor_id: this.supervisor()!.id,
+          fecha_inicio: inicio,
+          peso_mallas: this.pesoMallas(),
+          cosecha_ids: this.cosechasElegidas(),
+          comentario: this.comentario().trim(),
+        },
+        { lotCode: null },
+      );
       await this.local.registrarProceso({
         guid,
         fechaCosecha,
@@ -723,13 +729,17 @@ export class PostcosechaPage implements OnInit {
       // como red por si alguien llama al método desde otro lado.
       const fin = f.fin ? this.fechas.conOffset(f.fin) : null;
       const comentario = f.comentario.trim();
-      await this.cola.enqueue('pc_etapa', {
-        proceso_guid: r.guid,
-        etapa: clave,
-        inicio,
-        fin,
-        comentario,
-      });
+      await this.cola.enqueue(
+        'pc_etapa',
+        {
+          proceso_guid: r.guid,
+          etapa: clave,
+          inicio,
+          fin,
+          comentario,
+        },
+        { lotCode: r.lotCode, etapa: clave },
+      );
       await this.local.registrarEtapa(r.guid, clave, inicio, fin, comentario || null);
       r.etapas.set(clave, { inicio, fin, comentario: comentario || null });
       this.registro.set({ ...r });
@@ -770,11 +780,15 @@ export class PostcosechaPage implements OnInit {
         ligera: this.granoLigera() as number,
         violeta: this.granoVioleta() as number,
       };
-      await this.cola.enqueue('pc_calidad_ferm', {
-        proceso_guid: r.guid,
-        fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
-        ...datos,
-      });
+      await this.cola.enqueue(
+        'pc_calidad_ferm',
+        {
+          proceso_guid: r.guid,
+          fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
+          ...datos,
+        },
+        { lotCode: r.lotCode },
+      );
       await this.local.registrarCalidad(r.guid, 'fermentado', datos);
       r.calFerm = datos;
       this.registro.set({ ...r });
@@ -840,12 +854,16 @@ export class PostcosechaPage implements OnInit {
         indice_grano_g: granos ? this.indiceGrano(clave) : null,
         granos_vacios_pct: this.humedad(clave, 'vanosG') === null ? null : this.porcentajeVanos(clave),
       };
-      await this.cola.enqueue('pc_calidad_sec', {
-        proceso_guid: r.guid,
-        etapa: clave,
-        fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
-        ...datos,
-      });
+      await this.cola.enqueue(
+        'pc_calidad_sec',
+        {
+          proceso_guid: r.guid,
+          etapa: clave,
+          fecha_muestra: this.fechas.conOffset(this.fechas.ahoraLocal()),
+          ...datos,
+        },
+        { lotCode: r.lotCode, etapa: clave },
+      );
       await this.local.registrarCalidad(r.guid, clave, {
         ...datos,
         humedad_promedio: this.promedioHumedad(clave),
@@ -876,11 +894,15 @@ export class PostcosechaPage implements OnInit {
     if (!r || !this.puedeCerrar()) return;
     this.guardando.set(true);
     try {
-      await this.cola.enqueue('pc_resultado', {
-        proceso_guid: r.guid,
-        fecha: this.fechas.conOffset(this.fechas.ahoraLocal()),
-        peso_final: this.pesoFinal(),
-      });
+      await this.cola.enqueue(
+        'pc_resultado',
+        {
+          proceso_guid: r.guid,
+          fecha: this.fechas.conOffset(this.fechas.ahoraLocal()),
+          peso_final: this.pesoFinal(),
+        },
+        { lotCode: r.lotCode },
+      );
       await this.local.cerrarProceso(r.guid);
       await this.aviso(`Registro cerrado con ${this.pesoFinal()} lb.`);
     } finally {

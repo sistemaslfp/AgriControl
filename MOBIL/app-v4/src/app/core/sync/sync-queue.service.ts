@@ -2,6 +2,8 @@ import { Injectable, inject, signal } from '@angular/core';
 import { App } from '@capacitor/app';
 import { Network } from '@capacitor/network';
 
+import { EstadoLan, LanNetwork } from '../net/lan-network';
+
 import { ApiService } from '../api/api.service';
 import { AppConfigService, KV } from '../config/app-config.service';
 import { ClockService } from '../clock/clock.service';
@@ -12,6 +14,7 @@ import {
   EstadoRegistro,
   RegistroCola,
   RegistroColaVista,
+  RegistroMeta,
   SyncRecord,
   SyncResponse,
   TipoRegistro,
@@ -50,8 +53,34 @@ export class SyncQueueService {
   readonly conteo = signal<ConteoCola>(CONTEO_VACIO);
   /** true mientras hay un lote en vuelo. */
   readonly enviando = signal(false);
-  /** Estado de red según Capacitor Network. */
-  readonly online = signal(true);
+  /**
+   * ¿Contesta NUESTRO servidor? `null` mientras no se probó todavía.
+   *
+   * ESTO REEMPLAZA A `Network.connected` Y NO ES LO MISMO.
+   * `@capacitor/network` calcula `connected` así (Network.java:80):
+   *
+   *     hasCapability(NET_CAPABILITY_VALIDATED) && hasCapability(NET_CAPABILITY_INTERNET)
+   *
+   * `VALIDATED` significa que Android sondeó un endpoint de Google y le
+   * contestaron, o sea INTERNET DE VERDAD. La LAN de la finca no tiene salida,
+   * así que ese flag vale `false` para siempre y `flush()` se cortaba sin
+   * abrir un socket: la app le pedía permiso a Google para hablarle a un
+   * servidor que está a veinte metros.
+   *
+   * La única pregunta que importa es "¿contesta `GET {baseUrl}/hora`?", y esa
+   * solo la puede responder el servidor. Se actualiza con cada intento real de
+   * envío y con `sondear()`.
+   */
+  readonly servidorAlcanzable = signal<boolean | null>(null);
+
+  /** Qué interfaz está usando el proceso. Diagnóstico, nunca una condición. */
+  readonly red = signal<EstadoLan>({
+    atado: false,
+    transporte: 'ninguno',
+    ip: null,
+    validada: false,
+    motivo: null,
+  });
   /** Epoch ms del próximo reintento programado; null = sin backoff activo. */
   readonly proximoReintentoMs = signal<number | null>(null);
   /** Último error de envío, para mostrar en la UI. */
@@ -76,21 +105,26 @@ export class SyncQueueService {
     await this.purgarEnviadosViejos();
     await this.refrescarConteo();
 
-    const estado = await Network.getStatus();
-    this.online.set(estado.connected);
+    await this.asegurarRuta();
+    void this.sondear();
 
-    Network.addListener('networkStatusChange', (s) => {
-      this.online.set(s.connected);
-      if (s.connected) {
-        // Recuperar red cancela el backoff: se intenta ya.
+    // `Network` queda SOLO como disparador: "algo cambió en la red, probá de
+    // nuevo ahora en vez de esperar el backoff". Su `connected` ya no decide
+    // nada — ver el comentario de `servidorAlcanzable`. Por eso se reacciona a
+    // CUALQUIER cambio, incluido pasar a una WiFi sin internet, que es
+    // justamente el caso de la finca.
+    Network.addListener('networkStatusChange', () => {
+      void this.asegurarRuta().then(() => {
         this.limpiarBackoff();
-        void this.flush('red-recuperada');
-      }
+        return this.flush('cambio-de-red');
+      });
     });
 
     App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) {
-        void this.recuperarEnviando().then(() => this.flush('app-resume'));
+        void this.asegurarRuta()
+          .then(() => this.recuperarEnviando())
+          .then(() => this.flush('app-resume'));
       }
     });
 
@@ -127,6 +161,59 @@ export class SyncQueueService {
   }
 
   // ------------------------------------------------------------------
+  // Ruta y alcanzabilidad
+  // ------------------------------------------------------------------
+
+  /**
+   * Ata el proceso a la WiFi/Ethernet antes de hablar con el servidor.
+   *
+   * El teléfono ya está asociado a la WiFi de la finca; lo que falla es el
+   * RUTEO: con datos móviles encendidos y un WiFi sin validar, Android aplica
+   * "avoid bad wifi" y deja la celular como red por defecto del proceso. El
+   * POST a `192.168.x.x` sale por la antena y muere en la red del operador.
+   *
+   * Nunca lanza: si el binding no se puede hacer, se envía igual por la red
+   * por defecto — que es exactamente lo que pasaba antes de este plugin, así
+   * que el peor caso es el comportamiento viejo y no una regresión.
+   */
+  private async asegurarRuta(): Promise<void> {
+    try {
+      this.red.set(await LanNetwork.asegurar());
+    } catch (e) {
+      this.red.set({
+        atado: false,
+        transporte: 'otro',
+        ip: null,
+        validada: false,
+        motivo: e instanceof Error ? e.message : 'No se pudo consultar la red',
+      });
+    }
+  }
+
+  /**
+   * "¿Contesta el servidor?", preguntado al servidor y a nadie más.
+   *
+   * `GET {baseUrl}/hora` es el endpoint más barato que hay y no toca la cola:
+   * esto solo pinta el cartel de la pantalla. Que el sondeo falle NO impide
+   * enviar — `flush()` intenta igual.
+   */
+  async sondear(): Promise<boolean> {
+    if (!this.config.baseUrl()) {
+      this.servidorAlcanzable.set(null);
+      return false;
+    }
+    await this.asegurarRuta();
+    try {
+      await this.api.hora();
+      this.servidorAlcanzable.set(true);
+      return true;
+    } catch {
+      this.servidorAlcanzable.set(false);
+      return false;
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Alta de registros
   // ------------------------------------------------------------------
 
@@ -135,16 +222,16 @@ export class SyncQueueService {
    * La pantalla NUNCA espera a la red: esto resuelve apenas SQLite confirma.
    * Devuelve el guid generado (UUID v4, inmutable de por vida).
    */
-  async enqueue(tipo: TipoRegistro, payload: unknown): Promise<string> {
+  async enqueue(tipo: TipoRegistro, payload: unknown, meta?: RegistroMeta): Promise<string> {
     await this.inicializado;
     const guid = crypto.randomUUID();
     const createdAtDevice = this.isoLocalDelDispositivo();
 
     const db = await this.database.abrir();
     await db.run(
-      `INSERT INTO sync_queue (guid, tipo, payload, estado, created_at_device)
-       VALUES (?, ?, ?, 'PENDIENTE', ?);`,
-      [guid, tipo, JSON.stringify(payload), createdAtDevice],
+      `INSERT INTO sync_queue (guid, tipo, payload, estado, created_at_device, meta)
+       VALUES (?, ?, ?, 'PENDIENTE', ?, ?);`,
+      [guid, tipo, JSON.stringify(payload), createdAtDevice, meta ? JSON.stringify(meta) : null],
     );
     await this.auditar('ENQUEUE', guid, tipo);
     await this.database.persistir();
@@ -172,9 +259,13 @@ export class SyncQueueService {
     if (!this.config.baseUrl()) {
       return; // sin servidor configurado no hay nada que intentar
     }
-    if (!this.online()) {
-      return;
-    }
+    // NO hay gate de red. Antes había un `if (!this.online()) return;` y era
+    // el bug: bloqueaba el envío por un flag del sistema operativo que en una
+    // LAN sin internet es `false` por definición.
+    //
+    // Intentar y fallar no cuesta nada acá: `loteFallido()` devuelve el lote a
+    // PENDIENTE, nada se borra antes del ACK y el backoff evita el machaque.
+    // El único que puede decir si el servidor está es el servidor.
     const espera = this.proximoReintentoMs();
     if (!manual && espera !== null && Date.now() < espera) {
       return;
@@ -182,6 +273,10 @@ export class SyncQueueService {
 
     this.enviando.set(true);
     try {
+      // Atarse a la WiFi ANTES de mandar. Si el equipo tiene datos móviles,
+      // Android deja la celular como red por defecto cuando el WiFi no está
+      // validado, y el POST a una IP privada se va por la antena y muere.
+      await this.asegurarRuta();
       // Mientras el servidor siga confirmando, se encadenan lotes de 50.
       let continuar = true;
       while (continuar) {
@@ -254,11 +349,32 @@ export class SyncQueueService {
     for (const guid of guidsEnviados) {
       const r = porGuid.get(guid);
       if (r && (r.status === 'created' || r.status === 'duplicate')) {
+        // `lot_code` sólo viene en resultados de `pc_proceso`: recién con el
+        // ACK el servidor asigna la partida. Antes se descartaba acá mismo y
+        // la tarjeta de /registros no tenía forma de mostrar "Partida N".
+        let metaJson: string | null = null;
+        if (r.lot_code) {
+          const fila = await db.query('SELECT meta FROM sync_queue WHERE guid = ?;', [guid]);
+          const actual = (fila.values?.[0] as { meta?: string | null } | undefined)?.meta ?? null;
+          let meta: Record<string, unknown> = {};
+          if (actual) {
+            try {
+              meta = JSON.parse(actual) as Record<string, unknown>;
+            } catch {
+              meta = {};
+            }
+          }
+          meta['lotCode'] = r.lot_code;
+          metaJson = JSON.stringify(meta);
+        }
         await db.run(
           `UPDATE sync_queue
               SET estado = 'ENVIADO', server_id = ?, flags = ?, acked_at = ?, ultimo_error = NULL
+                  ${metaJson !== null ? ', meta = ?' : ''}
             WHERE guid = ?;`,
-          [r.id ?? null, r.flags ? JSON.stringify(r.flags) : null, ahora, guid],
+          metaJson !== null
+            ? [r.id ?? null, r.flags ? JSON.stringify(r.flags) : null, ahora, metaJson, guid]
+            : [r.id ?? null, r.flags ? JSON.stringify(r.flags) : null, ahora, guid],
         );
         confirmados++;
       } else if (r && r.status === 'rejected') {
@@ -285,6 +401,7 @@ export class SyncQueueService {
 
     // El servidor respondió con un results válido: el canal funciona.
     this.fallosConsecutivos = 0;
+    this.servidorAlcanzable.set(true);
     this.limpiarBackoff();
     this.ultimoError.set(null);
     await this.config.set(KV.LAST_SYNC_OK_AT, ahora);
@@ -297,6 +414,10 @@ export class SyncQueueService {
   }
 
   private async loteFallido(guids: string[], error: string, motivo: string): Promise<void> {
+    // Un lote que no llegó es la mejor evidencia que hay de que el servidor no
+    // está: más confiable que cualquier flag del sistema, porque probó el
+    // camino completo hasta `{baseUrl}/sync`.
+    this.servidorAlcanzable.set(false);
     await this.marcarEstado(guids, 'PENDIENTE', error);
     this.fallosConsecutivos++;
     this.ultimoError.set(error);
@@ -407,7 +528,7 @@ export class SyncQueueService {
     const marcas = estados.map(() => '?').join(',');
     const r = await db.query(
       `SELECT guid, tipo, payload, estado, created_at_device, intentos,
-              ultimo_error, server_id, motivo_rechazo, flags, acked_at
+              ultimo_error, server_id, motivo_rechazo, flags, acked_at, meta
          FROM sync_queue
         WHERE estado IN (${marcas})
         ORDER BY created_at_device DESC;`,
@@ -430,6 +551,16 @@ export class SyncQueueService {
       } catch {
         flags = [];
       }
+      // `meta` es NULL en filas encoladas antes de este cambio, y en esos
+      // casos las tarjetas caen al viejo camino (leer el payload).
+      let meta: RegistroMeta | null = null;
+      if (f['meta'] != null) {
+        try {
+          meta = JSON.parse(String(f['meta'])) as RegistroMeta;
+        } catch {
+          meta = null;
+        }
+      }
       salida.push({
         guid: String(f['guid']),
         tipo: String(f['tipo']) as TipoRegistro,
@@ -442,6 +573,7 @@ export class SyncQueueService {
         motivoRechazo: f['motivo_rechazo'] == null ? null : String(f['motivo_rechazo']),
         flags,
         ackedAt: f['acked_at'] == null ? null : String(f['acked_at']),
+        meta,
       });
     }
     return salida;

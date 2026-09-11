@@ -40,6 +40,13 @@
     background: rgba(198, 40, 40, 0.1);
     color: #b71c1c;
   }
+
+  // Diagnóstico de ruteo: es un dato, no un veredicto. Gris a propósito, para
+  // que no compita con el ok/error de la prueba de conexión.
+  &.info {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--ion-color-dark);
+  }
 }
 
 .nota-reloj {

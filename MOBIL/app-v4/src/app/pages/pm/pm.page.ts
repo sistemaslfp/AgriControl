@@ -624,7 +624,15 @@ export class PmPage implements OnInit {
           hora_cierre: this.fechas.conOffset(`${this.fecha()}T${this.horaCierre()}:00`),
           comentario: c.comentario.trim(),
         };
-        const guid = await this.cola.enqueue('pm', payload);
+        const meta = {
+          loteId: a.loteId,
+          lote: a.lote,
+          subtareaId: a.subtareaId,
+          subtarea: a.subtarea,
+          modulos: a.modulos,
+          trabajador: a.trabajador,
+        };
+        const guid = await this.cola.enqueue('pm', payload, meta);
         guids.push(guid);
         await this.asignaciones.registrarPm(
           guid,

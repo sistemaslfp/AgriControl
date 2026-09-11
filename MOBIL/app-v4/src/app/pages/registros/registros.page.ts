@@ -168,7 +168,10 @@ export class RegistrosPage implements OnInit {
   });
 
   readonly enviando = this.cola.enviando;
-  readonly online = this.cola.online;
+  /** `false` = probado y no contesta. `null` = todavía no se probó. */
+  readonly servidorAlcanzable = this.cola.servidorAlcanzable;
+  /** Qué interfaz está usando el proceso. Solo para explicar el fallo. */
+  readonly red = this.cola.red;
   readonly proximoReintentoMs = this.cola.proximoReintentoMs;
   readonly ultimoError = this.cola.ultimoError;
 
@@ -214,8 +217,15 @@ export class RegistrosPage implements OnInit {
     if (this.enviando()) {
       return 'Enviando…';
     }
-    if (!this.online()) {
-      return 'Sin conexión: se reintenta solo al volver.';
+    // "No hay internet" ya no es la pregunta: la finca no tiene internet y no
+    // lo necesita. La pregunta es si contesta NUESTRO servidor, y cuando no
+    // contesta hay que decir qué mirar — el supervisor no puede hacer nada
+    // con un ícono de nube tachada.
+    if (this.servidorAlcanzable() === false) {
+      return this.red().transporte === 'celular'
+        ? 'No se alcanza el servidor: el teléfono está en datos móviles. ' +
+          'Conectate al WiFi de la finca.'
+        : 'No se alcanza el servidor: revisá el WiFi de la finca. Se reintenta solo.';
     }
     const ms = this.proximoReintentoMs();
     if (ms !== null) {
@@ -245,6 +255,9 @@ export class RegistrosPage implements OnInit {
     const v = this.ruta.snapshot.queryParamMap.get('vista');
     this.vista.set(v === 'enviados' ? 'enviados' : 'pendientes');
     await this.cargar();
+    // Sondeo al abrir: el cartel tiene que decir la verdad de AHORA, no la del
+    // último envío, que pudo haber sido ayer en otro lote de la finca.
+    void this.cola.sondear();
   }
 
   cambiarVista(v: Vista): void {
@@ -366,19 +379,40 @@ export class RegistrosPage implements OnInit {
    */
   private clave(r: RegistroColaVista): string {
     const p = r.payload;
-    // Riego manda `modulo_id` en singular --su tabla guarda uno solo-- y el
-    // resto `modulo_ids`. Sin contemplar los dos, los N modulos de un mismo
-    // lote caian en una sola tarjeta y el parte parecia la mitad de lo que es.
-    const modulos = Array.isArray(p['modulo_ids'])
-      ? [...(p['modulo_ids'] as unknown[])].map(String).sort().join(',')
-      : p['modulo_id'] != null
-        ? String(p['modulo_id'])
-        : '';
+    const m = r.meta;
     // Un cierre PM no describe un trabajo propio: hereda el del AM que cierra,
     // y lo unico que lo identifica es a que AM apunta.
     if (r.tipo === 'pm') {
       return `${r.estado}|pm|${p['am_guid'] ?? r.guid}`;
     }
+    // Los pc_* cuelgan todos de una partida: `proceso_guid` en el payload
+    // (o el guid propio para pc_proceso, que ES la partida). Agrupar por eso
+    // es lo que de verdad los identifica -- y a diferencia de lote_id o
+    // subtarea_id, que estos tipos nunca mandan, `proceso_guid` SI viaja.
+    // Sin esto, todos los pc_etapa (o pc_calidad_*) de un mismo estado
+    // colapsaban en una sola tarjeta sin importar de que partida eran.
+    if (r.tipo.startsWith('pc_')) {
+      const proceso = r.tipo === 'pc_proceso' ? r.guid : (p['proceso_guid'] ?? r.guid);
+      const etapa = m?.etapa ?? p['etapa'] ?? '';
+      return [r.estado, r.tipo, proceso, etapa].join('|');
+    }
+    // Riego manda `modulo_id` en singular --su tabla guarda uno solo-- y el
+    // resto `modulo_ids`. Sin contemplar los dos, los N modulos de un mismo
+    // lote caian en una sola tarjeta y el parte parecia la mitad de lo que es.
+    const modulosPayload = Array.isArray(p['modulo_ids'])
+      ? [...(p['modulo_ids'] as unknown[])].map(String).sort().join(',')
+      : p['modulo_id'] != null
+        ? String(p['modulo_id'])
+        : '';
+    // Cosecha (como PM) no manda lote_id/subtarea_id/modulo_ids: el servidor
+    // los deriva del AM que cierra. Sin `meta`, esos campos vienen vacios de
+    // TODOS los registros del mismo tipo y estado, y todo colapsa en una
+    // tarjeta con el lote en "Sin datos de catálogo". Con `meta` (guardada en
+    // `guardar()` desde `c.asignacion`) se agrupa por el trabajo real; las
+    // filas viejas sin `meta` caen al payload, que es lo que había antes.
+    const loteId = m?.loteId ?? p['lote_id'] ?? '';
+    const subtareaId = m?.subtareaId ?? p['subtarea_id'] ?? '';
+    const modulos = m?.modulos ?? modulosPayload;
     return [
       r.estado,
       r.tipo,
@@ -386,8 +420,8 @@ export class RegistrosPage implements OnInit {
       p['finca_id'] ?? '',
       p['responsable_id'] ?? '',
       p['cultivo_id'] ?? '',
-      p['lote_id'] ?? '',
-      p['subtarea_id'] ?? '',
+      loteId,
+      subtareaId,
       modulos,
     ].join('|');
   }
@@ -408,18 +442,23 @@ export class RegistrosPage implements OnInit {
     for (const [clave, registros] of porClave) {
       const primero = registros[0];
       const p = primero.payload;
+      const m = primero.meta;
 
-      const loteId = Number(p['lote_id'] ?? 0);
-      const subtareaId = Number(p['subtarea_id'] ?? 0);
-      const lote = loteId > 0 ? await this.catalogo.lote(loteId) : null;
-      const sub = subtareaId > 0 ? await this.catalogo.subtarea(subtareaId) : null;
+      // Con `meta` el lote/subtarea/modulos ya vinieron resueltos desde
+      // `c.asignacion` al guardar: no hace falta ir al catalogo, y de hecho
+      // no se podria -- cosecha y PM no mandan lote_id/subtarea_id en el
+      // payload. Sin `meta` (filas viejas) se resuelve como antes.
+      const loteId = Number(m?.loteId ?? p['lote_id'] ?? 0);
+      const subtareaId = Number(m?.subtareaId ?? p['subtarea_id'] ?? 0);
+      const lote = m?.lote ? null : loteId > 0 ? await this.catalogo.lote(loteId) : null;
+      const sub = m?.subtarea ? null : subtareaId > 0 ? await this.catalogo.subtarea(subtareaId) : null;
 
       const moduloIds = Array.isArray(p['modulo_ids'])
         ? (p['modulo_ids'] as unknown[]).map(Number).filter((x) => x > 0)
         : p['modulo_id'] != null
           ? [Number(p['modulo_id'])].filter((x) => x > 0)
           : [];
-      const nombresMod = moduloIds.length > 0
+      const nombresMod = !m?.modulos && moduloIds.length > 0
         ? await this.catalogo.nombresModulo(moduloIds)
         : new Map<number, string>();
 
@@ -444,7 +483,7 @@ export class RegistrosPage implements OnInit {
       // Si las N filas se rechazaron por lo mismo, el motivo va una vez. Si
       // difieren, se dice cuantos motivos hay: esconder eso detras del primero
       // haria creer que se arregla con un solo cambio.
-      const motivos = [...new Set(registros.map((r) => r.motivoRechazo).filter((m) => !!m))];
+      const motivos = [...new Set(registros.map((r) => r.motivoRechazo).filter((m2) => !!m2))];
       const motivo =
         motivos.length === 0
           ? null
@@ -452,32 +491,55 @@ export class RegistrosPage implements OnInit {
             ? (motivos[0] as string)
             : `${motivos.length} motivos distintos: ${motivos.join(' · ')}`;
 
+      // `catalogo.lote()` ya devuelve el nombre pasado por `nombreLote()`, que
+      // antepone "Lote" SOLO a los numericos. Volver a anteponerlo da
+      // "Lote Lote 1" y, peor, "Lote Administrativos" -- justo lo que la
+      // decision de los lotes con nombre prohibe.
+      let loteTexto: string;
+      if (m && (m.lote || m.modulos)) {
+        loteTexto =
+          [m.lote, m.modulos ? `Mód. ${m.modulos}` : null].filter((x) => !!x).join(' · ') ||
+          'Sin datos de catálogo';
+      } else if (m && 'lotCode' in m) {
+        // Postcosecha: la tarjeta es la lectura humana de la partida, no del
+        // lote agricola -- una partida junta cosechas de varios lotes.
+        loteTexto = m.lotCode ? `Partida ${m.lotCode}` : 'Pendiente de número';
+      } else {
+        loteTexto =
+          [
+            lote?.nombre,
+            moduloIds.length > 0
+              ? `Mód. ${moduloIds.map((x) => nombresMod.get(x) ?? String(x)).join(', ')}`
+              : null,
+          ]
+            .filter((x) => !!x)
+            .join(' · ') || 'Sin datos de catálogo';
+      }
+
+      // La TAREA da el contexto que la subtarea sola no tiene: "Cosecha de
+      // mazorca" puede colgar de mas de una tarea. Riego no tiene subtarea
+      // --las columnas de v3 estan muertas-- y lo que lo describe es el
+      // tiempo regado. Postcosecha no tiene subtarea agricola: lo que la
+      // identifica es en que paso del proceso esta.
+      let laborTexto: string;
+      if (primero.tipo === 'riego') {
+        laborTexto = this.tiempoRiego(p['tiempo_riego_min']);
+      } else if (m?.subtarea) {
+        laborTexto = m.subtarea;
+      } else if (primero.tipo.startsWith('pc_')) {
+        laborTexto = this.etiquetaPostcosecha(primero.tipo, String(m?.etapa ?? p['etapa'] ?? ''));
+      } else {
+        laborTexto = [sub?.tareaNombre, sub?.nombre].filter((x) => !!x).join(' / ');
+      }
+
       salida.push({
         clave,
         estado: primero.estado,
         tipo: primero.tipo,
         registros,
         titulo: this.etiquetaTipo(primero.tipo),
-        // `catalogo.lote()` ya devuelve el nombre pasado por `nombreLote()`, que
-        // antepone "Lote" SOLO a los numericos. Volver a anteponerlo da
-        // "Lote Lote 1" y, peor, "Lote Administrativos" -- justo lo que la
-        // decision de los lotes con nombre prohibe.
-        lote: [
-          lote?.nombre,
-          moduloIds.length > 0
-            ? `Mód. ${moduloIds.map((m) => nombresMod.get(m) ?? String(m)).join(', ')}`
-            : null,
-        ]
-          .filter((x) => !!x)
-          .join(' · ') || 'Sin datos de catálogo',
-        // La TAREA da el contexto que la subtarea sola no tiene: "Cosecha de
-        // mazorca" puede colgar de mas de una tarea. Riego no tiene subtarea
-        // --las columnas de v3 estan muertas-- y lo que lo describe es el
-        // tiempo regado.
-        labor:
-          primero.tipo === 'riego'
-            ? this.tiempoRiego(p['tiempo_riego_min'])
-            : [sub?.tareaNombre, sub?.nombre].filter((x) => !!x).join(' / '),
+        lote: loteTexto,
+        labor: laborTexto,
         personas:
           listaPersonas.length === 0
             ? ''
@@ -492,6 +554,24 @@ export class RegistrosPage implements OnInit {
       });
     }
     return salida;
+  }
+
+  /** Como se describe cada paso de postcosecha en la tarjeta. */
+  private etiquetaPostcosecha(tipo: TipoRegistro, etapa: string): string {
+    switch (tipo) {
+      case 'pc_proceso':
+        return 'Pesaje inicial';
+      case 'pc_etapa':
+        return etapa ? `Etapa: ${etapa}` : 'Etapa';
+      case 'pc_calidad_ferm':
+        return 'Corte de grano (fermentado)';
+      case 'pc_calidad_sec':
+        return etapa ? `Análisis de secado: ${etapa}` : 'Análisis de secado';
+      case 'pc_resultado':
+        return 'Cierre (peso final)';
+      default:
+        return this.etiquetaTipo(tipo);
+    }
   }
 
   /** Minutos -> '01:30 de riego'. Vacio si el payload no lo trae. */

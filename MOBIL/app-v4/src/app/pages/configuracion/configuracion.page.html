@@ -52,9 +52,33 @@
     } @else {
       <div class="resultado error">
         <ion-icon name="close-circle-outline"></ion-icon>
-        <div>Sin conexión: {{ prueba.error }}</div>
+        <div>No se alcanzó el servidor: {{ prueba.error }}</div>
       </div>
     }
+  }
+
+  <!--
+    Diagnóstico de ruteo. Va SIEMPRE que se haya probado, salga bien o mal:
+    cuando sale bien confirma por dónde salió, y cuando sale mal es lo primero
+    que hay que mirar antes de culpar al servidor.
+  -->
+  @if (red(); as r) {
+    <div class="resultado info">
+      <div>
+        Salió por: <strong>{{ r.transporte }}</strong>
+        @if (r.ip) { · IP de este equipo: <strong>{{ r.ip }}</strong> }
+        <br />
+        @if (r.atado) {
+          Proceso atado a esa red.
+        } @else {
+          No se pudo atar el proceso a la red local{{ r.motivo ? ': ' + r.motivo : '' }}.
+        }
+        @if (!r.validada) {
+          <br />Esa red no tiene salida a internet — <em>normal en la finca</em>, no
+          impide enviar.
+        }
+      </div>
+    </div>
   }
 
   <!-- ================= Dispositivo ================= -->

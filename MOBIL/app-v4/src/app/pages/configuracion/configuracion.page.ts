@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   IonBackButton,
   IonButton,
@@ -33,6 +34,7 @@ import { SelectorComponent } from '../../shared/selector.component';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { ClockService } from '../../core/clock/clock.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
+import { EstadoLan, LanNetwork } from '../../core/net/lan-network';
 
 @Component({
   selector: 'app-configuracion',
@@ -77,6 +79,11 @@ export class ConfiguracionPage implements OnInit {
     | { ok: false; error: string }
     | null
   >(null);
+  /**
+   * Qué interfaz usó la prueba. En la finca es el dato que separa "el servidor
+   * está caído" de "este teléfono ni siquiera está mirando la LAN".
+   */
+  readonly red = signal<EstadoLan | null>(null);
 
   // --- Valores por defecto de captura ---
   //
@@ -213,17 +220,40 @@ export class ConfiguracionPage implements OnInit {
     this.probando.set(true);
     this.resultadoPrueba.set(null);
     try {
+      // Atarse a la WiFi ANTES de probar. Sin esto, en un equipo con datos
+      // móviles la prueba sale por la antena y falla contra una IP privada,
+      // que es un diagnóstico falso: el servidor está bien y el WiFi también.
+      this.red.set(await LanNetwork.asegurar());
       const hora = await this.api.hora(this.url);
       const offset = hora.server_epoch - Math.floor(Date.now() / 1000);
       this.resultadoPrueba.set({ ok: true, serverTime: hora.server_time, offsetSeconds: offset });
     } catch (e) {
-      this.resultadoPrueba.set({
-        ok: false,
-        error: e instanceof Error ? e.message : 'No hubo respuesta del servidor.',
-      });
+      this.resultadoPrueba.set({ ok: false, error: this.mensajeErrorConexion(e) });
     } finally {
       this.probando.set(false);
     }
+  }
+
+  /**
+   * `HttpErrorResponse` NO es instancia de `Error` (implementa la interfaz,
+   * no extiende la clase), asi que el catch generico se lo tragaba entero y
+   * "Probar conexion" siempre mostraba el mismo cartel vacio sin importar la
+   * causa real (cleartext bloqueado, CORS, timeout, DNS, servidor caido).
+   * `status === 0` es la firma de "la peticion nunca completo contra el
+   * servidor" -- ahi es donde vive un bloqueo de cleartext o de CORS.
+   */
+  private mensajeErrorConexion(e: unknown): string {
+    if (e instanceof HttpErrorResponse) {
+      if (e.status === 0) {
+        return `No se pudo conectar (status 0): ${e.message}`;
+      }
+      const cuerpo = typeof e.error === 'string' ? e.error : JSON.stringify(e.error);
+      return `HTTP ${e.status} ${e.statusText}: ${cuerpo || e.message}`;
+    }
+    if (e instanceof Error) {
+      return e.message;
+    }
+    return 'No hubo respuesta del servidor.';
   }
 
   async guardar(): Promise<void> {
