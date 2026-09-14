@@ -77,41 +77,16 @@
       @if (ev.excedeRetroactividad) {
         <div class="banner alerta">
           La fecha es de hace más de {{ ev.diasRetroactividad }} días.
-          Activá "Estoy cargando un día anterior" y explica el motivo.
+          Activa "Estoy cargando un día anterior" y explica el motivo.
         </div>
       }
     }
 
-    <ion-list inset="true">
-      <ion-item>
-        <ion-checkbox
-          [checked]="retroactivo()"
-          (ionChange)="retroactivo.set($any($event.detail).checked)"
-          labelPlacement="end"
-          justify="start"
-        >
-          Estoy cargando un día anterior
-        </ion-checkbox>
-      </ion-item>
-      @if (retroactivo()) {
-        <ion-item>
-          <ion-input
-            label="¿Por qué se carga tarde? (obligatorio)"
-            labelPlacement="stacked"
-            placeholder="Ej.: sin señal en el lote, se cargó al día siguiente"
-            [value]="justificacion()"
-            (ionInput)="justificacion.set($any($event.target).value ?? '')"
-          ></ion-input>
-        </ion-item>
-      }
-      <ion-item lines="none">
-        <ion-note>
-          Este interruptor permite elegir
-          una fecha de hasta hace
-          {{ evaluacion()?.diasRetroactividad ?? 3 }} días o más. 
-        </ion-note>
-      </ion-item>
-    </ion-list>
+    <app-retroactivo
+      [dias]="evaluacion()?.diasRetroactividad ?? 3"
+      [(activo)]="retroactivo"
+      [(justificacion)]="justificacion"
+    ></app-retroactivo>
 
     @if (problemasEncabezado().length > 0) {
       <div class="banner alerta">

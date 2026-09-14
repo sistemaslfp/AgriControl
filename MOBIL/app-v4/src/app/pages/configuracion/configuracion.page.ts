@@ -35,6 +35,12 @@ import { AppConfigService } from '../../core/config/app-config.service';
 import { ClockService } from '../../core/clock/clock.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { EstadoLan, LanNetwork } from '../../core/net/lan-network';
+import {
+  BootstrapService,
+  MODULOS_RETRO,
+  ModuloRetro,
+  TOPE_VENTANA_DIAS,
+} from '../../core/bootstrap/bootstrap.service';
 
 @Component({
   selector: 'app-configuracion',
@@ -67,6 +73,7 @@ export class ConfiguracionPage implements OnInit {
   readonly clock = inject(ClockService);
   readonly sync = inject(SyncQueueService);
   private readonly api = inject(ApiService);
+  private readonly bootstrap = inject(BootstrapService);
   private readonly catalogo = inject(CatalogQueryService);
   private readonly toast = inject(ToastController);
 
@@ -112,6 +119,91 @@ export class ConfiguracionPage implements OnInit {
   // --- Limpieza ---
   confirmacionEscrita = '';
   readonly limpiando = signal(false);
+
+  // ------------------------------------------------------------------
+  // Ventanas de retroactividad (Kevin, 2026-09-14)
+  //
+  // Lo que se escribe aca le GANA a `/v4/bootstrap`. Es a proposito: si
+  // mandara el servidor, el cambio se borraria solo en el proximo
+  // "Actualizar Maestros" y nadie entenderia por que.
+  // ------------------------------------------------------------------
+
+  readonly topeVentana = TOPE_VENTANA_DIAS;
+  readonly modulosRetro: { clave: ModuloRetro; nombre: string }[] = [
+    { clave: 'am', nombre: 'AM (programación)' },
+    { clave: 'pm', nombre: 'PM (cierre)' },
+    { clave: 'cosecha', nombre: 'Cosecha' },
+    { clave: 'riego', nombre: 'Riego' },
+    { clave: 'postcosecha', nombre: 'Postcosecha' },
+  ];
+
+  /** Lo tecleado, sin guardar todavia. Se vacia al guardar o al restaurar. */
+  readonly borradorVentanas = signal<Partial<Record<ModuloRetro, string>>>({});
+  readonly errorVentanas = signal<string | null>(null);
+
+  diasDe(m: ModuloRetro): string {
+    const b = this.borradorVentanas()[m];
+    return b !== undefined ? b : String(this.bootstrap.retroactividadDias(m));
+  }
+
+  esDelEquipo(m: ModuloRetro): boolean {
+    return this.bootstrap.esDelEquipo(m);
+  }
+
+  hayOverride(): boolean {
+    return MODULOS_RETRO.some((m) => this.bootstrap.esDelEquipo(m));
+  }
+
+  setDias(m: ModuloRetro, v: string): void {
+    this.borradorVentanas.set({ ...this.borradorVentanas(), [m]: v });
+    this.errorVentanas.set(null);
+  }
+
+  /**
+   * Guarda SOLO los modulos que se tocaron. Un modulo que quedo igual al
+   * servidor no se marca como override: si no, tocar un numero y arrepentirse
+   * congelaba los cinco.
+   */
+  async guardarVentanas(): Promise<void> {
+    const borrador = this.borradorVentanas();
+    const cambios: [ModuloRetro, number][] = [];
+    for (const m of MODULOS_RETRO) {
+      const crudo = borrador[m];
+      if (crudo === undefined) {
+        continue;
+      }
+      const v = Number(crudo.trim());
+      if (crudo.trim() === '' || !Number.isInteger(v) || v < 0 || v > TOPE_VENTANA_DIAS) {
+        const nombre = this.modulosRetro.find((x) => x.clave === m)!.nombre;
+        this.errorVentanas.set(
+          `${nombre}: tiene que ser un número entero entre 0 y ${TOPE_VENTANA_DIAS}.`,
+        );
+        return;
+      }
+      cambios.push([m, v]);
+    }
+    if (cambios.length === 0) {
+      await this.aviso('No hay nada que guardar.');
+      return;
+    }
+    for (const [m, v] of cambios) {
+      // Igual al servidor = volver al servidor, no fijarlo a mano.
+      await this.bootstrap.fijarRetroactividad(
+        m,
+        v === this.bootstrap.retroactividadDelServidor(m) ? null : v,
+      );
+    }
+    this.borradorVentanas.set({});
+    this.errorVentanas.set(null);
+    await this.aviso('Días guardados. Rigen desde el próximo registro.');
+  }
+
+  async restaurarVentanas(): Promise<void> {
+    await this.bootstrap.restaurarRetroactividad();
+    this.borradorVentanas.set({});
+    this.errorVentanas.set(null);
+    await this.aviso('Los cinco módulos vuelven a los días que manda el servidor.');
+  }
 
   /** La limpieza queda BLOQUEADA si hay registros sin sincronizar. */
   readonly limpiezaBloqueada = computed(
@@ -184,7 +276,7 @@ export class ConfiguracionPage implements OnInit {
     actual: OpcionCatalogo | null,
   ): void {
     if (opciones.length === 0) {
-      void this.aviso('Descargá primero los maestros desde el menú.');
+      void this.aviso('Descarga primero los maestros desde el menú.');
       return;
     }
     this.destino = destino;
@@ -262,7 +354,7 @@ export class ConfiguracionPage implements OnInit {
       return;
     }
     if (!this.alias.trim()) {
-      await this.aviso('Definí un alias para el dispositivo (ej. TABLET-BELLITA-02).');
+      await this.aviso('Define un alias para el dispositivo (ej. TABLET-BELLITA-02).');
       return;
     }
     await this.config.setBaseUrl(this.url);

@@ -45,6 +45,11 @@ import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
+import {
+  RetroactivoComponent,
+  justificacionParaEnviar,
+  problemasRetroactivo,
+} from '../../shared/retroactivo.component';
 
 interface Ref {
   id: number;
@@ -98,6 +103,7 @@ export interface GrupoTareaCosecha {
   imports: [
     BarraPasosComponent,
     SelectorComponent,
+    RetroactivoComponent,
     SwipePasosDirective,
     IonBackButton,
     IonButton,
@@ -178,7 +184,16 @@ export class CosechaPage implements OnInit {
 
   private fincas: OpcionCatalogo[] = [];
 
-  readonly limites = computed(() => this.fechas.limites('cosecha', false));
+  // Modo libre (Kevin, 2026-09-14). Antes la ventana de 7 dias era un limite
+  // duro del calendario y no habia como pesar una cosecha mas vieja.
+  readonly retroactivo = signal(false);
+  readonly justificacion = signal('');
+  readonly limites = computed(() => this.fechas.limites('cosecha', this.retroactivo()));
+  readonly evaluacion = computed(() =>
+    this.fecha() && this.horaCierre()
+      ? this.fechas.evaluar('cosecha', `${this.fecha()}T${this.horaCierre()}:00`)
+      : null,
+  );
   readonly sinHoraVerificada = computed(() => this.clock.offsetSeconds() === null);
 
   // --- Totales ---
@@ -215,6 +230,7 @@ export class CosechaPage implements OnInit {
     if (this.elegidas().length === 0) {
       p.push('Elige al menos una persona de una tarea de cosecha.');
     }
+    p.push(...problemasRetroactivo(this.evaluacion(), this.retroactivo(), this.justificacion()));
     return p;
   });
 
@@ -223,7 +239,7 @@ export class CosechaPage implements OnInit {
     if (!c) return [];
     const p: string[] = [];
     if (c.sacos.filter((s) => (s.libras ?? 0) > 0).length === 0) {
-      p.push('Sin sacos pesados no hay cosecha: cargá al menos uno.');
+      p.push('Sin sacos pesados no hay cosecha: carga al menos uno.');
     }
     if (c.sacos.some((s) => s.libras !== null && s.libras <= 0)) {
       p.push('Hay sacos en 0: borrálos o poneles el peso.');
@@ -517,7 +533,7 @@ export class CosechaPage implements OnInit {
     this.selectorTitulo.set('Finca');
     this.selectorOpciones.set(this.fincas);
     this.selectorSeleccion.set(this.finca() ? [this.finca()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros.');
+    this.selectorVacio.set('Descarga los maestros.');
     this.selectorBuscador.set(null);
     this.selectorAbierto.set(true);
   }
@@ -529,7 +545,7 @@ export class CosechaPage implements OnInit {
     this.selectorTitulo.set('Supervisor');
     this.selectorOpciones.set(await this.catalogo.responsables(f ? f.id : null));
     this.selectorSeleccion.set(this.responsable() ? [this.responsable()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros: no hay supervisores en este equipo.');
+    this.selectorVacio.set('Descarga los maestros: no hay supervisores en este equipo.');
     this.selectorBuscador.set(false);
     this.selectorAbierto.set(true);
   }
@@ -611,6 +627,10 @@ export class CosechaPage implements OnInit {
           total_sacos: sacos.length,
           total_peso: totalPeso,
           observaciones: c.observaciones.trim(),
+          justificacion_retro: justificacionParaEnviar(
+            this.retroactivo(),
+            this.justificacion(),
+          ),
         };
         const meta = {
           loteId: a.loteId,

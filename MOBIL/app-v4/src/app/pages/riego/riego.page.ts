@@ -37,6 +37,11 @@ import { ClockService } from '../../core/clock/clock.service';
 import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { SelectorComponent } from '../../shared/selector.component';
+import {
+  RetroactivoComponent,
+  justificacionParaEnviar,
+  problemasRetroactivo,
+} from '../../shared/retroactivo.component';
 
 interface Ref {
   id: number;
@@ -96,6 +101,7 @@ const MINUTOS_SOSPECHOSOS = 360;
   styleUrls: ['../am/am.page.scss', './riego.page.scss'],
   imports: [
     SelectorComponent,
+    RetroactivoComponent,
     IonBackButton,
     IonButton,
     IonButtons,
@@ -167,7 +173,16 @@ export class RiegoPage implements OnInit {
       Math.max(n, 1) * (conDetalle ? 66 : 49) + 6}px`;
   });
 
-  readonly limites = computed(() => this.fechas.limites('riego', false));
+  // Modo libre (Kevin, 2026-09-14). En riego importa mas que en ningun otro
+  // modulo: un parte son 18-25 filas y cargarlo entero atrasado es normal.
+  readonly retroactivo = signal(false);
+  readonly justificacion = signal('');
+  readonly limites = computed(() => this.fechas.limites('riego', this.retroactivo()));
+  readonly evaluacion = computed(() =>
+    this.fecha() && this.horaInicio()
+      ? this.fechas.evaluar('riego', `${this.fecha()}T${this.horaInicio()}:00`)
+      : null,
+  );
   readonly sinHoraVerificada = computed(() => this.clock.offsetSeconds() === null);
 
   // ------------------------------------------------------------------
@@ -205,10 +220,10 @@ export class RiegoPage implements OnInit {
   /** Lo que impide AGREGAR una fila, no lo que impide guardar el registro. */
   readonly problemasFila = computed(() => {
     const p: string[] = [];
-    if (!this.finca()) p.push('Elegí primero la finca.');
+    if (!this.finca()) p.push('Elige primero la finca.');
     if (!this.lote()) p.push('Falta el lote.');
     if (this.loteTieneModulos() && this.modulos().length === 0) {
-      p.push('Elegí al menos un módulo de ese lote.');
+      p.push('Elige al menos un módulo de ese lote.');
     }
     if (this.minutos() <= 0) p.push('Falta el tiempo de riego.');
     return p;
@@ -226,6 +241,7 @@ export class RiegoPage implements OnInit {
     if (this.filas().some((f) => f.minutos <= 0)) {
       p.push('Hay filas sin tiempo de riego.');
     }
+    p.push(...problemasRetroactivo(this.evaluacion(), this.retroactivo(), this.justificacion()));
     return p;
   });
 
@@ -252,7 +268,7 @@ export class RiegoPage implements OnInit {
       const k = `${f.loteId}|${f.moduloId ?? 0}`;
       if ((vistos.get(k) ?? 0) > 1) {
         vistos.set(k, 0);
-        a.push(`${this.etiqueta(f)} está cargado más de una vez: revisá que no sea repetido.`);
+        a.push(`${this.etiqueta(f)} está cargado más de una vez: revisa que no sea repetido.`);
       }
     }
     for (const f of this.filas()) {
@@ -342,7 +358,7 @@ export class RiegoPage implements OnInit {
     this.selectorTitulo.set('Finca');
     this.selectorOpciones.set(this.fincas);
     this.selectorSeleccion.set(this.finca() ? [this.finca()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros.');
+    this.selectorVacio.set('Descarga los maestros.');
     this.selectorBuscador.set(null);
     this.selectorMultiple.set(false);
     this.selectorAbierto.set(true);
@@ -354,7 +370,7 @@ export class RiegoPage implements OnInit {
     this.selectorTitulo.set('Supervisor');
     this.selectorOpciones.set(await this.catalogo.responsables(f ? f.id : null));
     this.selectorSeleccion.set(this.supervisor() ? [this.supervisor()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros: no hay supervisores en este equipo.');
+    this.selectorVacio.set('Descarga los maestros: no hay supervisores en este equipo.');
     this.selectorBuscador.set(false);
     this.selectorMultiple.set(false);
     this.selectorAbierto.set(true);
@@ -362,7 +378,7 @@ export class RiegoPage implements OnInit {
 
   abrirLote(): void {
     if (!this.finca()) {
-      void this.aviso('Elegí primero la finca: los lotes son de una finca.');
+      void this.aviso('Elige primero la finca: los lotes son de una finca.');
       return;
     }
     this.destino = 'lote';
@@ -378,7 +394,7 @@ export class RiegoPage implements OnInit {
   async abrirModulos(): Promise<void> {
     const l = this.lote();
     if (!l) {
-      void this.aviso('Elegí primero el lote.');
+      void this.aviso('Elige primero el lote.');
       return;
     }
     this.destino = 'modulos';
@@ -447,7 +463,7 @@ export class RiegoPage implements OnInit {
     const validos = await this.catalogo.responsables(this.finca()?.id ?? null);
     if (!validos.some((v) => v.id === s.id)) {
       this.supervisor.set(null);
-      await this.aviso(`${s.nombre} no es supervisor de esa finca; elegí otro.`);
+      await this.aviso(`${s.nombre} no es supervisor de esa finca; elige otro.`);
     }
   }
 
@@ -574,6 +590,12 @@ export class RiegoPage implements OnInit {
       // `fecha_proceso` lleva el INICIO del riego. Antes llevaba la hora de la
       // carga, que no era un dato de nadie.
       const fechaProceso = this.fechas.conOffset(`${this.fecha()}T${this.horaInicio()}:00`);
+      // UNA justificacion para el parte entero, repetida en las N filas. Es el
+      // unico lugar donde puede ir: cada fila es su propio registro con su
+      // propio guid y su propio ACK, asi que no hay una cabecera comun donde
+      // guardarla una sola vez. Por eso NO va dentro de `observaciones`, que
+      // son de la fila y las escribe el usuario.
+      const justificacion = justificacionParaEnviar(this.retroactivo(), this.justificacion());
       for (const f of this.filas()) {
         await this.cola.enqueue('riego', {
           fecha_proceso: fechaProceso,
@@ -584,6 +606,7 @@ export class RiegoPage implements OnInit {
           tiempo_riego_min: f.minutos,
           volumen_riego: f.volumen ?? 0,
           observaciones: f.observaciones.trim(),
+          justificacion_retro: justificacion,
         });
         n++;
       }

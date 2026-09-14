@@ -22,6 +22,8 @@ export class DatabaseService {
   private readonly sqlite = new SQLiteConnection(CapacitorSQLite);
   private db: SQLiteDBConnection | null = null;
   private abriendo: Promise<SQLiteDBConnection> | null = null;
+  /** Cola de turnos de `exclusivo()`. Ver el comentario de ese metodo. */
+  private cadena: Promise<unknown> = Promise.resolve();
 
   /**
    * Esquema local. TODO es IF NOT EXISTS y se ejecuta en cada apertura, asi
@@ -237,6 +239,36 @@ export class DatabaseService {
         // la columna ya existe
       }
     }
+  }
+
+  /**
+   * Serializa una secuencia de escrituras contra la base.
+   *
+   * POR QUE EXISTE (2026-09-14): `enqueue()` dispara `void flush()` SIN await,
+   * asi que la secuencia INSERT+auditar+persistir del registro siguiente se
+   * solapaba con la transaccion que ese flush ya tenia abierta. En web eso
+   * revienta con `CommitTransaction: cannot commit - no transaction is
+   * active`, la excepcion sube por `flush` y -como `flush` la tragaba- los
+   * registros quedaban PENDIENTE sin backoff, sin error y sin reintento. Tres
+   * suites e2e estuvieron rojas tres dias por esto.
+   *
+   * REGLA: la funcion que se pasa NO puede hacer una llamada de red adentro.
+   * El lock se toma para el tramo de base y se suelta antes del POST; si se
+   * sostuviera sobre la red, guardar en pantalla esperaria al servidor, que es
+   * justo lo que la cola promete que no pasa.
+   *
+   * NO es reentrante: llamar `exclusivo()` dentro de otro `exclusivo()` se
+   * traba para siempre. Es una cadena de promesas, no un mutex con dueno.
+   */
+  async exclusivo<T>(fn: () => Promise<T>): Promise<T> {
+    // El `catch` del eslabon previo es para que un fallo no deje la cadena
+    // rota: el siguiente en la fila tiene que correr igual.
+    const turno = this.cadena.then(fn, fn);
+    this.cadena = turno.then(
+      () => undefined,
+      () => undefined,
+    );
+    return turno;
   }
 
   /**

@@ -41,6 +41,11 @@ import { PostcosechaService } from '../../core/captura/postcosecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
+import {
+  RetroactivoComponent,
+  justificacionParaEnviar,
+  problemasRetroactivo,
+} from '../../shared/retroactivo.component';
 
 interface Ref {
   id: number;
@@ -157,6 +162,7 @@ const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null, granos: null, v
   imports: [
     BarraPasosComponent,
     SelectorComponent,
+    RetroactivoComponent,
     SwipePasosDirective,
     IonBackButton,
     IonButton,
@@ -243,7 +249,17 @@ export class PostcosechaPage implements OnInit {
   });
 
   readonly sinHoraVerificada = computed(() => this.clock.offsetSeconds() === null);
-  readonly limites = computed(() => this.fechas.limites('postcosecha', false));
+  // Modo libre (Kevin, 2026-09-14). Aplica a `fecha_inicio`, que es la unica
+  // fecha de la partida que elige el usuario: `fecha_cosecha` la deriva el
+  // servidor de las cosechas enlazadas.
+  readonly retroactivo = signal(false);
+  readonly justificacion = signal('');
+  readonly limites = computed(() => this.fechas.limites('postcosecha', this.retroactivo()));
+  readonly evaluacion = computed(() =>
+    this.fechaInicio() && this.horaInicio()
+      ? this.fechas.evaluar('postcosecha', `${this.fechaInicio()}T${this.horaInicio()}:00`)
+      : null,
+  );
 
   // --- Totales del pesaje ---
 
@@ -280,6 +296,7 @@ export class PostcosechaPage implements OnInit {
     const m = this.pesoMallas();
     if (m === null || m < 0) p.push('Falta el peso de las mallas vacías.');
     else if (m >= this.pesoElegido()) p.push('Las mallas pesan más que el lote: revisa el número.');
+    p.push(...problemasRetroactivo(this.evaluacion(), this.retroactivo(), this.justificacion()));
     return p;
   });
 
@@ -554,6 +571,10 @@ export class PostcosechaPage implements OnInit {
           peso_mallas: this.pesoMallas(),
           cosecha_ids: this.cosechasElegidas(),
           comentario: this.comentario().trim(),
+          justificacion_retro: justificacionParaEnviar(
+            this.retroactivo(),
+            this.justificacion(),
+          ),
         },
         { lotCode: null },
       );
@@ -697,7 +718,7 @@ export class PostcosechaPage implements OnInit {
       const a = new Date(inicio).getTime();
       const b = new Date(fin).getTime();
       if (Number.isNaN(a) || Number.isNaN(b)) {
-        p.push('Revisá las fechas: alguna no es una fecha válida.');
+        p.push('Revisa las fechas: alguna no es una fecha válida.');
       } else if (b < a) {
         p.push('La etapa termina antes de empezar.');
       }
@@ -763,7 +784,7 @@ export class PostcosechaPage implements OnInit {
 
   readonly problemasGrano = computed(() => {
     const v = [this.granoBuena(), this.granoLigera(), this.granoVioleta()];
-    if (v.some((x) => x === null || x < 0)) return ['Cargá los tres conteos de grano.'];
+    if (v.some((x) => x === null || x < 0)) return ['Carga los tres conteos de grano.'];
     if (this.totalGrano() === 0) return ['El corte de grano no puede ser todo ceros.'];
     return [];
   });
@@ -828,7 +849,7 @@ export class PostcosechaPage implements OnInit {
       this.humedad(clave, 'h2'),
       this.humedad(clave, 'h3'),
     ];
-    return v.some((x) => x === null || x <= 0) ? ['Cargá las tres lecturas de humedad.'] : [];
+    return v.some((x) => x === null || x <= 0) ? ['Carga las tres lecturas de humedad.'] : [];
   }
 
   puedeRegistrarHumedad(clave: string): boolean {
@@ -922,7 +943,7 @@ export class PostcosechaPage implements OnInit {
     this.selectorTitulo.set('Supervisor');
     this.selectorOpciones.set(await this.catalogo.responsables(null));
     this.selectorSeleccion.set(this.supervisor() ? [this.supervisor()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros: no hay supervisores en este equipo.');
+    this.selectorVacio.set('Descarga los maestros: no hay supervisores en este equipo.');
     this.selectorBuscador.set(false);
     this.selectorMultiple.set(false);
     this.selectorAbierto.set(true);

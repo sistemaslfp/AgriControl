@@ -40,6 +40,11 @@ import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
+import {
+  RetroactivoComponent,
+  justificacionParaEnviar,
+  problemasRetroactivo,
+} from '../../shared/retroactivo.component';
 
 interface Ref {
   id: number;
@@ -92,6 +97,7 @@ type Destino =
   imports: [
     BarraPasosComponent,
     SelectorComponent,
+    RetroactivoComponent,
     SwipePasosDirective,
     IonBackButton,
     IonButton,
@@ -224,14 +230,7 @@ export class AmPage implements OnInit {
     const ev = this.evaluacion();
     if (!this.fechaLocal()) p.push('Falta la fecha y hora de proceso.');
     if (ev?.futuro) p.push('La fecha de proceso no puede estar en el futuro.');
-    if (ev?.excedeRetroactividad && !this.retroactivo()) {
-      p.push(
-        `La fecha supera los ${ev.diasRetroactividad} días de retroactividad: activá "registro retroactivo".`,
-      );
-    }
-    if (this.retroactivo() && this.justificacion().trim().length < 5) {
-      p.push('Un registro retroactivo necesita una justificación escrita.');
-    }
+    p.push(...problemasRetroactivo(ev ?? null, this.retroactivo(), this.justificacion()));
     if (!this.finca()) p.push('Falta la finca.');
     if (!this.responsable()) p.push('Falta el responsable.');
     return p;
@@ -249,7 +248,7 @@ export class AmPage implements OnInit {
       p.push('Este lote trabaja por módulos: Elige al menos uno.');
     }
     if (t.personal.length === 0) {
-      p.push('Falta pel persoal');
+      p.push('Sin personal no hay programación: agrega al menos una persona.');
     }
     return p;
   }
@@ -378,7 +377,7 @@ export class AmPage implements OnInit {
       'Responsable',
       opciones,
       this.responsable() ? [this.responsable()!.id] : [],
-      'Descargá los maestros: no hay responsables en este equipo.',
+      'Descarga los maestros: no hay responsables en este equipo.',
       false,
       false,
     );
@@ -458,7 +457,7 @@ export class AmPage implements OnInit {
       'Personal',
       opciones,
       t.personal.map((p) => p.id),
-      'Descargá los maestros: no hay personal en este equipo.',
+      'Descarga los maestros: no hay personal en este equipo.',
       true,
     );
   }
@@ -633,6 +632,8 @@ export class AmPage implements OnInit {
       return;
     }
 
+    const justificacion = justificacionParaEnviar(this.retroactivo(), this.justificacion());
+
     this.guardando.set(true);
     const guids: string[] = [];
     try {
@@ -666,7 +667,10 @@ export class AmPage implements OnInit {
             subtarea_id: t.subtarea!.id,
             modulo_ids: t.modulos.map((m) => m.id),
             personal_id: persona.id,
-            comentario: this.comentarioFinal(t.comentario),
+            comentario: t.comentario.trim(),
+            // Campo propio desde el 2026-09-14: antes iba pegado al
+            // comentario como '[RETROACTIVO] ...'. Ver retroactivo.component.
+            justificacion_retro: justificacion,
           };
           const guid = await this.cola.enqueue('am', payload);
           guids.push(guid);
@@ -696,20 +700,6 @@ export class AmPage implements OnInit {
   // ------------------------------------------------------------------
   // Helpers
   // ------------------------------------------------------------------
-
-  /**
-   * La justificación del registro retroactivo viaja dentro de `comentario`:
-   * el payload de /v4/sync no tiene un campo propio para ella. Es una
-   * limitación real del contrato, no una elección de diseño — anotada para
-   * resolver cuando se toque el servidor.
-   */
-  private comentarioFinal(comentario: string): string {
-    const base = comentario.trim();
-    if (!this.retroactivo()) {
-      return base;
-    }
-    return `[RETROACTIVO] ${this.justificacion().trim()}${base ? ' | ' + base : ''}`.slice(0, 255);
-  }
 
   private async tareasDe(cultivoId: number): Promise<OpcionCatalogo[]> {
     const fincaId = this.finca()?.id ?? null;

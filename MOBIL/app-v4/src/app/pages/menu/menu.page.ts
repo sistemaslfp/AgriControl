@@ -139,7 +139,7 @@ export class MenuPage implements OnInit {
         // Sin catálogos no hay nada que elegir: los selectores saldrían
         // vacíos y el registro se rechazaría en el servidor.
         if (!this.catalogos.disponibles()) {
-          await this.aviso('Primero descargá los catálogos con "Actualizar Maestros".');
+          await this.aviso('Primero descarga los catálogos con "Actualizar Maestros".');
           return;
         }
         if (!celda.ruta) {

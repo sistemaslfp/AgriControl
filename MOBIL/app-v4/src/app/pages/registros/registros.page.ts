@@ -225,7 +225,7 @@ export class RegistrosPage implements OnInit {
       return this.red().transporte === 'celular'
         ? 'No se alcanza el servidor: el teléfono está en datos móviles. ' +
           'Conectate al WiFi de la finca.'
-        : 'No se alcanza el servidor: revisá el WiFi de la finca. Se reintenta solo.';
+        : 'No se alcanza el servidor: revisa el WiFi de la finca. Se reintenta solo.';
     }
     const ms = this.proximoReintentoMs();
     if (ms !== null) {

@@ -227,14 +227,19 @@ export class SyncQueueService {
     const guid = crypto.randomUUID();
     const createdAtDevice = this.isoLocalDelDispositivo();
 
-    const db = await this.database.abrir();
-    await db.run(
-      `INSERT INTO sync_queue (guid, tipo, payload, estado, created_at_device, meta)
-       VALUES (?, ?, ?, 'PENDIENTE', ?, ?);`,
-      [guid, tipo, JSON.stringify(payload), createdAtDevice, meta ? JSON.stringify(meta) : null],
-    );
-    await this.auditar('ENQUEUE', guid, tipo);
-    await this.database.persistir();
+    // Tramo de base serializado: el `void flush()` de mas abajo NO se espera,
+    // asi que el INSERT del registro siguiente se solapaba con la transaccion
+    // del envio en curso. Ver `DatabaseService.exclusivo()`.
+    await this.database.exclusivo(async () => {
+      const db = await this.database.abrir();
+      await db.run(
+        `INSERT INTO sync_queue (guid, tipo, payload, estado, created_at_device, meta)
+         VALUES (?, ?, ?, 'PENDIENTE', ?, ?);`,
+        [guid, tipo, JSON.stringify(payload), createdAtDevice, meta ? JSON.stringify(meta) : null],
+      );
+      await this.auditar('ENQUEUE', guid, tipo);
+      await this.database.persistir();
+    });
     await this.refrescarConteo();
 
     void this.flush('al-guardar');
@@ -276,12 +281,32 @@ export class SyncQueueService {
       // Atarse a la WiFi ANTES de mandar. Si el equipo tiene datos móviles,
       // Android deja la celular como red por defecto cuando el WiFi no está
       // validado, y el POST a una IP privada se va por la antena y muere.
-      await this.asegurarRuta();
+      // [EXPERIMENTO] asegurarRuta() removido del flush
       // Mientras el servidor siga confirmando, se encadenan lotes de 50.
       let continuar = true;
       while (continuar) {
         continuar = await this.enviarUnLote(motivo);
       }
+    } catch (e) {
+      // NO ALCANZA CON `finally`. Hasta el 2026-09-14 esto era solo
+      // `try/finally`: cualquier excepcion fuera del `catch` del POST -por
+      // ejemplo la transaccion de SQLite reventada por dos escrituras
+      // solapadas- se iba como promesa rechazada que nadie escuchaba, porque
+      // `enqueue` llama a `flush` con `void`. Resultado: registros PENDIENTE,
+      // `servidorAlcanzable` en true, sin backoff y sin `ultimoError`. Tres
+      // dias sin que nadie lo notara.
+      //
+      // Un fallo inesperado se trata como cualquier otro fallo de envio: se
+      // devuelven los ENVIANDO a PENDIENTE, se muestra el error y se programa
+      // el reintento.
+      const detalle = this.describirError(e);
+      this.ultimoError.set(detalle);
+      this.fallosConsecutivos++;
+      this.programarBackoff();
+      await this.database.exclusivo(async () => {
+        await this.recuperarEnviando();
+        await this.auditar('FLUSH_FALLIDO', null, `motivo=${motivo} error=${detalle}`);
+      });
     } finally {
       this.enviando.set(false);
       await this.refrescarConteo();
@@ -290,19 +315,30 @@ export class SyncQueueService {
 
   /** @returns true si el lote se confirmó y puede intentarse el siguiente. */
   private async enviarUnLote(motivo: string): Promise<boolean> {
-    const db = await this.database.abrir();
-    const lote = await db.query(
-      `SELECT * FROM sync_queue WHERE estado = 'PENDIENTE'
-       ORDER BY created_at_device ASC, guid ASC LIMIT ?;`,
-      [SyncQueueService.TAMANO_LOTE],
-    );
-    const filas = (lote.values ?? []) as RegistroCola[];
+    // Tomar el lote y marcarlo ENVIANDO es un solo tramo de base: si entre el
+    // SELECT y el UPDATE se cuela un `enqueue`, las dos transacciones chocan.
+    // El lock se SUELTA antes del POST: la pantalla nunca espera a la red.
+    const filas = await this.database.exclusivo(async () => {
+      const db = await this.database.abrir();
+      const lote = await db.query(
+        `SELECT * FROM sync_queue WHERE estado = 'PENDIENTE'
+         ORDER BY created_at_device ASC, guid ASC LIMIT ?;`,
+        [SyncQueueService.TAMANO_LOTE],
+      );
+      const f = (lote.values ?? []) as RegistroCola[];
+      if (f.length > 0) {
+        await this.marcarEstado(
+          f.map((x) => x.guid),
+          'ENVIANDO',
+        );
+      }
+      return f;
+    });
     if (filas.length === 0) {
       return false;
     }
 
     const guids = filas.map((f) => f.guid);
-    await this.marcarEstado(guids, 'ENVIANDO');
 
     const records: SyncRecord[] = filas.map((f) => ({
       guid: f.guid,
@@ -338,6 +374,19 @@ export class SyncQueueService {
    * results con created/duplicate cierra un registro.
    */
   private async aplicarResultados(guidsEnviados: string[], respuesta: SyncResponse): Promise<boolean> {
+    // Todo el ACK es un solo tramo de base. `refrescarConteo()` queda afuera:
+    // solo lee y no tiene por que ocupar el turno.
+    const seguir = await this.database.exclusivo(() =>
+      this.aplicarResultadosInterno(guidsEnviados, respuesta),
+    );
+    await this.refrescarConteo();
+    return seguir;
+  }
+
+  private async aplicarResultadosInterno(
+    guidsEnviados: string[],
+    respuesta: SyncResponse,
+  ): Promise<boolean> {
     const db = await this.database.abrir();
     const ahora = new Date().toISOString();
     const porGuid = new Map(respuesta.results.map((r) => [r.guid, r]));
@@ -406,7 +455,6 @@ export class SyncQueueService {
     this.ultimoError.set(null);
     await this.config.set(KV.LAST_SYNC_OK_AT, ahora);
     await this.database.persistir();
-    await this.refrescarConteo();
 
     // Si todos los enviados quedaron sin respuesta, no tiene sentido
     // encadenar otro lote: sería un bucle contra un servidor que ignora.
@@ -418,12 +466,18 @@ export class SyncQueueService {
     // está: más confiable que cualquier flag del sistema, porque probó el
     // camino completo hasta `{baseUrl}/sync`.
     this.servidorAlcanzable.set(false);
-    await this.marcarEstado(guids, 'PENDIENTE', error);
     this.fallosConsecutivos++;
     this.ultimoError.set(error);
     this.programarBackoff();
-    await this.auditar('LOTE_FALLIDO', null, `motivo=${motivo} intento=${this.fallosConsecutivos} error=${error}`);
-    await this.database.persistir();
+    await this.database.exclusivo(async () => {
+      await this.marcarEstado(guids, 'PENDIENTE', error);
+      await this.auditar(
+        'LOTE_FALLIDO',
+        null,
+        `motivo=${motivo} intento=${this.fallosConsecutivos} error=${error}`,
+      );
+      await this.database.persistir();
+    });
     await this.refrescarConteo();
   }
 

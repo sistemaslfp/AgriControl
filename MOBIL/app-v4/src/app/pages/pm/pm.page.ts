@@ -43,6 +43,11 @@ import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
+import {
+  RetroactivoComponent,
+  justificacionParaEnviar,
+  problemasRetroactivo,
+} from '../../shared/retroactivo.component';
 
 interface Ref {
   id: number;
@@ -102,6 +107,7 @@ export interface GrupoTareaAm {
   imports: [
     BarraPasosComponent,
     SelectorComponent,
+    RetroactivoComponent,
     SwipePasosDirective,
     IonBackButton,
     IonButton,
@@ -199,7 +205,17 @@ export class PmPage implements OnInit {
 
   private fincas: OpcionCatalogo[] = [];
 
-  readonly limites = computed(() => this.fechas.limites('pm', false));
+  // Modo libre (Kevin, 2026-09-14): hasta hoy esto era `false` fijo y la
+  // ventana de 3 dias era un limite DURO del calendario -- no habia forma de
+  // cerrar un AM de la semana pasada desde el telefono.
+  readonly retroactivo = signal(false);
+  readonly justificacion = signal('');
+  readonly limites = computed(() => this.fechas.limites('pm', this.retroactivo()));
+  readonly evaluacion = computed(() =>
+    this.fecha() && this.horaCierre()
+      ? this.fechas.evaluar('pm', `${this.fecha()}T${this.horaCierre()}:00`)
+      : null,
+  );
   readonly sinHoraVerificada = computed(() => this.clock.offsetSeconds() === null);
 
   readonly problemasEncabezado = computed(() => {
@@ -211,6 +227,7 @@ export class PmPage implements OnInit {
     if (this.elegidas().length === 0) {
       p.push('Elige al menos una tarea de la mañana para cerrar.');
     }
+    p.push(...problemasRetroactivo(this.evaluacion(), this.retroactivo(), this.justificacion()));
     return p;
   });
 
@@ -516,7 +533,7 @@ export class PmPage implements OnInit {
     this.selectorTitulo.set('Finca');
     this.selectorOpciones.set(this.fincas);
     this.selectorSeleccion.set(this.finca() ? [this.finca()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros.');
+    this.selectorVacio.set('Descarga los maestros.');
     this.selectorBuscador.set(null);
     this.selectorAbierto.set(true);
   }
@@ -528,7 +545,7 @@ export class PmPage implements OnInit {
     this.selectorTitulo.set('Responsable');
     this.selectorOpciones.set(await this.catalogo.responsables(f ? f.id : null));
     this.selectorSeleccion.set(this.responsable() ? [this.responsable()!.id] : []);
-    this.selectorVacio.set('Descargá los maestros: no hay responsables en este equipo.');
+    this.selectorVacio.set('Descarga los maestros: no hay responsables en este equipo.');
     this.selectorBuscador.set(false);
     this.selectorAbierto.set(true);
   }
@@ -623,6 +640,10 @@ export class PmPage implements OnInit {
           cantidad: Number(c.cantidad),
           hora_cierre: this.fechas.conOffset(`${this.fecha()}T${this.horaCierre()}:00`),
           comentario: c.comentario.trim(),
+          justificacion_retro: justificacionParaEnviar(
+            this.retroactivo(),
+            this.justificacion(),
+          ),
         };
         const meta = {
           loteId: a.loteId,
