@@ -39,16 +39,28 @@ export class CatalogService {
    * Descarga y reemplaza todos los catálogos. Lanza si no hay red o el
    * servidor falla; en ese caso los catálogos anteriores quedan intactos.
    */
-  async actualizar(): Promise<{ version: string; totales: Record<string, number> }> {
+  async actualizar(): Promise<{
+    version: string;
+    totales: Record<string, number>;
+    sinCambios: boolean;
+  }> {
     this.actualizando.set(true);
     try {
       // 1. Descarga completa ANTES de tocar la base.
       const data: CatalogosResponse = await this.api.catalogos();
       this.validar(data);
 
+      // `version` es un md5 del CHECKSUM TABLE de los ocho catálogos: si no
+      // cambió, reescribir la base no aporta nada. Volver a pulsar el botón
+      // es lo normal, no un error.
+      const guardada = await this.config.get(KV.CATALOGOS_VERSION);
+      if (guardada === data.version && (await this.verificarDisponibles())) {
+        return { version: data.version, totales: this.totalesDe(data), sinCambios: true };
+      }
+
       // 2. Reemplazo transaccional.
       const db = await this.database.abrir();
-      await db.execute('BEGIN;', false);
+      await db.beginTransaction();
       try {
         await db.execute(
           `DELETE FROM cat_finca; DELETE FROM cat_lote; DELETE FROM cat_modulo;
@@ -58,44 +70,44 @@ export class CatalogService {
         );
 
         for (const f of data.fincas) {
-          await db.run('INSERT INTO cat_finca (id, nombre, ha) VALUES (?, ?, ?);',
+          await db.run('INSERT OR REPLACE INTO cat_finca (id, nombre, ha) VALUES (?, ?, ?);',
             [f.id, f.nombre, f.ha], false);
         }
         for (const l of data.lotes) {
           await db.run(
-            'INSERT INTO cat_lote (id, lote, finca_id, ha, tiene_modulos) VALUES (?, ?, ?, ?, ?);',
+            'INSERT OR REPLACE INTO cat_lote (id, lote, finca_id, ha, tiene_modulos) VALUES (?, ?, ?, ?, ?);',
             [l.id, l.lote, l.finca_id, l.ha, l.tiene_modulos ? 1 : 0], false);
         }
         for (const m of data.modulos) {
-          await db.run('INSERT INTO cat_modulo (id, modulo, lote_id, ha) VALUES (?, ?, ?, ?);',
+          await db.run('INSERT OR REPLACE INTO cat_modulo (id, modulo, lote_id, ha) VALUES (?, ?, ?, ?);',
             [m.id, m.modulo, m.lote_id, m.ha], false);
         }
         for (const c of data.cultivos) {
-          await db.run('INSERT INTO cat_cultivo (id, nombre) VALUES (?, ?);',
+          await db.run('INSERT OR REPLACE INTO cat_cultivo (id, nombre) VALUES (?, ?);',
             [c.id, c.nombre], false);
         }
         for (const t of data.tareas) {
-          await db.run('INSERT INTO cat_tarea (id, nombre, cultivos_id) VALUES (?, ?, ?);',
+          await db.run('INSERT OR REPLACE INTO cat_tarea (id, nombre, cultivos_id) VALUES (?, ?, ?);',
             [t.id, t.nombre, t.cultivos_id], false);
         }
         for (const s of data.subtareas) {
           await db.run(
-            'INSERT INTO cat_subtarea (id, codigo, nombre, tarea_id, id_finca, unidad_labor_id, tipo_pago_id) VALUES (?, ?, ?, ?, ?, ?, ?);',
+            'INSERT OR REPLACE INTO cat_subtarea (id, codigo, nombre, tarea_id, id_finca, unidad_labor_id, tipo_pago_id) VALUES (?, ?, ?, ?, ?, ?, ?);',
             [s.id, s.codigo, s.nombre, s.tarea_id, s.id_finca, s.unidad_labor_id, s.tipo_pago_id], false);
         }
         for (const u of data.ulabores) {
-          await db.run('INSERT INTO cat_ulabor (id, nombre) VALUES (?, ?);',
+          await db.run('INSERT OR REPLACE INTO cat_ulabor (id, nombre) VALUES (?, ?);',
             [u.id, u.nombre], false);
         }
         for (const p of data.personal) {
           await db.run(
-            'INSERT INTO cat_personal (id, nombre, id_finca, rol, rol_app) VALUES (?, ?, ?, ?, ?);',
+            'INSERT OR REPLACE INTO cat_personal (id, nombre, id_finca, rol, rol_app) VALUES (?, ?, ?, ?, ?);',
             [p.id, p.nombre, p.id_finca, p.rol, p.rol_app], false);
         }
 
-        await db.execute('COMMIT;', false);
+        await db.commitTransaction();
       } catch (e) {
-        await db.execute('ROLLBACK;', false);
+        await db.rollbackTransaction();
         throw e;
       }
 
@@ -105,22 +117,23 @@ export class CatalogService {
       await this.database.persistir();
       await this.verificarDisponibles();
 
-      return {
-        version: data.version,
-        totales: {
-          fincas: data.fincas.length,
-          lotes: data.lotes.length,
-          modulos: data.modulos.length,
-          cultivos: data.cultivos.length,
-          tareas: data.tareas.length,
-          subtareas: data.subtareas.length,
-          ulabores: data.ulabores.length,
-          personal: data.personal.length,
-        },
-      };
+      return { version: data.version, totales: this.totalesDe(data), sinCambios: false };
     } finally {
       this.actualizando.set(false);
     }
+  }
+
+  private totalesDe(data: CatalogosResponse): Record<string, number> {
+    return {
+      fincas: data.fincas.length,
+      lotes: data.lotes.length,
+      modulos: data.modulos.length,
+      cultivos: data.cultivos.length,
+      tareas: data.tareas.length,
+      subtareas: data.subtareas.length,
+      ulabores: data.ulabores.length,
+      personal: data.personal.length,
+    };
   }
 
   /** Un catálogo vacío o mal formado no debe reemplazar uno bueno. */
