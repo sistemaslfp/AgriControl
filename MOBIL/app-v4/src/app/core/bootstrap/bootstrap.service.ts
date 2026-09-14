@@ -27,6 +27,19 @@ export const BOOTSTRAP_FALLBACK: BootstrapResponse = {
   catalogos_version: '',
 };
 
+/** Los cinco modulos que tienen ventana de retroactividad. */
+export const MODULOS_RETRO = ['am', 'pm', 'cosecha', 'riego', 'postcosecha'] as const;
+export type ModuloRetro = (typeof MODULOS_RETRO)[number];
+export type OverrideRetro = Partial<Record<ModuloRetro, number>>;
+
+/**
+ * Tope de lo que se puede escribir en Configuracion. No es una regla de
+ * negocio: es el filtro contra el dedazo (un "3000" que deje el selector
+ * abierto ocho anios). El modo libre de las pantallas usa su propio tope,
+ * `FechaService.TOPE_RETROACTIVO_DIAS`.
+ */
+export const TOPE_VENTANA_DIAS = 400;
+
 @Injectable({ providedIn: 'root' })
 export class BootstrapService {
   private readonly api = inject(ApiService);
@@ -35,6 +48,8 @@ export class BootstrapService {
   readonly datos = signal<BootstrapResponse>(BOOTSTRAP_FALLBACK);
   /** null = nunca se trajo del servidor; los valores son el fallback local. */
   readonly obtenidoAt = signal<string | null>(null);
+  /** Ventanas cambiadas en ESTE equipo. Le ganan al servidor. */
+  readonly override = signal<OverrideRetro>({});
 
   private cargado = false;
 
@@ -51,6 +66,7 @@ export class BootstrapService {
         // Guardado corrupto: se sigue con el fallback, no se rompe la captura.
       }
     }
+    await this.cargarOverride();
     this.cargado = true;
   }
 
@@ -83,5 +99,83 @@ export class BootstrapService {
       cosecha_subtarea_ids: Array.isArray(d?.cosecha_subtarea_ids) ? d!.cosecha_subtarea_ids : [],
       catalogos_version: d?.catalogos_version ?? '',
     };
+  }
+
+  // ------------------------------------------------------------------
+  // Ventanas de retroactividad: el equipo le gana al servidor
+  // ------------------------------------------------------------------
+
+  /**
+   * Lee el override guardado en app_kv. Un JSON corrupto o con basura adentro
+   * se ignora en silencio en vez de tumbar el arranque: sin ventanas no hay
+   * selector de fecha y no se puede capturar nada.
+   */
+  private async cargarOverride(): Promise<void> {
+    const crudo = await this.config.get(KV.RETRO_OVERRIDE);
+    if (!crudo) {
+      return;
+    }
+    try {
+      const d = JSON.parse(crudo) as Record<string, unknown>;
+      const limpio: OverrideRetro = {};
+      for (const m of MODULOS_RETRO) {
+        const v = Number(d[m]);
+        if (Number.isInteger(v) && v >= 0 && v <= TOPE_VENTANA_DIAS) {
+          limpio[m] = v;
+        }
+      }
+      this.override.set(limpio);
+    } catch {
+      // guardado corrupto: se sigue con lo del servidor
+    }
+  }
+
+  /**
+   * Dias de retroactividad EFECTIVOS de un modulo.
+   *
+   * Precedencia: lo que se cambio en Configuracion gana sobre lo que manda
+   * `/v4/bootstrap` (Kevin, 2026-09-14). Es al reves de lo natural, y es a
+   * proposito: si mandara el servidor, el cambio del usuario duraria hasta el
+   * proximo "Actualizar Maestros" y se borraria solo, que es peor que no
+   * poder cambiarlo.
+   */
+  retroactividadDias(modulo: ModuloRetro): number {
+    const propio = this.override()[modulo];
+    if (propio !== undefined) {
+      return propio;
+    }
+    return Number(this.datos().retroactividad_dias[modulo] ?? 0);
+  }
+
+  /** Lo que mandaria el servidor si nadie hubiera tocado nada. */
+  retroactividadDelServidor(modulo: ModuloRetro): number {
+    return Number(this.datos().retroactividad_dias[modulo] ?? 0);
+  }
+
+  /** true si ese numero se cambio en ESTE equipo. Lo muestra Configuracion. */
+  esDelEquipo(modulo: ModuloRetro): boolean {
+    return this.override()[modulo] !== undefined;
+  }
+
+  /** `dias = null` devuelve el modulo al valor del servidor. */
+  async fijarRetroactividad(modulo: ModuloRetro, dias: number | null): Promise<void> {
+    const actual = { ...this.override() };
+    if (dias === null) {
+      delete actual[modulo];
+    } else {
+      const v = Math.trunc(dias);
+      if (!Number.isInteger(v) || v < 0 || v > TOPE_VENTANA_DIAS) {
+        throw new Error(`La ventana tiene que ser un número entre 0 y ${TOPE_VENTANA_DIAS}.`);
+      }
+      actual[modulo] = v;
+    }
+    this.override.set(actual);
+    await this.config.set(KV.RETRO_OVERRIDE, JSON.stringify(actual));
+  }
+
+  /** Devuelve los cinco modulos a lo que diga el servidor. */
+  async restaurarRetroactividad(): Promise<void> {
+    this.override.set({});
+    await this.config.set(KV.RETRO_OVERRIDE, JSON.stringify({}));
   }
 }

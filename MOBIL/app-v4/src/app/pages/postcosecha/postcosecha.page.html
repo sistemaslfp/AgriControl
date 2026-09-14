@@ -186,6 +186,22 @@
       </ion-item>
     </ion-list>
 
+    @if (evaluacion(); as ev) {
+      @if (ev.excedeRetroactividad) {
+        <div class="banner alerta">
+          La fecha de inicio es de hace más de {{ ev.diasRetroactividad }} días.
+          Activa "Estoy cargando un día anterior" y explica el motivo.
+        </div>
+      }
+    }
+
+    <app-retroactivo
+      [dias]="evaluacion()?.diasRetroactividad ?? 30"
+      [(activo)]="retroactivo"
+      [(justificacion)]="justificacion"
+      ejemplo="Ej.: la partida arrancó hace semanas y se registra ahora"
+    ></app-retroactivo>
+
     <div class="banner info">
       Al guardar se abre la etapa <strong>en presecado</strong>
     </div>

@@ -149,6 +149,59 @@
     <ion-button expand="block" (click)="guardar()">Guardar</ion-button>
   </div>
 
+  <!-- ================= Ventanas de retroactividad ================= -->
+  <h2 class="titulo-seccion">Días hacia atrás por módulo</h2>
+  <p class="nota-seccion">
+    Cuántos días atrás abre el calendario de cada pantalla sin pedir nada. Para
+    ir más atrás siempre está el interruptor "Estoy cargando un día anterior",
+    que pide escribir el motivo. Estos números no bloquean: sólo deciden a
+    partir de dónde hay que justificar.
+  </p>
+  <ion-list inset="true">
+    @for (m of modulosRetro; track m.clave) {
+      <ion-item>
+        <ion-input
+          [label]="m.nombre"
+          labelPlacement="stacked"
+          type="number"
+          inputmode="numeric"
+          min="0"
+          [max]="topeVentana"
+          [value]="diasDe(m.clave)"
+          (ionInput)="setDias(m.clave, $any($event.target).value)"
+        ></ion-input>
+        <ion-note slot="end" class="origen-ventana">
+          {{ esDelEquipo(m.clave) ? 'este equipo' : 'servidor' }}
+        </ion-note>
+      </ion-item>
+    }
+  </ion-list>
+
+  @if (errorVentanas()) {
+    <div class="banner alerta">{{ errorVentanas() }}</div>
+  }
+
+  @if (hayOverride()) {
+    <div class="banner info">
+      Los valores marcados "este equipo" ya no se actualizan con
+      <strong>Actualizar Maestros</strong>: mandan sobre lo que diga el
+      servidor hasta que los restaures.
+    </div>
+  }
+
+  <div class="fila-botones">
+    <ion-button expand="block" (click)="guardarVentanas()">Guardar días</ion-button>
+    <ion-button
+      expand="block"
+      fill="outline"
+      color="medium"
+      [disabled]="!hayOverride()"
+      (click)="restaurarVentanas()"
+    >
+      Restaurar los del servidor
+    </ion-button>
+  </div>
+
   <!-- ================= Limpieza ================= -->
   <h2 class="titulo-seccion">Limpieza de datos locales</h2>
 

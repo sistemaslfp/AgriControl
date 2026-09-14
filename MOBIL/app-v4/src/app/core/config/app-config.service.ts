@@ -18,6 +18,12 @@ export const KV = {
   // tarea y evita el error de cargar en la finca equivocada.
   DEFAULT_FINCA_ID: 'default_finca_id',
   DEFAULT_CULTIVO_ID: 'default_cultivo_id',
+  // Ventanas de retroactividad cambiadas DESDE ESTE EQUIPO, en Configuración.
+  // Van aparte de BOOTSTRAP_JSON a propósito: ese lo pisa entero cada
+  // "Actualizar Maestros", así que guardarlas ahí las borraría en la próxima
+  // sincronización sin que el usuario entienda por qué. JSON parcial: sólo los
+  // módulos que alguien tocó.
+  RETRO_OVERRIDE: 'retroactividad_override',
 } as const;
 
 /**

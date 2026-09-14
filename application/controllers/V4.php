@@ -789,6 +789,7 @@ class V4 extends RestController
             'peso_lote'           => $peso_lote,
             'peso_mallas'         => (float) $p['peso_mallas'],
             'comentario'          => $this->sync_texto($p, 'comentario', 255),
+            'justificacion_retro' => $this->sync_texto($p, 'justificacion_retro', 255),
             'device_alias'        => $alias,
             'created_at_device'   => $cad->format('Y-m-d H:i:s'),
             'received_at_server'  => date('Y-m-d H:i:s', $ahora),
@@ -1195,6 +1196,7 @@ class V4 extends RestController
             'subtarea_id'         => $ids['subtarea_id'],
             'personal_id'         => $ids['personal_id'],
             'comentario'          => $this->sync_texto($p, 'comentario', 255),
+            'justificacion_retro' => $this->sync_texto($p, 'justificacion_retro', 255),
             'device_alias'        => $alias,
             'created_at_device'   => $cad->format('Y-m-d H:i:s'),
             'received_at_server'  => date('Y-m-d H:i:s', $ahora),
@@ -1286,7 +1288,7 @@ class V4 extends RestController
      *
      * Por eso el payload se reduce a:
      *   am_guid, trabajador_id, cantidad, [hora_cierre], [responsable_id],
-     *   [comentario]
+     *   [comentario], [justificacion_retro]
      *
      * Todo lo demas -- finca, cultivo, lote, subtarea, modulos, fecha de
      * proceso -- se DERIVA del AM. El telefono no puede contradecirlo, que es
@@ -1392,6 +1394,7 @@ class V4 extends RestController
                 'cantidad'                 => (float) $p['cantidad'],
                 'hora_cierre'              => $cierre->format('Y-m-d H:i:s'),
                 'comentario_cierre'        => $this->sync_texto($p, 'comentario', 255),
+                'justificacion_retro_cierre' => $this->sync_texto($p, 'justificacion_retro', 255),
                 'responsable_cierre_id'    => $responsable_id,
                 'cierre_guid'              => $guid,
                 'cierre_device_alias'      => $alias,
@@ -1435,7 +1438,7 @@ class V4 extends RestController
      *
      * Por eso el payload se reduce a:
      *   am_guid, sacos[], [hora_cierre], [responsable_id], [trabajador_id],
-     *   [observaciones]
+     *   [observaciones], [justificacion_retro]
      *
      * **La suma de las libras es el avance de la tarea**: este metodo escribe
      * `reg_am.cantidad` con `total_peso`. No es una interpretacion: de 14.466
@@ -1523,6 +1526,7 @@ class V4 extends RestController
                 'cantidad'                 => $total_peso,
                 'hora_cierre'              => $cierre->format('Y-m-d H:i:s'),
                 'comentario_cierre'        => $this->sync_texto($p, 'observaciones', 255),
+                'justificacion_retro_cierre' => $this->sync_texto($p, 'justificacion_retro', 255),
                 'responsable_cierre_id'    => $responsable_id,
                 'cierre_guid'              => $guid,
                 'cierre_device_alias'      => $alias,
@@ -1694,6 +1698,7 @@ class V4 extends RestController
             'tiempo_riego_min'    => $minutos,
             'volumen_riego'       => $volumen,
             'observaciones'       => $this->sync_texto($p, 'observaciones', 500),
+            'justificacion_retro' => $this->sync_texto($p, 'justificacion_retro', 255),
             'device_alias'        => $alias,
             'created_at_device'   => $cad->format('Y-m-d H:i:s'),
             'received_at_server'  => date('Y-m-d H:i:s', $ahora),

@@ -40,6 +40,22 @@
     </ion-item>
   </ion-list>
 
+  @if (evaluacion(); as ev) {
+    @if (ev.excedeRetroactividad) {
+      <div class="banner alerta">
+        La fecha es de hace más de {{ ev.diasRetroactividad }} días.
+        Activa "Estoy cargando un día anterior" y explica el motivo.
+      </div>
+    }
+  }
+
+  <app-retroactivo
+    [dias]="evaluacion()?.diasRetroactividad ?? 7"
+    [(activo)]="retroactivo"
+    [(justificacion)]="justificacion"
+    ejemplo="Ej.: el parte de riego estaba en papel y se pasó ahora"
+  ></app-retroactivo>
+
   <ion-modal [keepContentsMounted]="true">
     <ng-template>
       <ion-datetime

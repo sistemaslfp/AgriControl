@@ -67,3 +67,42 @@
   font-size: 0.9rem;
   color: var(--ion-color-medium-shade);
 }
+
+// Explicacion de una seccion, arriba de la lista. El titulo dice QUE es; esto
+// dice PARA QUE sirve, que en las ventanas de retroactividad hace falta: el
+// numero no bloquea nada y a simple vista parece que si.
+.nota-seccion {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--ion-color-medium);
+  margin: 0 8px 8px;
+}
+
+// De donde salio el numero: del servidor o de este equipo. Chico y gris; es
+// procedencia, no un estado que haya que atender.
+.origen-ventana {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+// Mismo banner que usan AM y las demas pantallas. Se repite el bloque porque
+// los estilos de pagina en este proyecto son por componente, sin un parcial
+// compartido; cambiar eso es una refactorizacion aparte.
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 4px;
+  font-size: 0.88rem;
+  line-height: 1.35;
+
+  &.alerta {
+    background: rgba(198, 40, 40, 0.1);
+    color: #b71c1c;
+  }
+
+  &.info {
+    background: var(--ion-color-step-100, #f2f2f2);
+    color: var(--ion-color-medium-shade);
+  }
+}

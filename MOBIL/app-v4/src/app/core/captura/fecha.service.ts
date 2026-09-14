@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 
-import { BootstrapService } from '../bootstrap/bootstrap.service';
+import { BootstrapService, ModuloRetro } from '../bootstrap/bootstrap.service';
 import { ClockService } from '../clock/clock.service';
 
 /**
@@ -16,7 +16,14 @@ import { ClockService } from '../clock/clock.service';
  *   del usuario manda; el servidor lo anota con `fuera_de_ventana_horaria`.
  */
 
-export type TipoFecha = 'am' | 'pm' | 'cosecha' | 'riego' | 'postcosecha';
+/**
+ * Alias de `ModuloRetro`, que es la lista de verdad ([[bootstrap.service]]).
+ *
+ * Antes era una union escrita a mano acá, y agregar una pantalla con ventana
+ * propia obligaba a acordarse de tocar las dos: al construir riego el build
+ * murio con TS2345 por eso. Ahora la lista vive en un solo lugar.
+ */
+export type TipoFecha = ModuloRetro;
 
 /**
  * Cosecha no tiene ventana horaria: se cosecha cuando se cosecha. Se devuelve
@@ -64,8 +71,12 @@ export class FechaService {
     };
   }
 
+  /**
+   * Los dias EFECTIVOS: lo cambiado en Configuracion le gana al servidor.
+   * La precedencia vive en BootstrapService, no aca.
+   */
   diasRetroactividad(tipo: TipoFecha): number {
-    return Number(this.bootstrap.datos().retroactividad_dias[tipo] ?? 0);
+    return this.bootstrap.retroactividadDias(tipo);
   }
 
   ventana(tipo: TipoFecha): { inicio: string; fin: string } {

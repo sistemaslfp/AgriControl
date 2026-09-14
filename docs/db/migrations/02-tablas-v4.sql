@@ -163,6 +163,14 @@ CREATE TABLE IF NOT EXISTS reg_am (
   subtarea_id         INT          NOT NULL,
   personal_id         INT          NOT NULL,
   comentario          VARCHAR(255) NULL,
+  -- POR QUE alguien cargo una fecha mas vieja que la ventana de su modulo.
+  --
+  -- Columna propia y no un prefijo dentro de `comentario`: hasta el
+  -- 2026-09-14 el motivo viajaba como '[RETROACTIVO] ...' pegado al
+  -- comentario y recortado a 255 entre los dos, asi que no habia forma de
+  -- listar los registros retroactivos ni de leer el motivo sin parsear texto.
+  -- NULL = la fecha cayo dentro de la ventana; no hubo nada que justificar.
+  justificacion_retro VARCHAR(255) NULL,
   device_alias        VARCHAR(50)  NULL,
   created_at_device   DATETIME     NULL,
   received_at_server  DATETIME     NOT NULL,
@@ -174,6 +182,10 @@ CREATE TABLE IF NOT EXISTS reg_am (
   cantidad                 DECIMAL(9,3) NULL,
   hora_cierre              DATETIME     NULL,
   comentario_cierre        VARCHAR(255) NULL,
+  -- La del CIERRE, que es una fecha distinta de la del alta y se carga otro
+  -- dia. La escriben tanto el PM como Cosecha: las dos cierran una fila de
+  -- aca y las dos mandan `hora_cierre`.
+  justificacion_retro_cierre VARCHAR(255) NULL,
   responsable_cierre_id    INT          NULL,
   cierre_guid              CHAR(36)     NULL,
   cierre_device_alias      VARCHAR(50)  NULL,
@@ -313,6 +325,10 @@ CREATE TABLE IF NOT EXISTS reg_riego (
   tiempo_riego_min    SMALLINT UNSIGNED NULL,   -- duración en minutos
   volumen_riego       DECIMAL(9,3)     NOT NULL DEFAULT 0,
   observaciones       VARCHAR(500)     NULL,    -- el máximo real hoy es 140
+  -- Ver el comentario de reg_am.justificacion_retro. En riego pesa mas que en
+  -- ningun otro modulo: las observaciones son POR FILA y un parte real son
+  -- 18-25 filas, asi que meter el motivo ahi lo repetia 25 veces.
+  justificacion_retro VARCHAR(255)     NULL,
   device_alias        VARCHAR(50)      NULL,
   created_at_device   DATETIME         NULL,
   received_at_server  DATETIME         NOT NULL,
@@ -375,6 +391,10 @@ CREATE TABLE IF NOT EXISTS pc_proceso (
   peso_baba           DECIMAL(9,3) AS (peso_lote - peso_mallas) STORED,
   peso_final          DECIMAL(9,3) NULL,       -- resultado, al cerrar el proceso
   comentario          VARCHAR(255) NULL,
+  -- Ver el comentario de reg_am.justificacion_retro. Aplica a `fecha_inicio`,
+  -- que es la unica fecha de la partida que elige el usuario: `fecha_cosecha`
+  -- la deriva el servidor de las cosechas enlazadas.
+  justificacion_retro VARCHAR(255) NULL,
   device_alias        VARCHAR(50)  NULL,
   created_at_device   DATETIME     NULL,
   received_at_server  DATETIME     NOT NULL,
@@ -546,3 +566,25 @@ CREATE TABLE IF NOT EXISTS mig_descarte (
   created_at    DATETIME    NOT NULL,
   KEY idx_mig_origen (tabla_origen, id_origen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+
+-- =========================================================================
+-- COLUMNAS AGREGADAS DESPUES (bases de desarrollo ya creadas)
+--
+-- `CREATE TABLE IF NOT EXISTS` no agrega columnas a una tabla que ya existe:
+-- una base que corrio este archivo antes del 2026-09-14 se queda sin las
+-- columnas de justificacion y V4.php falla al insertar, con un mensaje que no
+-- dice nada de esto. Estos ALTER son idempotentes (`IF NOT EXISTS` es de
+-- MariaDB) asi que correr el archivo dos veces no molesta.
+--
+-- En una base virgen no hacen nada: las columnas ya vienen en el CREATE.
+-- =========================================================================
+
+ALTER TABLE reg_am
+  ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER comentario,
+  ADD COLUMN IF NOT EXISTS justificacion_retro_cierre VARCHAR(255) NULL AFTER comentario_cierre;
+
+ALTER TABLE reg_riego
+  ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER observaciones;
+
+ALTER TABLE pc_proceso
+  ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER comentario;
