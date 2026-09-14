@@ -276,10 +276,10 @@ export class PostcosechaPage implements OnInit {
     const p: string[] = [];
     if (!this.supervisor()) p.push('Falta el supervisor del registro.');
     if (!this.fechaInicio() || !this.horaInicio()) p.push('Falta la fecha de inicio.');
-    if (this.diasElegidos().length === 0) p.push('Elegí al menos un día de cosecha.');
+    if (this.diasElegidos().length === 0) p.push('Elige lote de cosecha.');
     const m = this.pesoMallas();
     if (m === null || m < 0) p.push('Falta el peso de las mallas vacías.');
-    else if (m >= this.pesoElegido()) p.push('Las mallas pesan más que el lote: revisá el número.');
+    else if (m >= this.pesoElegido()) p.push('Las mallas pesan más que el lote: revisa el número.');
     return p;
   });
 

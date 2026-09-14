@@ -77,7 +77,7 @@
       @if (ev.excedeRetroactividad) {
         <div class="banner alerta">
           La fecha es de hace más de {{ ev.diasRetroactividad }} días.
-          Activá "Estoy cargando un día anterior" y explicá el motivo.
+          Activá "Estoy cargando un día anterior" y explica el motivo.
         </div>
       }
     }
@@ -109,7 +109,6 @@
           Este interruptor permite elegir
           una fecha de hasta hace
           {{ evaluacion()?.diasRetroactividad ?? 3 }} días o más. 
-          Es necesario detallar el motivo.
         </ion-note>
       </ion-item>
     </ion-list>
@@ -262,9 +261,7 @@
     }
 
     <div class="banner info">
-      Cada tarea viaja como un registro propio, con su propio identificador: el
-      servidor confirma una por una. Si alguna se rechaza, las demás siguen su
-      curso — el detalle queda en Pendientes.
+      Cada AM viaja como un registro propio.
     </div>
 
     @if (problemas().length > 0) {

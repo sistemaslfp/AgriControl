@@ -70,10 +70,18 @@
     color: var(--ion-color-primary);
   }
 
-  ion-badge {
+  // Las tres cuentas conviven. Antes cada ion-badge era `position: absolute`
+  // en la misma esquina: se apilaban una sobre otra y sólo se veía la última
+  // del DOM —la gris de enviados—, aunque hubiera pendientes en rojo.
+  .badges-registros {
     position: absolute;
     top: 8px;
     right: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+    max-width: calc(100% - 16px);
   }
 
   .spinner-celda {

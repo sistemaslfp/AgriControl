@@ -249,7 +249,7 @@ export class AmPage implements OnInit {
       p.push('Este lote trabaja por módulos: Elige al menos uno.');
     }
     if (t.personal.length === 0) {
-      p.push('Sin personal no hay programación: agregá al menos una persona.');
+      p.push('Falta pel persoal');
     }
     return p;
   }

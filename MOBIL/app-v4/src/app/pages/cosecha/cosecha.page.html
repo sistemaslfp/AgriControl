@@ -131,7 +131,7 @@
     }
 
     <div class="banner info">
-      Este modulo solo cierra tareas de cosecha creadas en AM
+      Este modulo cierra las tareas de cosecha en AM
     </div>
 
     @if (problemasEncabezado().length > 0) {
@@ -291,9 +291,7 @@
     }
 
     <div class="banner info">
-      Cada cierre viaja como un registro propio. Si la tarea AM todavía no llegó
-      al servidor, su cosecha espera en la cola y se reintenta sola: no se
-      pierde nada.
+      Cada registro de cosecha viaja como un registro propio por persona.
     </div>
 
     @if (problemas().length > 0) {

@@ -23,8 +23,7 @@
     </ion-item>
     <ion-item lines="none">
       <ion-note>
-        URL completa, incluyendo <code>/v4</code>. En producción siempre
-        <strong>https</strong>.
+        URL completa, incluyendo <code>/v4</code>
       </ion-note>
     </ion-item>
   </ion-list>
@@ -93,12 +92,6 @@
         [(ngModel)]="alias"
       ></ion-input>
     </ion-item>
-    <ion-item lines="none">
-      <ion-note>
-        Identifica los registros de este equipo en el sistema web. No es una
-        credencial.
-      </ion-note>
-    </ion-item>
   </ion-list>
 
   @if (clock.syncedAt(); as sincronizado) {
@@ -112,10 +105,6 @@
       viajarán marcados como no verificables hasta la primera conexión.
     </p>
   }
-
-  <div class="fila-botones">
-    <ion-button expand="block" (click)="guardar()">Guardar</ion-button>
-  </div>
 
   <!-- ================= Valores por defecto ================= -->
   <h2 class="titulo-seccion">Valores por defecto</h2>
@@ -154,15 +143,11 @@
         </ion-button>
       }
     </ion-item>
-    <ion-item lines="none">
-      <ion-note>
-        Un equipo suele quedarse en la misma finca y el mismo cultivo toda la
-        temporada. Fijarlos acá los deja pre-elegidos en AM y en PM: ahorra dos
-        toques por tarea y evita cargar en la finca equivocada. Se pueden
-        cambiar en cada registro.
-      </ion-note>
-    </ion-item>
   </ion-list>
+
+  <div class="fila-botones">
+    <ion-button expand="block" (click)="guardar()">Guardar</ion-button>
+  </div>
 
   <!-- ================= Limpieza ================= -->
   <h2 class="titulo-seccion">Limpieza de datos locales</h2>
@@ -187,7 +172,7 @@
     <ion-list inset="true">
       <ion-item>
         <ion-input
-          label='Escribí "ELIMINAR" para confirmar'
+          label='Escribe "ELIMINAR" para confirmar'
           labelPlacement="stacked"
           autocapitalize="characters"
           [(ngModel)]="confirmacionEscrita"
@@ -223,7 +208,7 @@
       [titulo]="selectorTitulo()"
       [opciones]="selectorOpciones()"
       [seleccion]="selectorSeleccion()"
-      vacioTexto="Descargá primero los maestros desde el menú."
+      vacioTexto="Descarga primero los maestros desde el menú."
       (confirmar)="onSeleccion($event)"
       (cerrar)="cerrarSelector()"
     ></app-selector>

@@ -15,11 +15,15 @@
     </div>
   }
 
-  <!-- ==================== Encabezado del parte ==================== -->
+  <!-- ==================== Encabezado del registro ==================== -->
   <ion-list inset="true">
     <ion-item>
       <ion-label>Fecha del riego</ion-label>
       <ion-datetime-button slot="end" datetime="fechaRiego"></ion-datetime-button>
+    </ion-item>
+    <ion-item>
+      <ion-label>Hora de inicio</ion-label>
+      <ion-datetime-button slot="end" datetime="horaInicioRiego"></ion-datetime-button>
     </ion-item>
     <ion-item button="true" detail="true" (click)="abrirFinca()" class="elegir-finca">
       <ion-label>
@@ -53,8 +57,23 @@
     </ng-template>
   </ion-modal>
 
+  <ion-modal [keepContentsMounted]="true">
+    <ng-template>
+      <ion-datetime
+        id="horaInicioRiego"
+        presentation="time"
+        locale="es-EC"
+        [showDefaultButtons]="true"
+        doneText="Listo"
+        cancelText="Cancelar"
+        [value]="horaInicio()"
+        (ionChange)="setHoraInicio($any($event.detail).value)"
+      ></ion-datetime>
+    </ng-template>
+  </ion-modal>
+
   <!-- ==================== Agregar riegos ====================
-       Por LOTE con varios módulos de una vez: un parte real son 18-25 filas
+       Por LOTE con varios módulos de una vez: un registro real son 18-25 filas
        (mediana 18 sobre los 382 partes de z_riego). Una pasada por fila, como
        en v3, son 25 formularios. -->
   <h2 class="titulo-seccion">Agregar riego</h2>
@@ -127,18 +146,23 @@
     </ion-button>
   </div>
 
-  <!-- ==================== El parte ==================== -->
+  <!-- ==================== El registro ==================== -->
   <div class="cabecera-tarea">
-    <h2 class="titulo-seccion">Riegos del parte ({{ filas().length }})</h2>
+    <h2 class="titulo-seccion">Riegos del registro ({{ filas().length }})</h2>
     @if (filas().length > 0) {
       <ion-note class="total-tiempo">{{ hhmm(totalMinutos()) }} en total</ion-note>
     }
   </div>
 
+  @if (filas().length > 0 && finCalculado()) {
+    <div class="banner info rango-riego">
+      De {{ horaInicio() }} a {{ finCalculado() }}
+    </div>
+  }
+
   @if (filas().length === 0) {
     <div class="banner info sin-filas">
-      Todavía no hay riegos cargados. Elegí un lote, marcá los módulos regados
-      y agregalos: se puede corregir cada uno después.
+      Todavía no hay riegos cargados.
     </div>
   } @else {
     <ion-list inset="true">
@@ -233,7 +257,7 @@
   <!-- Avisos que NO bloquean: regar dos veces el mismo módulo en un día pasa
        de verdad (1.086 de 6.211 combinaciones de v3). Se avisa, no se prohíbe. -->
   @if (avisos().length > 0) {
-    <div class="banner aviso avisos-parte">
+    <div class="banner aviso avisos-registro">
       <ul>
         @for (a of avisos(); track a) {
           <li>{{ a }}</li>
@@ -243,7 +267,7 @@
   }
 
   @if (problemas().length > 0) {
-    <div class="banner alerta problemas-parte">
+    <div class="banner alerta problemas-registro">
       <ul>
         @for (x of problemas(); track x) {
           <li>{{ x }}</li>
@@ -266,7 +290,7 @@
         (click)="guardar()"
       >
         <ion-icon slot="start" name="cloud-upload-outline"></ion-icon>
-        Guardar parte
+        Guardar registro
       </ion-button>
     </ion-buttons>
   </ion-toolbar>

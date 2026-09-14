@@ -136,8 +136,7 @@
     }
 
     <div class="banner info">
-      El PM no crea tareas: cierra las que se programaron en el AM. Lote,
-      subtarea y unidad vienen de ahí, así que acá solo se carga el avance.
+      PM cierra todas las tareas a excepción de cosecha y poscosecha
     </div>
 
     @if (problemasEncabezado().length > 0) {
@@ -248,9 +247,7 @@
     }
 
     <div class="banner info">
-      Cada cierre viaja como un registro propio. Si la tarea AM todavía no
-      llegó al servidor, su PM espera en la cola y se reintenta solo: no se
-      pierde nada.
+      Cada PM viaja como un registro propio.
     </div>
 
     @if (problemas().length > 0) {

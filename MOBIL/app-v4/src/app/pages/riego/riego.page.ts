@@ -43,7 +43,7 @@ interface Ref {
   nombre: string;
 }
 
-/** Una fila del parte: un lote (y su módulo) regado por un tiempo. */
+/** Una fila del registro: un lote (y su módulo) regado por un tiempo. */
 export interface FilaRiego {
   /** Correlativo local. No viaja: es la identidad de la fila en pantalla. */
   n: number;
@@ -127,8 +127,10 @@ export class RiegoPage implements OnInit {
 
   readonly tiemposFrecuentes = TIEMPOS_FRECUENTES;
 
-  // --- Encabezado del parte ---
+  // --- Encabezado del registro ---
   readonly fecha = signal('');
+  /** Hora real en que arrancó el riego. Es la que viaja en `fecha_proceso`. */
+  readonly horaInicio = signal('');
   readonly finca = signal<Ref | null>(null);
   readonly supervisor = signal<Ref | null>(null);
 
@@ -138,7 +140,7 @@ export class RiegoPage implements OnInit {
   readonly modulos = signal<Ref[]>([]);
   readonly minutos = signal(60);
 
-  // --- El parte ---
+  // --- El registro ---
   readonly filas = signal<FilaRiego[]>([]);
   readonly editando = signal<number | null>(null);
   readonly guardando = signal(false);
@@ -176,6 +178,20 @@ export class RiegoPage implements OnInit {
     this.filas().reduce((a, f) => a + f.minutos, 0),
   );
 
+  /** Minutos desde medianoche del inicio más todo lo regado. Puede pasar de 1440. */
+  private readonly finEnMinutos = computed(() => {
+    const i = this.aMinutos(this.horaInicio());
+    return i === null ? null : i + this.totalMinutos();
+  });
+
+  /** El fin no se guarda: `reg_riego` no tiene columna y sale de inicio + tiempos. */
+  readonly finCalculado = computed(() => {
+    const t = this.finEnMinutos();
+    if (t === null) return '';
+    const dias = Math.floor(t / 1440);
+    return `${this.hhmm(((t % 1440) + 1440) % 1440)}${dias > 0 ? ` (+${dias} d)` : ''}`;
+  });
+
   readonly resumenModulos = computed(() => {
     const m = this.modulos();
     if (m.length === 0) {
@@ -186,7 +202,7 @@ export class RiegoPage implements OnInit {
       : `${m.length} módulos`;
   });
 
-  /** Lo que impide AGREGAR una fila, no lo que impide guardar el parte. */
+  /** Lo que impide AGREGAR una fila, no lo que impide guardar el registro. */
   readonly problemasFila = computed(() => {
     const p: string[] = [];
     if (!this.finca()) p.push('Elegí primero la finca.');
@@ -203,9 +219,10 @@ export class RiegoPage implements OnInit {
   readonly problemas = computed(() => {
     const p: string[] = [];
     if (!this.fecha()) p.push('Falta la fecha del riego.');
+    if (!this.horaInicio()) p.push('Falta la hora de inicio del riego.');
     if (!this.finca()) p.push('Falta la finca.');
-    if (!this.supervisor()) p.push('Falta el supervisor que entrega el parte.');
-    if (this.filas().length === 0) p.push('El parte no tiene ningún riego cargado.');
+    if (!this.supervisor()) p.push('Falta el supervisor que entrega el registro.');
+    if (this.filas().length === 0) p.push('El registro no tiene ningún riego cargado.');
     if (this.filas().some((f) => f.minutos <= 0)) {
       p.push('Hay filas sin tiempo de riego.');
     }
@@ -261,6 +278,7 @@ export class RiegoPage implements OnInit {
     await this.config.cargar();
     await this.bootstrap.cargar();
     this.fecha.set(this.fechas.ahoraLocal().slice(0, 10));
+    this.horaInicio.set(this.fechas.ahoraLocal().slice(11, 16));
     this.fincas = await this.catalogo.fincas();
     const porDefecto = this.config.defaultFincaId();
     const f =
@@ -281,11 +299,23 @@ export class RiegoPage implements OnInit {
   // Formato
   // ------------------------------------------------------------------
 
-  /** Minutos -> 'HH:MM'. El parte se lee en horas, no en minutos sueltos. */
+  /** Minutos -> 'HH:MM'. El registro se lee en horas, no en minutos sueltos. */
   hhmm(min: number): string {
     const h = Math.floor(min / 60);
     const m = min % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  /** 'HH:MM' -> minutos desde medianoche. null si no es una hora. */
+  private aMinutos(hhmm: string): number | null {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  }
+
+  /** `ion-datetime` devuelve 'HH:mm' o un ISO entero según cómo se le pasó el valor. */
+  private hhmmDe(valor: unknown): string | null {
+    const m = /(\d{2}):(\d{2})/.exec(String(valor ?? ''));
+    return m ? `${m[1]}:${m[2]}` : null;
   }
 
   etiqueta(f: FilaRiego): string {
@@ -300,6 +330,11 @@ export class RiegoPage implements OnInit {
     if (typeof valor === 'string' && valor) {
       this.fecha.set(valor.slice(0, 10));
     }
+  }
+
+  setHoraInicio(valor: string | string[] | null | undefined): void {
+    const h = this.hhmmDe(valor);
+    if (h) this.horaInicio.set(h);
   }
 
   abrirFinca(): void {
@@ -526,7 +561,7 @@ export class RiegoPage implements OnInit {
    * Un registro por fila, cada uno con su guid y su propio ACK.
    *
    * Sin `captura_guid`: `reg_riego` no tiene esa columna y no se inventa una
-   * (00-plan.md, decisión cerrada). Las filas de un parte se reconocen por
+   * (00-plan.md, decisión cerrada). Las filas de un registro se reconocen por
    * fecha + finca + supervisor, que es como se leen los partes de v3.
    */
   async guardar(): Promise<void> {
@@ -536,11 +571,9 @@ export class RiegoPage implements OnInit {
     this.guardando.set(true);
     let n = 0;
     try {
-      // La hora del parte es la de la carga: `z_riego.hora` vale '0' en las
-      // 9.778 filas, así que no hay hora de origen que respetar y la del
-      // dispositivo es el único dato real.
-      const hora = this.fechas.ahoraLocal().slice(11, 16);
-      const fechaProceso = this.fechas.conOffset(`${this.fecha()}T${hora}:00`);
+      // `fecha_proceso` lleva el INICIO del riego. Antes llevaba la hora de la
+      // carga, que no era un dato de nadie.
+      const fechaProceso = this.fechas.conOffset(`${this.fecha()}T${this.horaInicio()}:00`);
       for (const f of this.filas()) {
         await this.cola.enqueue('riego', {
           fecha_proceso: fechaProceso,

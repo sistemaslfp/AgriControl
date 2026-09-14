@@ -102,7 +102,7 @@ ok('01 la pantalla abre desde el menu',
   await p.locator('ion-title', { hasText: 'Riego' }).first().isVisible());
 
 // ------------------------------------------------------------------
-// 1. El encabezado del parte
+// 1. El encabezado del registro
 // ------------------------------------------------------------------
 const textoInicial = await p.locator(`${raiz} ion-content`).innerText();
 ok('02 la pantalla NO pide trabajador ni tarea: es una bitacora',
@@ -111,7 +111,7 @@ ok('02 la pantalla NO pide trabajador ni tarea: es una bitacora',
   textoInicial.replace(/\n/g, ' ').slice(0, 90));
 
 ok('03 sin nada cargado, Guardar esta bloqueado',
-  await deshabilitado(boton('Guardar parte')));
+  await deshabilitado(boton('Guardar registro')));
 
 await elegirUno('Finca', 'Bellita');
 await t(400);
@@ -163,7 +163,7 @@ ok('09 un lote con dos modulos genera DOS filas de una vez',
 ok('10 las dos filas heredan el tiempo elegido con el chip',
   (await p.locator(`${raiz} .tiempo-fila`).first().innerText()).trim() === '01:30',
   await p.locator(`${raiz} .tiempo-fila`).first().innerText());
-ok('11 el total del parte se suma solo',
+ok('11 el total del registro se suma solo',
   (await p.locator(`${raiz} .total-tiempo`).innerText()).includes('03:00'),
   await p.locator(`${raiz} .total-tiempo`).innerText());
 ok('12 agregado, los modulos se limpian y el lote NO',
@@ -215,16 +215,16 @@ await t(300);
 await boton('Agregar').click();
 await t(600);
 ok('17 regar dos veces el mismo modulo avisa',
-  (await p.locator(`${raiz} .avisos-parte`).count()) === 1 &&
-    (await p.locator(`${raiz} .avisos-parte`).innerText()).includes('más de una vez'),
-  (await p.locator(`${raiz} .avisos-parte`).innerText()).replace(/\n/g, ' ').slice(0, 70));
+  (await p.locator(`${raiz} .avisos-registro`).count()) === 1 &&
+    (await p.locator(`${raiz} .avisos-registro`).innerText()).includes('más de una vez'),
+  (await p.locator(`${raiz} .avisos-registro`).innerText()).replace(/\n/g, ' ').slice(0, 70));
 ok('18 pero NO bloquea: en el campo se riega dos veces de verdad',
-  !(await deshabilitado(boton('Guardar parte'))));
+  !(await deshabilitado(boton('Guardar registro'))));
 
 await p.locator(`${raiz} ion-button.quitar-fila`).last().click();
 await t(500);
 ok('19 quitar la fila repetida saca el aviso',
-  (await filas().count()) === 3 && (await p.locator(`${raiz} .avisos-parte`).count()) === 0,
+  (await filas().count()) === 3 && (await p.locator(`${raiz} .avisos-registro`).count()) === 0,
   `filas=${await filas().count()}`);
 
 // ------------------------------------------------------------------
@@ -239,7 +239,7 @@ ok('21 y tambien saca al supervisor que no es de esa finca',
   (await campo('Supervisor').innerText()).replace(/\n/g, ' '));
 
 // ------------------------------------------------------------------
-// 7. El parte que se envia
+// 7. El registro que se envia
 // ------------------------------------------------------------------
 await elegirUno('Finca', 'Bellita');
 await t(500);
@@ -259,7 +259,7 @@ await p.locator(`${raiz} .volumen-fila input`).fill('30');
 await p.locator(`${raiz} .volumen-fila input`).blur();
 await t(400);
 
-await boton('Guardar parte').click();
+await boton('Guardar registro').click();
 await t(3500);
 
 const recibidos = (await lotes()).flatMap((l) => l.records ?? []);
@@ -282,7 +282,7 @@ ok('26 el volumen cargado viaja, y el que no se cargo viaja en 0',
 ok('27 fecha_proceso viaja ISO-8601 CON offset',
   pl.every((x) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(x.fecha_proceso)),
   pl[0].fecha_proceso);
-ok('28 el parte lleva finca, supervisor y lote propios: es su unica fuente',
+ok('28 el registro lleva finca, supervisor y lote propios: es su unica fuente',
   pl.every((x) => x.finca_id === 1 && x.supervisor_id === 26 && x.lote_id === 1),
   JSON.stringify({ f: pl[0].finca_id, s: pl[0].supervisor_id, l: pl[0].lote_id }));
 
@@ -291,7 +291,7 @@ ok('29 con ACK del servidor no queda nada pendiente',
   c.pendientes === 0 && c.enviados === 2 && c.rechazados === 0, JSON.stringify(c));
 
 // ------------------------------------------------------------------
-// 8. En Registros el parte se lee sin ids
+// 8. En Registros el registro se lee sin ids
 // ------------------------------------------------------------------
 await p.goto(`${APP}/registros?vista=enviados`, { waitUntil: 'networkidle' });
 await t(2500);
