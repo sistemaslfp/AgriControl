@@ -704,22 +704,55 @@ Tres cosas que fallan si se hacen de la forma obvia:
    `id` nuevos (`r.id + 1000000`; los viejos llegan a ~121.000), y así la PK
    sigue siendo entera.
 
-### El trabajo real: 19 vistas que repuntar, no una
+### El trabajo real: NO eran 19 vistas — HECHO el 2026-09-14
 
-Medido sobre el esquema: **20 vistas existentes dependen de las tablas
-transaccionales `z_*`** — 8 de PM, 2 de AM, 2 de cosecha y 7 de postcosecha.
-De ésas, **una ya tiene su equivalente en V4** (`vw_reg_reporte_pago`, la
-nómina, en `docs/db/migrations/04-vistas-v4.sql`); **quedan 19 por repuntar**.
+Este párrafo decía "20 vistas dependen de las `z_*` transaccionales, una ya está
+hecha, quedan 19". **Al medirlo contra la base real el 2026-09-14 el número se
+cayó solo.** Hay **22 vistas v3**, y se reparten así:
 
-Y no es "el mismo cambio de una palabra": la forma cambió. El AM y el PM son
-ahora la misma fila, la cosecha tiene tabla de sacos y la postcosecha tiene el
-enlace con cosecha que el esquema viejo nunca tuvo. Las viejas **no se tocan**:
-siguen leyendo `z_*` para el período hasta julio de 2026.
+| grupo | n | qué pasa |
+|---|---|---|
+| No tocan nada que V4 reemplace | 10 | las 3 de fotos, las 2 de `dryingquality`, `maxlot`, `paymenthistory`, los 2 `util_*` |
+| **Muertas** | 5 | `vwpmdetail`, `vw_reporte_pago`, `vw_reporte_pago2`, `vw_pm_payment_adjustment_list`, `vw_opr_pm_payments_daily_adjustments` |
+| **Hechas** | 5 | ver abajo |
+| No se pueden repuntar hoy | 3 | los dos de ajustes + `vw_postharvest_rpt_001` |
 
-Además, `tbl_pm_payment_daily_adjustment.pm_id` tiene **FK a `z_tabla_pm(id)`**:
-un ajuste de pago no puede apuntar a una fila de `reg_am`. Hoy esa tabla está
-**vacía**, así que no bloquea el corte — pero si el módulo de ajustes se activa,
-esa FK hay que repuntarla antes.
+**"Muertas" quiere decir que ningún controlador ni modelo las nombra**: sólo
+aparecen en `application/logs/log-2024-11-*.php`. **Cuidado con
+`vw_reporte_pago`**: sigue siendo el criterio de aceptación de la nómina, pero
+**la web no la lee**, así que repuntarla no le sirve a ninguna pantalla.
+
+Las cinco hechas, todas en `04-vistas-v4.sql` y con **contrato de columnas
+idéntico al de su gemela v3** (verificado con `information_schema`, de modo que
+cambiar una pantalla sea cambiar el nombre de la tabla y nada más):
+
+| V4 | reemplaza a | la abre |
+|---|---|---|
+| `vw_reg_reporte_am_base` | `vw_reporte_am_base` | `AM.php` |
+| `vw_reg_reporte_am` | `vw_reporte_am` | `AM.php`, `Reporteam_model.php` |
+| `vw_reg_reporte_pm` | `vw_reporte_pm` | `PM.php`, `Pm_model.php` |
+| `vw_reg_cosecha_resumen` | `vw_cosecha_cacao_resumen` | `Cosechacacao.php` |
+| `vw_reg_harvest_pending_lots` | `vw_harvest_pending_lots` | `Postharvest_model.php` |
+
+Sigue siendo cierto que **no es "el mismo cambio de una palabra"**: el AM y el PM
+son ahora la misma fila, la cosecha tiene tabla de sacos y la postcosecha tiene
+el enlace con cosecha que el esquema viejo nunca tuvo. Las viejas **no se
+tocan**: siguen leyendo `z_*` hasta julio de 2026. Las diferencias deliberadas —
+semana ISO, `fecha` como DATE de verdad, `jornales` por `COUNT(*)`— y las dos
+verrugas de v3 que se conservan a propósito están comentadas vista por vista en
+el archivo.
+
+**Los ajustes de pago se quedan en v3** (Kevin, 2026-09-14).
+`vwpm_paymentadjustment_fullreport` y `vw_temporaryworkers_pivot` leen
+`tbl_pm_payment_daily_adjustment`, `tbl_pm_payment_weekly_deductions` y
+`tbl_pm_payment_paymenthistory`, que V4 no modela. **Las tres están en CERO
+filas**: maquinaria construida y nunca usada, y `Payment_model.php` —el archivo
+con más lógica de negocio del repo— opera sobre ellas. En vez de replicarlas, al
+final de `04-vistas-v4.sql` hay un **guardián** que aborta el archivo si dejan de
+estar vacías. Es el mismo caso de
+`tbl_pm_payment_daily_adjustment.pm_id`, que tiene **FK a `z_tabla_pm(id)`** y no
+puede apuntar a `reg_am`: si el módulo se activa, hay que modelar los ajustes y
+repuntar esa FK **antes del corte**.
 
 ---
 

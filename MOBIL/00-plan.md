@@ -327,12 +327,49 @@ con una bandera.
 
 ## Trabajo identificado, sin decisión que tomar
 
-*Tres entradas salieron de esta lista el 2026-09-14: la `vw_reg_cosecha` ya
+*Cuatro entradas salieron de esta lista el 2026-09-14: la `vw_reg_cosecha` ya
 existe (commit `e326b58`, en `04-vistas-v4.sql`); el campo propio de la
-justificación retroactiva está hecho; y la subtarea 24 se cerró — ver abajo.*
+justificación retroactiva está hecho; la subtarea 24 se cerró —ver abajo—; y
+"repuntar las 19 vistas" resultó ser otra cosa al medirlo, ver la sección que
+sigue.*
 
-- **Repuntar las 19 vistas restantes** a `reg_am`/`pc_*` para el período desde
-  agosto. Sólo se hizo `vw_reg_reporte_pago`, que es la nómina.
+### Las vistas de la web — HECHO (2026-09-14)
+
+**No eran 19 sino 22, y sólo 5 valían la pena.** Medido contra la copia real:
+
+- **10 no tocan nada que V4 reemplace** (las 3 de fotos, las 2 de
+  `dryingquality`, `maxlot`, `paymenthistory` y los 2 `util_*`).
+- **5 están muertas**: `vwpmdetail`, `vw_reporte_pago`, `vw_reporte_pago2`,
+  `vw_pm_payment_adjustment_list` y `vw_opr_pm_payments_daily_adjustments`.
+  Ningún controlador ni modelo las nombra; sólo aparecen en
+  `application/logs/log-2024-11-*.php`. **Ojo con `vw_reporte_pago`**: sigue
+  siendo el criterio de aceptación de la nómina, pero la web no la lee.
+- **Las 5 que la web sí abre ya tienen su gemela V4**, con contrato de columnas
+  idéntico verificado con `information_schema`: `vw_reg_reporte_am_base`,
+  `vw_reg_reporte_am`, `vw_reg_reporte_pm`, `vw_reg_cosecha_resumen` y
+  `vw_reg_harvest_pending_lots`.
+- **2 se quedan en v3 a propósito**: `vwpm_paymentadjustment_fullreport` y
+  `vw_temporaryworkers_pivot` leen las tablas `tbl_pm_payment_*`, que V4 no
+  modela. **Están en CERO filas las tres** —maquinaria construida y nunca
+  usada—, así que Kevin decidió no modelarlas; en su lugar hay un **guardián al
+  final de `04-vistas-v4.sql` que aborta si dejan de estar vacías**.
+
+**El alcance de "la nueva versión web" es SÓLO las vistas** (Kevin, 2026-09-14):
+las pantallas actuales no se tocan y el rediseño queda para después del corte.
+
+**Cuadres contra v3, para que nadie se asuste al comparar pantallas:** PM da
+495 = 495 exacto; AM da 529 en v3 y 550 en V4, y las 21 de más son las tareas
+DEDUCIDAS de un cierre de PM que no tenía fila en `z_tabla_am`; cosecha da 60 en
+v3 y 41 en V4, con 22 filas marcadas en `mig_descarte` y 3 que cuelgan de esos
+mismos AM deducidos.
+
+**`ReporteEventuales.php:30` apunta a `vw_pm_rpt_eventuales`, que no existe en la
+base.** Esa pantalla está rota hoy en producción, desde antes de V4. Kevin,
+2026-09-14: anotarla y no tocarla.
+
+- **Las fotos de postcosecha** y, con ellas, `vw_postharvest_rpt_001`: esa vista
+  depende de las tres vistas de fotos y no se puede repuntar hasta que V4 tenga
+  la cola binaria.
 - **Las fotos de postcosecha**, que quedaron fuera a propósito (cola binaria
   aparte).
 - **Validar la finca de la persona y de la subtarea en `sync_am`.**

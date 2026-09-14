@@ -132,6 +132,20 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   CI3 y la base real (los cinco tipos, más el caso de omitir el campo, que deja
   NULL), con el cuadre de la migración intacto (550/495/55, 495 / 79.298,40 /
   15.091,66) y con **17 comprobaciones nuevas** en `retroactivo.spec.mjs`.
+- **Las vistas de la web — HECHO (2026-09-14).** "Repuntar las 19 vistas" eran
+  **22 y sólo 5 valían la pena**: 10 no tocan nada que V4 reemplace, 5 están
+  muertas (ningún código las nombra, sólo `logs/log-2024-11-*.php`) y 2 se
+  quedan en v3 a propósito. Las cinco que la web sí abre ya tienen su gemela V4
+  con **contrato de columnas idéntico**, verificado con `information_schema`:
+  `vw_reg_reporte_am_base`, `vw_reg_reporte_am`, `vw_reg_reporte_pm`,
+  `vw_reg_cosecha_resumen` y `vw_reg_harvest_pending_lots`. **Las pantallas no se
+  tocaron**: el alcance que Kevin fijó es sólo las vistas, y el rediseño queda
+  para después del corte. Los ajustes de pago (`tbl_pm_payment_*`, **cero filas
+  las tres**) no se modelan, y hay un **guardián al final de `04-vistas-v4.sql`
+  que aborta si dejan de estar vacías** —probado en las dos direcciones—.
+  Cuadres: PM **495 = 495 exacto**; AM v3 529 / V4 550, y las 21 de más son
+  tareas deducidas de un cierre de PM sin fila en `z_tabla_am`; cosecha v3 60 /
+  V4 41, con 22 en `mig_descarte` y 3 colgando de esos mismos AM deducidos.
 - **Registros: el chip es un pendiente, no una estadística (2026-09-08, Kevin).**
   `AM 3` —una sola cuenta—, un chip sólo por módulo con algo sin subir, sólo en
   la pestaña Pendientes, y **desaparece con el ACK**. El filtro por módulo se
@@ -192,10 +206,8 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
    (migración del histórico y corte), diferido sin fecha, y los flecos de abajo.
    **Riego fue lo último grande** (2026-09-08); de postcosecha sólo faltan las
    fotos, que Kevin dejó fuera a propósito.
-2. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
-   demás) a `reg_am` para el período desde agosto. Sólo se hizo
-   `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
-   endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
+2. **Las fotos de postcosecha** y, con ellas, `vw_postharvest_rpt_001`, que
+   depende de las tres vistas de fotos. Necesitan una cola binaria aparte.
 3. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
    (`z_personal.id_finca`, `z_subtarea.id_finca`) y el servidor no las compara.
 4. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió

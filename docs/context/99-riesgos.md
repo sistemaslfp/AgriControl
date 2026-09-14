@@ -112,6 +112,25 @@ persona ni de la subtarea**, y las columnas existen:
 Las dos son del mismo tipo que la validación módulo ∈ lote que ya existe: la FK
 comprueba que el id exista, no que pertenezca a la finca correcta.
 
+## Pantallas rotas hoy, ajenas a V4
+
+- **`ReporteEventuales.php:30` hace `set_table('vw_pm_rpt_eventuales')` y esa
+  vista NO EXISTE en la base** — ni como vista ni como tabla. Verificado contra
+  `information_schema` el 2026-09-14 sobre la copia de producción del 08-28. La
+  pantalla está rota desde antes de todo el trabajo de V4. **Kevin, 2026-09-14:
+  anotarla y no tocarla**, pero que quede escrito para que nadie lo descubra el
+  día del corte y crea que lo rompió V4.
+
+- **Los ajustes de pago son maquinaria sin usar.**
+  `tbl_pm_payment_daily_adjustment`, `tbl_pm_payment_weekly_deductions` y
+  `tbl_pm_payment_paymenthistory` tienen **cero filas las tres**, y
+  `Payment_model.php` —el archivo con más lógica de negocio del repo— existe
+  para operarlas. V4 no las modela a propósito (Kevin, 2026-09-14); el cable
+  trampa es el guardián al final de `docs/db/migrations/04-vistas-v4.sql`, que
+  aborta si dejan de estar vacías. **Si eso pasa, hay que modelar los ajustes y
+  repuntar la FK `tbl_pm_payment_daily_adjustment.pm_id → z_tabla_pm(id)` antes
+  del corte.**
+
 ## Mantenimiento de estos documentos
 
 Generados leyendo el código el **2026-08-21**. Si un `.md` contradice al código,
