@@ -1,6 +1,6 @@
 # Pruebas e2e
 
-Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
+Siete suites. Verifican promesas que no se pueden comprobar leyendo el código.
 
 - **`cola.spec.mjs`** — `MOBIL/01-sincronizacion.md`: el ACK, el troceado en
   lotes, el orden FIFO, el backoff y la escritura transaccional de catálogos.
@@ -44,6 +44,27 @@ Dos suites. Verifican promesas que no se pueden comprobar leyendo el código.
   **Ojo con el localizador del lote**: `hasText: '5'` matchea primero al lote 1,
   porque su detalle dice "12.5 ha". Hay que pedir `'Lote 5'` entero.
 
+- **`retroactivo.spec.mjs`** — `MOBIL/01-sincronizacion.md` §Integridad de
+  fechas: que el calendario se abre sólo la ventana del módulo y que el
+  interruptor la abre hasta 400 días **sin habilitar el futuro**, que el motivo
+  es obligatorio, que **llega al servidor en `justificacion_retro` y no pegado
+  al `comentario`**, que las cinco pantallas tienen el interruptor, y que un día
+  cambiado en Configuración **sobrevive a "Actualizar Maestros"**.
+  17 comprobaciones.
+
+  **La comprobación 12 es la que vale**: "Actualizar Maestros" pisa
+  `BOOTSTRAP_JSON` entero, así que si el override viviera ahí adentro el número
+  del usuario se borraría solo. La prueba guarda 60 días, pulsa Actualizar
+  Maestros y verifica que sigan 60.
+
+  **`min` y `max` del `ion-datetime` van por property binding**:
+  `getAttribute('min')` devuelve `null` y la comprobación **pasa en falso**. Hay
+  que leer la propiedad con `p.evaluate`. Lo mismo con `.origen-ventana`, que el
+  CSS pinta en MAYÚSCULAS: comparar en minúsculas.
+
+  **Postcosecha abre en la LISTA**: el interruptor vive en la vista del pesaje,
+  así que hay que entrar antes de buscarlo.
+
   **`am-pm.spec.mjs` usa PODA DE FORMACION y no COSECHA CACAO** en las tareas
   que después cierra el PM, justamente porque el PM ya no cierra cosecha. Y
   `cola.spec.mjs` encola `riego` para probar **la mecánica del ACK**: ahí el
@@ -72,10 +93,13 @@ node e2e/registros.spec.mjs
 node e2e/cosecha.spec.mjs
 node e2e/postcosecha.spec.mjs
 node e2e/riego.spec.mjs
+node e2e/retroactivo.spec.mjs
 ```
 
-**Las seis se corren juntas**: dos veces una regla nueva dejó suites rojas
-durante un día porque sólo se corrió la que parecía afectada.
+**Las SIETE se corren juntas**: **tres veces** un cambio dejó suites rojas
+porque sólo se corrió la que parecía afectada. La tercera (2026-09-11 a
+2026-09-14) duró tres días y no era un texto: la app guardaba los registros y
+**no los enviaba sola, sin avisar**. Ver `MOBIL/PROMPT-CONTINUAR.md`.
 
 Si el entorno ya tiene un Chromium instalado y no se quiere descargar otro,
 `PW_CHROMIUM=/ruta/al/chrome node e2e/am-pm.spec.mjs`.

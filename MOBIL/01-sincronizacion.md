@@ -168,7 +168,26 @@ Llegan en `/v4/bootstrap` y **sólo acotan el selector de fecha**:
 hay interruptor: el calendario no ofrece fechas futuras. El servidor acepta lo
 que le llegue mientras cumpla I1.
 
-**[CONFIRMAR] los cinco números.**
+**Ya NO hay nada que confirmar (2026-09-14).** Los cinco números dejaron de ser
+una decisión de negocio:
+
+- **Las CINCO pantallas tienen el modo libre.** Hasta ese día el interruptor
+  "Estoy cargando un día anterior" existía sólo en AM, y PM, Cosecha, Riego y
+  Postcosecha llamaban a `limites(tipo, false)` con el `false` escrito a mano:
+  para ellas la ventana era un **límite duro del calendario**. Pasarse abre el
+  rango hasta 400 días y **exige escribir el motivo**, en las cinco.
+- **Los cinco números se editan en Configuración**, y lo guardado en el equipo
+  **le gana** a lo que mande `/v4/bootstrap`. Vive en
+  `app_kv.retroactividad_override`, aparte de `BOOTSTRAP_JSON` —que "Actualizar
+  Maestros" pisa entero—, con un botón para volver a los del servidor.
+- Así que la ventana sólo decide **a partir de dónde hay que justificar**.
+
+**El motivo viaja en su propio campo, `justificacion_retro`**, y no pegado
+dentro de `comentario` con prefijo `[RETROACTIVO]` como hasta el 2026-09-14.
+Tiene columna en `reg_am` (`justificacion_retro` para el alta,
+`justificacion_retro_cierre` para el cierre que mandan PM y Cosecha),
+`reg_riego` y `pc_proceso`. En riego es lo que evita repetir el mismo texto en
+las 18-25 filas del registro, porque las `observaciones` son por fila.
 
 ### `reg_flag`: la bitácora de lo que no entró
 

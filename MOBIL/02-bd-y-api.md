@@ -1063,18 +1063,49 @@ PM necesita para agrupar por tarea en vez de listar personas sueltas ordenadas
 por nombre. Es `NULL` en las filas migradas con `origen = 'mig-pm'`, que no
 salieron de ningún formulario: la app las trata como grupo de una sola persona.
 
-### Hueco abierto: la justificación del registro retroactivo
+### La justificación del registro retroactivo — CERRADO (2026-09-14)
 
-`01-sincronizacion.md` exige una **justificación escrita** cuando la fecha
-supera la ventana de retroactividad del módulo, y la pantalla la pide y bloquea
-el guardado sin ella. Pero **el payload de `/v4/sync` no tiene un campo para
-guardarla**: hoy viaja dentro de `comentario`, con el prefijo `[RETROACTIVO]`
-y recortada a 255 caracteres junto con el comentario del usuario.
+`01-sincronizacion.md` exige una **justificación escrita** cuando la fecha supera
+la ventana de retroactividad del módulo, y la pantalla la pide y bloquea el
+guardado sin ella.
 
-Funciona, pero es una limitación del contrato, no una decisión de diseño: el
-motivo queda mezclado con texto libre y no se puede consultar aparte. Lo
-correcto es un campo propio (`justificacion_retroactiva`) en `reg_am`
-y en el payload. **[PENDIENTE]**, para cuando se vuelva a tocar el servidor.
+**Hasta el 2026-09-14 no había dónde guardarla**: viajaba dentro de `comentario`
+con el prefijo `[RETROACTIVO]` y recortada a 255 caracteres junto con el
+comentario del usuario, así que el motivo quedaba mezclado con texto libre y no
+se podía consultar aparte.
+
+**Ahora es un campo propio del payload, `justificacion_retro`** (opcional,
+255), con su columna:
+
+| tabla | columna | la escribe | sobre qué fecha |
+|---|---|---|---|
+| `reg_am` | `justificacion_retro` | `sync_am` | `fecha_proceso` |
+| `reg_am` | `justificacion_retro_cierre` | `sync_pm`, `sync_cosecha` | `hora_cierre` |
+| `reg_riego` | `justificacion_retro` | `sync_riego` | `fecha_proceso` |
+| `pc_proceso` | `justificacion_retro` | `sync_pc_proceso` | `fecha_inicio` |
+
+- **PM y Cosecha comparten columna** porque las dos cierran una fila de `reg_am`
+  y las dos mandan `hora_cierre`. `reg_cosecha` no necesita columna propia.
+- **`pc_etapa` no lleva justificación**: la única fecha de la partida que elige
+  el usuario es `fecha_inicio`. Las etapas tienen su propia validación.
+- **Omitir el campo deja NULL** y nada se rompe. NULL significa *la fecha cayó
+  dentro de la ventana*, no *no se sabe*.
+- **Por qué ahora y no después**: ninguna migración `reg_*` está aplicada en
+  producción, así que agregar las columnas no cuesta nada. Nunca iba a ser más
+  barato.
+- `02-tablas-v4.sql` trae una **sección de `ALTER ... ADD COLUMN IF NOT EXISTS`
+  al final** para las bases de desarrollo que ya tenían las tablas creadas: un
+  `CREATE TABLE IF NOT EXISTS` no agrega columnas y V4.php fallaría al insertar
+  con un mensaje que no dice nada de esto.
+
+**Riego es el caso que lo justifica**: sus `observaciones` son **por fila** y un
+registro real son 18-25 filas, así que meter el motivo ahí lo habría repetido 25
+veces. Hoy una sola justificación se copia en las N filas del registro —es el
+único lugar posible, porque cada fila es su propio registro con su guid y su ACK,
+sin cabecera común— pero en un campo que se puede consultar.
+
+Verificado con curl contra CI3 y la base real: los cinco tipos guardan el motivo
+en su columna, y omitirlo deja NULL.
 
 ### Dos cosas que sólo aparecieron al correrlo
 

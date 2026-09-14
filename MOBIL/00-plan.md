@@ -188,6 +188,20 @@ resuelto con datos)*
 - **Fechas**: retroactivo permitido con ventana por módulo y justificación
   escrita al excederla; **futuro rechazado siempre**. El reloj del teléfono sólo
   se usa corregido por el offset de `/v4/hora`.
+- **MODO LIBRE EN LAS CINCO PANTALLAS** (Kevin, 2026-09-14). El interruptor
+  existía sólo en AM; PM, Cosecha, Riego y Postcosecha llamaban a
+  `limites(tipo, false)` con el `false` escrito a mano, así que la ventana de su
+  módulo era un **límite duro del calendario** y no había forma de pasarse. Las
+  cinco lo tienen ahora, con justificación obligatoria. La ventana dejó de ser
+  un control: sólo decide **a partir de dónde hay que justificar**.
+- **La justificación es una columna propia, `justificacion_retro`**, no un
+  prefijo dentro de `comentario` (2026-09-14). Está en `reg_am` (alta y cierre),
+  `reg_riego` y `pc_proceso`. Se agregó ahora porque ninguna migración `reg_*`
+  está aplicada en producción: nunca iba a ser más barato.
+- **Los cinco días se editan en Configuración y lo del equipo le GANA al
+  servidor** (Kevin, 2026-09-14). Van en `app_kv.retroactividad_override`,
+  **aparte de `BOOTSTRAP_JSON`**, que "Actualizar Maestros" pisa entero: guardarlos
+  ahí los habría borrado en la siguiente sincronización.
 - **Fotos dentro del alcance**, se suben tras el ACK del registro padre.
 - **`lot_code` `dddnnaa`** asignado por el servidor. No hay etiquetas físicas: se
   trabaja como si el consecutivo hubiera arrancado en agosto. *(Pendientes #4 y
@@ -276,11 +290,27 @@ con una bandera.
 
 ## Necesito respuesta
 
-| # | Pendiente | Dónde |
-|---|---|---|
-| 1 | Las cinco ventanas de retroactividad (AM/PM 3 d, Cosecha 7 d, Riego 7 d, Postcosecha 30 d) | 01 §Integridad de fechas |
+**Ninguno. El #1 se cerró el 2026-09-14.**
 
 ## Cerrados con datos
+
+- **#1 — las cinco ventanas de retroactividad, cerrado por reemplazo
+  (2026-09-14)**. Ya no hay cinco números que confirmar: siguen siendo AM/PM 3 d,
+  Cosecha 7 d, Riego 7 d y Postcosecha 30 d, pero **pasaron a ser un valor por
+  defecto del calendario, editable desde Configuración**, y las cinco pantallas
+  tienen el modo libre para pasarse escribiendo el motivo. Nunca bloquearon nada
+  del lado del servidor: lo único que I1 rechaza es una fecha futura, con 2 h de
+  tolerancia. Verificado con `retroactivo.spec.mjs` (17 comprobaciones) y con
+  curl contra CI3 y la base real.
+
+- **#Subtarea 24 (`Supervisor de cosecha`) — cerrado (2026-09-14)**. Se creía que
+  la pantalla de Cosecha se la ofrecía y le exigía sacos sin tenerlos; **eso ya
+  no pasa desde el reparto por unidad del 2026-09-06** (`cosecha_unidad_ids =
+  array(4)`, Libra; la 24 es Jornal, así que la cierra el PM). Y **sí se paga**:
+  medido contra la base real, 200 filas en `vw_reporte_pago`, 199 jornales,
+  $4.975, tarifa 25/Jornal. No aparece desde el 2025-12-02 porque **nadie la
+  cierra** (en 2024 se cerraba el 95 %), no porque no cobre. **Kevin, 2026-09-14:
+  queda como operación de los usuarios, se ignora por ahora.**
 
 - **#9 — las capturas de Riego llegaron (2026-09-08)**: `Fecha Riego`, `Finca`,
   `Supervisor` y `Registro #N` con Lote, Módulo, Tiempo de Riego, Volumen y
@@ -297,21 +327,14 @@ con una bandera.
 
 ## Trabajo identificado, sin decisión que tomar
 
-- **`Supervisor de cosecha` (subtarea 24) no tiene sacos que pesar.** Cuelga de
-  la tarea Cosecha, así que la pantalla de cosecha se la ofrece y le exige al
-  menos un saco; pero su unidad es **Jornal**, no Libra. Son 241 filas en
-  `z_tabla_am` y 4 abiertas hoy en `reg_am`. Hay que decidir si esas subtareas
-  vuelven al PM (por unidad de labor) o si la pantalla acepta cerrarlas sin
-  sacos.
-- **Vista plana de cosecha para los reportes web.** Hoy un reporte va
-  `cosecha → AM → catálogos`. Está medido y alcanza (1,08 ms por mes y finca),
-  pero conviene una `vw_reg_cosecha` para que el que escribe el reporte no
-  repita el join. Ver `02-bd-y-api.md` §Cosecha.
+*Tres entradas salieron de esta lista el 2026-09-14: la `vw_reg_cosecha` ya
+existe (commit `e326b58`, en `04-vistas-v4.sql`); el campo propio de la
+justificación retroactiva está hecho; y la subtarea 24 se cerró — ver abajo.*
+
 - **Repuntar las 19 vistas restantes** a `reg_am`/`pc_*` para el período desde
   agosto. Sólo se hizo `vw_reg_reporte_pago`, que es la nómina.
-- **Campo propio para la justificación del registro retroactivo.** Hoy viaja
-  dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255: el motivo
-  queda mezclado con texto libre y no se puede consultar aparte.
+- **Las fotos de postcosecha**, que quedaron fuera a propósito (cola binaria
+  aparte).
 - **Validar la finca de la persona y de la subtarea en `sync_am`.**
   `z_personal.id_finca` y `z_subtarea.id_finca` existen y el servidor no las
   compara contra `finca_id`. Ver `docs/context/99-riesgos.md`.
@@ -327,6 +350,13 @@ con una bandera.
   `dole.php` y `error_log`.
 
 ## Bloqueante conocido
+
+**Levantado en parte el 2026-09-14: el APK de la app nueva corrió en un teléfono
+real y funcionó** — creación, manejo de conflictos, `/registros`, offline,
+configuración y conexión con el servidor. Lo que sigue abierto es la IP fija del
+servidor de la finca en `network_security_config.xml` (Kevin: no la hay todavía,
+se pone al pasar a producción) y probar el arreglo de LAN del 2026-09-11 en la
+red real de la finca.
 
 El repositorio Android original no existe. Todo lo de aquí exige recompilar, lo
 cual está resuelto por la reescritura — pero el APK v2.0.5 instalado sólo acepta

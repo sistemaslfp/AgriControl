@@ -1,7 +1,31 @@
-# Continuar el trabajo — estado al 2026-09-02
+# Continuar el trabajo — estado al 2026-09-14
 
 Leé esto primero. Después `00-plan.md` para las decisiones cerradas, y sólo
 entonces el documento del tema que toque.
+
+---
+
+## Lo primero: dos cosas del 2026-09-14
+
+**1. Las suites e2e estuvieron ROJAS desde el 2026-09-11 y nadie lo supo. Es la
+TERCERA vez.** `am-pm`, `cosecha` y `postcosecha` morían en el mismo punto: al
+mock no le llegaba nada después de guardar. El registro **sí** se guardaba; lo
+que no corría era el envío automático. Causa: el `await asegurarRuta()` que el
+commit de LAN metió dentro de `flush()` corría la ventana justo encima del
+`saveToStore` del `enqueue` siguiente, la transacción de jeep-sqlite reventaba, y
+**`flush` tenía `try/finally` sin `try/catch`**, así que la promesa se rechazaba
+en silencio — sin backoff, sin `ultimoError`, sin reintento, con
+`servidorAlcanzable` en `true`. Sólo pasaba en el navegador (`persistir()` es
+no-op en Android), pero el patrón estaba en los dos. **Arreglado**:
+`DatabaseService.exclusivo()` serializa los tramos de base y `flush` tiene
+`catch`. **REGLA, otra vez: correr LAS SIETE suites en la misma sesión después de
+cualquier cambio, no las que uno cree afectadas.**
+
+**2. El APK corrió en un teléfono real y funcionó.** Creación, manejo de
+conflictos, `/registros`, offline, configuración y conexión con el servidor.
+Cierra el hueco #1 de "NO verificado": hasta ese día todo era navegador +
+jeep-sqlite. Siguen sin probarse en la red real de la finca el binding nativo y
+el sondeo del 2026-09-11.
 
 ---
 
@@ -93,6 +117,21 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   y no había forma de cerrarlo (`UNIQUE (partida, etapa)`). El presecado se
   registra en el detalle con el inicio precargado con la fecha del pesaje, y
   mientras tanto la lista dice `Presecado en curso`. **50 comprobaciones e2e.**
+- **Modo libre de fechas en las CINCO pantallas y ventanas editables
+  (2026-09-14, Kevin).** El interruptor "Estoy cargando un día anterior" existía
+  sólo en AM: las otras cuatro tenían la ventana de su módulo como **límite duro
+  del calendario** (`limites(tipo, false)`, con el `false` escrito a mano), así
+  que no había forma de cerrar un PM de la semana pasada ni de pesar una cosecha
+  de hace diez días. Ahora las cinco lo tienen, con **justificación obligatoria**,
+  en un solo componente (`app-retroactivo`). **El motivo dejó de ir dentro de
+  `comentario` con prefijo `[RETROACTIVO]`: es la columna `justificacion_retro`**
+  en `reg_am` (alta y cierre), `reg_riego` y `pc_proceso`. Los cinco días se
+  editan en Configuración y **lo del equipo le gana al servidor** —guardados en
+  `app_kv.retroactividad_override`, aparte de `BOOTSTRAP_JSON`, que "Actualizar
+  Maestros" pisa entero—. **Cierra el pendiente #1.** Verificado con curl contra
+  CI3 y la base real (los cinco tipos, más el caso de omitir el campo, que deja
+  NULL), con el cuadre de la migración intacto (550/495/55, 495 / 79.298,40 /
+  15.091,66) y con **17 comprobaciones nuevas** en `retroactivo.spec.mjs`.
 - **Registros: el chip es un pendiente, no una estadística (2026-09-08, Kevin).**
   `AM 3` —una sola cuenta—, un chip sólo por módulo con algo sin subir, sólo en
   la pestaña Pendientes, y **desaparece con el ACK**. El filtro por módulo se
@@ -153,24 +192,25 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
    (migración del histórico y corte), diferido sin fecha, y los flecos de abajo.
    **Riego fue lo último grande** (2026-09-08); de postcosecha sólo faltan las
    fotos, que Kevin dejó fuera a propósito.
-2. **Los dos flecos de cosecha**: `Supervisor de cosecha` (subtarea 24, unidad
-   **Jornal**) aparece en la pantalla de cosecha y no tiene sacos que pesar —hay
-   que decidir si vuelve al PM o si se puede cerrar sin sacos—, y falta la vista
-   `vw_reg_cosecha` para que los reportes web no repitan el join.
-3. **Detalle Registro**: tocar una tarjeta y ver el payload campo por campo,
-   con el UUID. Es lo único que quedó fuera del paso 4.
-4. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
+2. **Repuntar las 19 vistas restantes** (`vw_reporte_am`, `vw_reporte_pm` y las
    demás) a `reg_am` para el período desde agosto. Sólo se hizo
    `vw_reg_reporte_pago`, que es la nómina. Las viejas **no se tocan**: los
    endpoints V3 y la web histórica se quedan con `z_*` hasta julio de 2026.
-5. **Campo propio para la justificación del registro retroactivo.** Hoy viaja
-   dentro de `comentario` con prefijo `[RETROACTIVO]`, recortada a 255.
-6. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
+3. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
    (`z_personal.id_finca`, `z_subtarea.id_finca`) y el servidor no las compara.
-7. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
+4. **Levantar el contenedor en PHP 8.1** y validar lo que el ensayo no cubrió
    (lista en `docker/php/Dockerfile`): guardado real desde Grocery CRUD, campos
    de archivo, login POST de ion_auth, y `Operations/PM`.
-8. Después: el corte.
+5. **La IP fija del servidor de la finca** en `network_security_config.xml`
+   (hay un `TODO(Kevin)`), y **probar el arreglo de LAN en la red real**: WiFi
+   sin internet y datos móviles encendidos, que es el escenario que falla.
+6. **Las fotos de postcosecha**, que necesitan una cola binaria aparte.
+7. Después: el corte.
+
+**Cerrados el 2026-09-14, por si el texto viejo confunde:** el pendiente #1 (las
+cinco ventanas de retroactividad), el campo propio de la justificación, la
+subtarea 24 y `vw_reg_cosecha` —que ya existía desde el commit `e326b58`—.
+Detalle Registro está hecho desde el 2026-09-08.
 
 Las decisiones cerradas —las que no hay que volver a discutir— están en
 **`00-plan.md`**, una conclusión por tema. No se repiten acá.
@@ -249,7 +289,11 @@ Esta lista vale más que el resto de los documentos juntos.
   el modal se come los toques.
 - **`ion-button` se come el `aria-label`** en su shadow DOM, y el `isDisabled()`
   de Playwright no entiende un `ion-button` deshabilitado (hay que leer
-  `aria-disabled`). Las dos cosas hacen pasar pruebas en falso. El resto de las
+  `aria-disabled`). Las dos cosas hacen pasar pruebas en falso.
+- **`min` y `max` del `ion-datetime` van por PROPERTY binding**
+  (`[min]="limites().min"`), no como atributo: `getAttribute('min')` devuelve
+  `null` y **la comprobación pasa en falso**. Hay que leer la propiedad con
+  `p.evaluate`. (2026-09-14) El resto de las
   trampas de Ionic, con su detalle, están en `app-v4/e2e/README.md`.
 
 - **`reg_flag` es la bitácora de lo que no entró** (2026-09-03): `rechazado`,
@@ -306,7 +350,10 @@ con "Your system folder path does not appear to be set correctly". Poner
 rompe hasta el código de estado.
 
 **App:** `ng build -c development` (el hook `window.__lagricontrol` sólo existe
-ahí), servir `www/`, levantar `e2e/mock-v4.mjs` y correr las dos suites.
+ahí), servir `www/`, levantar `e2e/mock-v4.mjs` y correr **las SIETE suites**:
+`cola`, `am-pm`, `registros`, `cosecha`, `postcosecha`, `riego` y `retroactivo`.
+**Reiniciar el mock entre suites**: guarda estado y los días de cosecha
+consumidos no vuelven.
 
 Las recetas completas están en la memoria del proyecto.
 

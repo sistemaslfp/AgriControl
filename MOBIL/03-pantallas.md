@@ -369,7 +369,9 @@ con otro lote al mismo tiempo de riego.
 
 ### Los campos, uno por uno, contra la data real
 
-- **Fecha del riego** — retroactividad 7 días, futuro prohibido. (`z_riego.hora`
+- **Fecha del riego** — retroactividad 7 días por defecto (editable en
+  Configuración, y el interruptor de día anterior la abre), futuro prohibido.
+  (`z_riego.hora`
   vale '0' en las 9.778 filas: **no hay hora de origen**, así que la hora del
   registro es la de la carga.)
 - **Finca** y **Supervisor** — arriba, una vez por parte. En todo el histórico
@@ -714,9 +716,21 @@ fechas". Lo que toca a la UI:
   `max = ahora_corregido`. `ahora_corregido = reloj del teléfono + offset del
   servidor`, nunca el reloj pelado.
 - **No se ofrecen fechas futuras.** Sin interruptor, sin excepción.
-- Para ir más atrás de la ventana, un interruptor habilita el rango completo y
-  exige una **justificación escrita**. Sin texto, el botón de guardar queda
-  deshabilitado.
+- Para ir más atrás de la ventana, un interruptor habilita el rango completo
+  (tope 400 días) y exige una **justificación escrita**. Sin texto, el botón de
+  guardar queda deshabilitado.
+- **Desde el 2026-09-14 ese interruptor está en las CINCO pantallas.** Antes
+  existía sólo en AM: PM, Cosecha, Riego y Postcosecha llamaban a
+  `limites(tipo, false)` con el `false` escrito a mano, y para ellas la ventana
+  era un **límite duro del calendario** —no había forma de pasarse—. Es un solo
+  componente, `app-retroactivo` (`src/app/shared/`), con el mismo texto en las
+  cinco.
+- **El motivo viaja en `justificacion_retro`**, un campo propio del payload, y
+  no pegado dentro de `comentario`. Ver `02-bd-y-api.md`.
+- **Los días de cada módulo se editan en Configuración** y lo del equipo le gana
+  a lo que mande `/v4/bootstrap`, con el origen a la vista ("servidor" / "este
+  equipo") y un botón para restaurar. Así que la ventana **no bloquea**: sólo
+  decide a partir de dónde hay que justificar.
 - **En pantalla ese interruptor NO dice "registro retroactivo".** "Retroactivo"
   es jerga de estos documentos; el supervisor en el lote no la usa. Dice
   **"Estoy cargando un día anterior"**, y el campo de motivo pregunta **"¿Por
