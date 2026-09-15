@@ -29,8 +29,13 @@ services:
       --collation-server=utf8mb4_spanish2_ci
     environment:
       MYSQL_ROOT_PASSWORD: root_password   # debe coincidir con database.php
-      # Sin MYSQL_DATABASE a propósito: 01-schema.sql trae su propio
-      # CREATE DATABASE con la collation correcta (utf8mb4_spanish2_ci).
+      # OBLIGATORIO desde el dump del 2026-09-15. Antes iba sin esta variable
+      # porque 01-schema.sql traía su propio CREATE DATABASE + USE; el dump
+      # nuevo lo generó mysqldump 8.0 SIN --databases, así que ya no los trae.
+      # Sin MYSQL_DATABASE el entrypoint corre el dump sin base seleccionada,
+      # muere con `ERROR 1046 (3D000): No database selected` y el contenedor
+      # queda sin datos. La collation la fija --collation-server de abajo.
+      MYSQL_DATABASE: lfp_prodapp
     ports:
       - "3307:3306"                        # 3307 para no chocar con un MySQL local
     volumes:

@@ -21,27 +21,53 @@
 # de la misma minor: mismas funciones, mismo comportamiento del lenguaje.
 FROM php:7.3-apache
 
-# Debian buster esta ARCHIVADO. Sin esto, el apt-get update de abajo muere con
-# 404 contra deb.debian.org y la imagen no compila. Check-Valid-Until off
-# porque los indices archivados tienen la fecha de expiracion vencida.
+# ---------------------------------------------------------------------------
+# REPOSITORIOS: la imagen esta sobre Debian 11 (bullseye), ya archivado.
+#
+# El sources.list NO se edita con sed, se REESCRIBE entero. Editarlo dependia
+# de adivinar como venian escritas las lineas y fallo dos veces; esto no
+# depende de nada previo.
+#
+# Se quedan solo los dos repos que SI existen en archive.debian.org: `bullseye`
+# y `bullseye-updates`. El de seguridad NO esta archivado -- responde 404 a
+# `bullseye-security` -- y basta ese 404 para que apt-get update salga con
+# codigo 100 y tumbe el build entero.
+#
+# Consecuencia asumida: los paquetes de abajo quedan sin los parches de
+# seguridad de bullseye. Es un contenedor de desarrollo local que no se expone;
+# si algun dia sale a una red, esto se revisa.
+#
+# Check-Valid-Until off porque los indices archivados tienen vencida su fecha
+# de expiracion y apt los rechazaria por eso. El `cat` final deja el archivo
+# resultante en el log del build: si algo vuelve a fallar aca, se ve.
+# ---------------------------------------------------------------------------
 RUN set -eux; \
-    sed -i 's|deb.debian.org/debian|archive.debian.org/debian|g; \
-            s|security.debian.org/debian-security|archive.debian.org/debian-security|g; \
-            s|deb.debian.org/debian-security|archive.debian.org/debian-security|g; \
-            /buster-updates/d' /etc/apt/sources.list; \
-    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+    rm -rf /etc/apt/sources.list.d/*; \
+    printf '%s\n' \
+      'deb http://archive.debian.org/debian bullseye main' \
+      'deb http://archive.debian.org/debian bullseye-updates main' \
+      > /etc/apt/sources.list; \
+    printf '%s\n' \
+      'Acquire::Check-Valid-Until "false";' \
+      > /etc/apt/apt.conf.d/99no-check-valid-until; \
+    cat /etc/apt/sources.list
 
-# OJO con gd: en 7.3 las opciones llevan sufijo `-dir=`. La forma sin sufijo
-# (--with-freetype --with-jpeg) es de 7.4 en adelante y aqui se ignora con un
-# "unrecognized options", dejando gd sin soporte de JPEG ni FreeType.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpng-dev libjpeg-dev libfreetype6-dev libzip-dev unzip \
-    && docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
-    && docker-php-ext-install -j"$(nproc)" mysqli gd zip \
-    && a2enmod rewrite headers \
-    && rm -rf /var/lib/apt/lists/*
+# OJO con gd: en PHP 7.3 las opciones llevan sufijo `-dir=`. La forma sin
+# sufijo (--with-freetype --with-jpeg) es de 7.4 en adelante y aqui se ignora
+# con un "unrecognized options" SIN fallar el build, dejando gd sin soporte de
+# JPEG ni FreeType -- o sea las fotos de postcosecha rotas y ningun error que
+# lo explique. El grep del final falla el build si eso pasa.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        libpng-dev libjpeg62-turbo-dev libfreetype6-dev libzip-dev unzip; \
+    docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/; \
+    docker-php-ext-install -j"$(nproc)" mysqli gd zip; \
+    a2enmod rewrite headers; \
+    rm -rf /var/lib/apt/lists/*; \
+    php -r 'print_r(gd_info());' | grep -Ei 'JPEG|FreeType'
 
-# Subida de imágenes de postcosecha
+# Subida de imagenes de postcosecha
 RUN { \
       echo 'upload_max_filesize = 256M'; \
       echo 'post_max_size = 256M'; \
