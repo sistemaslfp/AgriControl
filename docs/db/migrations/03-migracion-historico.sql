@@ -99,6 +99,16 @@ CREATE INDEX IF NOT EXISTS ix_mig_cos_dup ON z_cosecha_cacao
   (fecha, hora, finca, supervisor, tarea, subtarea, trabajador, lote, modulo, jornales, total_sacos, total_peso, id);
 CREATE INDEX IF NOT EXISTS ix_mig_riego_dup ON z_riego
   (supervisor, fecha, hora, finca, codigo_tarea, codigo_subtarea, lote, modulo, tiempo_riego, volumen_riego, id);
+
+-- SIN ESTO LOS INDICES DE ARRIBA NO SIRVEN DE NADA. Sobre una base recien
+-- importada en un volumen nuevo, InnoDB puede dejar las estadisticas en cero:
+-- `SHOW INDEX` muestra Cardinality 0 hasta en PRIMARY y el EXPLAIN dice
+-- `rows: 1` sobre una tabla de 108.852 filas. Con eso el optimizador no fija
+-- ningun indice y pone `Range checked for each record (index map: 0x1F)`, o
+-- sea vuelve a decidir que indice usar PARA CADA FILA. Es lo que convierte
+-- 1.1a de 0,3 segundos en minutos. Verificado el 2026-09-15 en MariaDB 10.4.18.
+-- Cuesta menos de medio segundo.
+ANALYZE TABLE z_tabla_am, z_tabla_pm, z_cosecha_cacao, z_riego, mig_descarte;
 -- Sobre lfp_am, para el emparejamiento del cierre. Sin éste el optimizador
 -- entra por `fk_am_lote` --sólo `lote_id`-- y el UPDATE de 1.3 no termina.
 
@@ -848,11 +858,6 @@ SELECT LOWER(CONCAT(SUBSTR(MD5(CONCAT('calsec:',q.id)),1,8),'-',SUBSTR(MD5(CONCA
               '-5',SUBSTR(MD5(CONCAT('calsec:',q.id)),14,3),'-a',SUBSTR(MD5(CONCAT('calsec:',q.id)),18,3),
               '-',SUBSTR(MD5(CONCAT('calsec:',q.id)),21,12))),
        pp.id,
-       -- Comparado con LIKE y sin tildes A PROPOSITO: el valor guardado es
-       -- 'Secado Maquina' con acento en utf8mb3, y un literal acentuado en este
-       -- archivo solo matchea si el cliente abre la conexion en utf8. Con el
-       -- charset por defecto de la consola no matchea NADA y la etapa se pierde
-       -- entera, sin error. El resultado no puede depender del cliente.
        CASE WHEN q.stage LIKE 'Secado S%' THEN 'secado_sol'
             WHEN q.stage LIKE 'Secado M%' THEN 'secado_maq' END,
        STR_TO_DATE(CONCAT(q.sample_date,' 00:00:00'),'%Y-%m-%d %H:%i:%s'),
