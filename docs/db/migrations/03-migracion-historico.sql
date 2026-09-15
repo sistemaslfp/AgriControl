@@ -90,6 +90,15 @@ CREATE INDEX IF NOT EXISTS ix_mig_am_dup ON z_tabla_am
 CREATE INDEX IF NOT EXISTS ix_mig_pm_dup ON z_tabla_pm
   (finca, fecha, subtarea, trabajador, cantidad, hora_inicio, hora_cierre, id);
 CREATE INDEX IF NOT EXISTS ix_mig_pm_match ON z_tabla_pm (trabajador, fecha, lote, subtarea);
+-- Cosecha y riego tienen el MISMO EXISTS correlacionado y hasta ahora no
+-- llevaban indice: con solo 12.647 y 10.009 filas parecian baratos y no lo son.
+-- Medido sobre los datos reales: 1m47s y 56s sin indice, 0,15s y 0,18s con el.
+-- Eran los dos tercios del tiempo del archivo, y en MySQL Workbench el primero
+-- pasaba de los 30 s y mataba la conexion con ERROR 2013.
+CREATE INDEX IF NOT EXISTS ix_mig_cos_dup ON z_cosecha_cacao
+  (fecha, hora, finca, supervisor, tarea, subtarea, trabajador, lote, modulo, jornales, total_sacos, total_peso, id);
+CREATE INDEX IF NOT EXISTS ix_mig_riego_dup ON z_riego
+  (supervisor, fecha, hora, finca, codigo_tarea, codigo_subtarea, lote, modulo, tiempo_riego, volumen_riego, id);
 -- Sobre lfp_am, para el emparejamiento del cierre. Sin éste el optimizador
 -- entra por `fk_am_lote` --sólo `lote_id`-- y el UPDATE de 1.3 no termina.
 
@@ -945,3 +954,5 @@ DROP INDEX IF EXISTS ix_mig_regam_match ON lfp_am;
 DROP INDEX IF EXISTS ix_mig_am_dup   ON z_tabla_am;
 DROP INDEX IF EXISTS ix_mig_pm_dup   ON z_tabla_pm;
 DROP INDEX IF EXISTS ix_mig_pm_match ON z_tabla_pm;
+DROP INDEX IF EXISTS ix_mig_cos_dup   ON z_cosecha_cacao;
+DROP INDEX IF EXISTS ix_mig_riego_dup ON z_riego;

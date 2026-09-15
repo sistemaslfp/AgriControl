@@ -527,10 +527,6 @@ CREATE TABLE IF NOT EXISTS pc_lot_code_seq (
 -- No pasa por el usuario y no hay pantalla.
 -- =========================================================================
 
--- Se rehace en cada migración: es una bitácora, no un dato de negocio, y el
--- DROP limpia la forma vieja que trae el dump de docs/db/init/01-schema.sql.
-DROP TABLE IF EXISTS lfp_flag;
-
 CREATE TABLE lfp_flag (
   id           BIGINT AUTO_INCREMENT PRIMARY KEY,
   -- am | pm | cosecha | riego | postcosecha. AM y PM son la misma tabla; que
@@ -584,12 +580,3 @@ CREATE TABLE IF NOT EXISTS mig_descarte (
 -- En una base virgen no hacen nada: las columnas ya vienen en el CREATE.
 -- =========================================================================
 
-ALTER TABLE lfp_am
-  ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER comentario,
-  ADD COLUMN IF NOT EXISTS justificacion_retro_cierre VARCHAR(255) NULL AFTER comentario_cierre;
-
-ALTER TABLE lfp_riego
-  ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER observaciones;
-
-ALTER TABLE pc_proceso
-  ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER comentario;
