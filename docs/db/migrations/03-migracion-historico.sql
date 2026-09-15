@@ -848,7 +848,13 @@ SELECT LOWER(CONCAT(SUBSTR(MD5(CONCAT('calsec:',q.id)),1,8),'-',SUBSTR(MD5(CONCA
               '-5',SUBSTR(MD5(CONCAT('calsec:',q.id)),14,3),'-a',SUBSTR(MD5(CONCAT('calsec:',q.id)),18,3),
               '-',SUBSTR(MD5(CONCAT('calsec:',q.id)),21,12))),
        pp.id,
-       CASE q.stage WHEN 'Secado Sol' THEN 'secado_sol' WHEN 'Secado Máquina' THEN 'secado_maq' END,
+       -- Comparado con LIKE y sin tildes A PROPOSITO: el valor guardado es
+       -- 'Secado Maquina' con acento en utf8mb3, y un literal acentuado en este
+       -- archivo solo matchea si el cliente abre la conexion en utf8. Con el
+       -- charset por defecto de la consola no matchea NADA y la etapa se pierde
+       -- entera, sin error. El resultado no puede depender del cliente.
+       CASE WHEN q.stage LIKE 'Secado S%' THEN 'secado_sol'
+            WHEN q.stage LIKE 'Secado M%' THEN 'secado_maq' END,
        STR_TO_DATE(CONCAT(q.sample_date,' 00:00:00'),'%Y-%m-%d %H:%i:%s'),
        q.bean_moisture_1, q.bean_moisture_2, q.bean_moisture_3,
        q.sample_bean_count, q.bean_index_grams, q.percent_empty_beans, NOW()
@@ -858,9 +864,9 @@ JOIN pc_proceso pp ON pp.guid = LOWER(CONCAT(
        SUBSTR(MD5(CONCAT('z_postharvest_weight:',q.lot_id)),1,8),'-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',q.lot_id)),9,4),
        '-5',SUBSTR(MD5(CONCAT('z_postharvest_weight:',q.lot_id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_postharvest_weight:',q.lot_id)),18,3),
        '-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',q.lot_id)),21,12)))
-WHERE q.stage IN ('Secado Sol','Secado Máquina')
+WHERE (q.stage LIKE 'Secado S%' OR q.stage LIKE 'Secado M%')
   AND NOT EXISTS (SELECT 1 FROM pc_calidad_secado x WHERE x.pc_proceso_id = pp.id
-                    AND x.etapa = CASE q.stage WHEN 'Secado Sol' THEN 'secado_sol' ELSE 'secado_maq' END);
+                    AND x.etapa = CASE WHEN q.stage LIKE 'Secado S%' THEN 'secado_sol' ELSE 'secado_maq' END);
 
 -- Fotos
 INSERT INTO pc_foto (guid, pc_proceso_id, etapa, archivo, orden, received_at_server)
@@ -868,8 +874,10 @@ SELECT LOWER(CONCAT(SUBSTR(MD5(CONCAT('foto:',f.id)),1,8),'-',SUBSTR(MD5(CONCAT(
               '-5',SUBSTR(MD5(CONCAT('foto:',f.id)),14,3),'-a',SUBSTR(MD5(CONCAT('foto:',f.id)),18,3),
               '-',SUBSTR(MD5(CONCAT('foto:',f.id)),21,12))),
        pp.id,
-       CASE f.stage WHEN 'Fermentado' THEN 'fermentado' WHEN 'Secado Sol' THEN 'secado_sol'
-                    WHEN 'Secado Máquina' THEN 'secado_maq' ELSE LOWER(f.stage) END,
+       CASE WHEN f.stage LIKE 'Ferment%'  THEN 'fermentado'
+            WHEN f.stage LIKE 'Secado S%' THEN 'secado_sol'
+            WHEN f.stage LIKE 'Secado M%' THEN 'secado_maq'
+            ELSE LOWER(f.stage) END,
        f.picture_name, f.picture_order, NOW()
 FROM z_postharvest_photos f
 JOIN z_postharvest_weight w ON w.lot_number = f.lot_id

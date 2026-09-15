@@ -451,3 +451,134 @@ SET @guardia_ajustes := (
 );
 PREPARE guardia_ajustes FROM @guardia_ajustes;
 DEALLOCATE PREPARE guardia_ajustes;
+
+
+-- ===========================================================================
+-- POSTCOSECHA — DOS VISTAS ESCRITAS Y VERIFICADAS, DEJADAS COMENTADAS
+--
+-- Kevin, 2026-09-15: se dejan como opcion, la web NO se repunta a ellas por
+-- ahora. Para activarlas: quitar el `-- ` de las lineas de abajo y volver a
+-- correr este archivo. No hay que tocar nada mas; son de solo lectura.
+--
+-- QUE REEMPLAZAN
+--   vw_lfp_postharvest_rpt    -> vw_postharvest_rpt_001  (Postharvest.php:34,84)
+--   vw_lfp_postharvest_fotos  -> las tres vw_postharvest_photos_* de una vez,
+--                                filtrando por la columna `stage` igual que ellas
+--
+-- CONTRATO: las 65 columnas de vw_lfp_postharvest_rpt tienen EXACTAMENTE los
+-- mismos nombres y el mismo orden que vw_postharvest_rpt_001, verificado contra
+-- information_schema. Cambiar la pantalla seria cambiar el nombre de la tabla.
+--
+-- VERIFICADO sobre las 41 partidas migradas: pesos, rendimiento, fechas de las
+-- cuatro etapas, calidad de fermentacion, humedades de secado sol y maquina
+-- (promedio incluido) y las siete fotos dan IDENTICO a v3 en las 41.
+--
+-- LAS TRES DIFERENCIAS, todas conocidas y ninguna reparable desde aqui:
+--
+--  1. `numero_proceso` es el `lot_code` de V4 (CHAR(7), ej '229012 4'), no el
+--     `lot_number` entero de v3. Son identificadores distintos a proposito.
+--  2. `supervisor` sale de z_personal.nombre por FK, no del `supervisor_name`
+--     desnormalizado de v3: mismo supervisor, distinta capitalizacion.
+--  3. `fecha_pesaje` es `pc_proceso.fecha_inicio`, que la migracion carga desde
+--     `z_postharvest_weight.created_at` — el sello del import — y NO desde
+--     `operation_date`, la hora de pesaje que declaraba el supervisor. V4 no
+--     modela ese segundo campo: difieren en las 41 partidas, entre 4 y 5 horas.
+--     Si esa hora importa para el reporte, hace falta una columna en pc_proceso
+--     y es una decision aparte.
+--  4. `good_perc` / `light_perc` / `violet_perc` van en NULL. En v3 son columnas
+--     almacenadas cuyo denominador NO es good+light+violet (con 10/4/10 vale
+--     0,625, o sea /16), asi que no se pueden recalcular desde
+--     pc_calidad_fermentacion. Un numero parecido pero distinto seria peor.
+--
+-- ALCANCE: la pantalla de postcosecha ademas ESCRIBE con Grocery CRUD en siete
+-- tablas z_postharvest_* (Postharvest.php:117-306). Una vista con JOINs es de
+-- solo lectura, asi que estas dos cubren el listado y las fotos, no la captura.
+-- ===========================================================================
+-- CREATE OR REPLACE VIEW vw_lfp_postharvest_fotos AS
+-- SELECT f.pc_proceso_id                                      AS lot_id,
+--        f.etapa                                              AS stage,
+--        MAX(CASE WHEN f.orden = 1 THEN f.archivo END)        AS picture1,
+--        MAX(CASE WHEN f.orden = 2 THEN f.archivo END)        AS picture2,
+--        MAX(CASE WHEN f.orden = 3 THEN f.archivo END)        AS picture3
+--   FROM pc_foto f
+--  GROUP BY f.pc_proceso_id, f.etapa;
+--
+-- CREATE OR REPLACE VIEW vw_lfp_postharvest_rpt AS
+-- SELECT p.id                                                   AS id,
+--        p.lot_code                                             AS numero_proceso,
+--        per.nombre                                             AS supervisor,
+--        p.fecha_inicio                                         AS fecha_pesaje,
+--        p.peso_lote                                            AS peso,
+--        p.peso_mallas                                          AS peso_mallas,
+--        p.peso_baba                                            AS peso_fruta_neto,
+--        p.comentario                                           AS comentarios_pesaje,
+--        pre.inicio                                             AS fi_presecado,
+--        pre.fin                                                AS ff_presecado,
+--        TO_DAYS(pre.fin) - TO_DAYS(pre.inicio)                 AS dias_presecado,
+--        pre.comentario                                         AS comentarios_presecado,
+--        fer.inicio                                             AS fi_fermentado,
+--        fer.fin                                                AS ff_fermentado,
+--        TO_DAYS(fer.fin) - TO_DAYS(fer.inicio)                 AS dias_fermentado,
+--        fer.comentario                                         AS comentarios_fermentado,
+--        sol.inicio                                             AS fi_secado_sol,
+--        sol.fin                                                AS ff_secado_sol,
+--        TO_DAYS(sol.fin) - TO_DAYS(sol.inicio)                 AS dias_secado_sol,
+--        sol.comentario                                         AS comentarios_secado_sol,
+--        res.inicio                                             AS fecha_pesaje_final,
+--        p.peso_final                                           AS peso_final,
+--        p.peso_final / NULLIF(p.peso_baba,0)                   AS rendimiento,
+--        res.comentario                                         AS comentarios_pesaje_final,
+--        pre.id                                                 AS id_presecado,
+--        fer.id                                                 AS id_fermentado,
+--        sol.id                                                 AS id_secado_sol,
+--        res.id                                                 AS id_resultados,
+--        cf.id                                                  AS id_calidad_fermentado,
+--        'fermentado'                                           AS fermentation_quality_stage,
+--        cf.fecha_muestra                                       AS sample_date,
+--        cf.buena                                               AS good,
+--        cf.ligera                                              AS light,
+--        cf.violeta                                             AS violet,
+--        NULL                                                   AS good_perc,
+--        NULL                                                   AS light_perc,
+--        NULL                                                   AS violet_perc,
+--        CASE WHEN qs.id IS NULL THEN NULL ELSE 'secado_sol' END AS sundrying_quality_stage,
+--        qs.fecha_muestra                                       AS sundrying_sample_date,
+--        qs.humedad_1                                           AS sundrying_moisture_1,
+--        qs.humedad_2                                           AS sundrying_moisture_2,
+--        qs.humedad_3                                           AS sundrying_moisture_3,
+--        qs.humedad_promedio                                    AS avg_sundrying_bean_moisture,
+--        qs.granos_muestra                                      AS sample_bean_count,
+--        qs.indice_grano_g                                      AS sundrying_bean_index_grams,
+--        qs.granos_vacios_pct                                   AS sundrying_percent_empty_beans,
+--        CASE WHEN qm.id IS NULL THEN NULL ELSE 'secado_maq' END AS machinedrying_quality_stage,
+--        qm.fecha_muestra                                       AS machinedrying_sample_date,
+--        qm.humedad_1                                           AS machinedrying_bean_moisture_1,
+--        qm.humedad_2                                           AS machinedrying_bean_moisture_2,
+--        qm.humedad_3                                           AS machinedrying_bean_moisture_3,
+--        qm.humedad_promedio                                    AS machinedrying_avg_bean_moisture,
+--        qm.granos_muestra                                      AS machinedrying_sample_bean_count,
+--        qm.indice_grano_g                                      AS machinedrying_bean_index_grams,
+--        qm.granos_vacios_pct                                   AS machinedrying_percent_empty_beans,
+--        ff.picture1                                            AS fermentation_picture1,
+--        fs.picture1                                            AS sundrying_picture1,
+--        fs.picture2                                            AS sundrying_picture2,
+--        fs.picture3                                            AS sundrying_picture3,
+--        fm.picture1                                            AS machinedrying_picture1,
+--        fm.picture2                                            AS machinedrying_picture2,
+--        fm.picture3                                            AS machinedrying_picture3,
+--        maq.id                                                 AS id_secado_maquina,
+--        qs.id                                                  AS id_calidad_secadosol,
+--        qm.id                                                  AS id_calidad_secadomaquina
+--   FROM pc_proceso p
+--   LEFT JOIN z_personal per ON per.id = p.supervisor_id
+--   LEFT JOIN pc_etapa pre ON pre.pc_proceso_id = p.id AND pre.etapa = 'presecado'
+--   LEFT JOIN pc_etapa fer ON fer.pc_proceso_id = p.id AND fer.etapa = 'fermentado'
+--   LEFT JOIN pc_etapa sol ON sol.pc_proceso_id = p.id AND sol.etapa = 'secado_sol'
+--   LEFT JOIN pc_etapa maq ON maq.pc_proceso_id = p.id AND maq.etapa = 'secado_maq'
+--   LEFT JOIN pc_etapa res ON res.pc_proceso_id = p.id AND res.etapa = 'resultado'
+--   LEFT JOIN pc_calidad_fermentacion cf ON cf.pc_proceso_id = p.id
+--   LEFT JOIN pc_calidad_secado qs ON qs.pc_proceso_id = p.id AND qs.etapa = 'secado_sol'
+--   LEFT JOIN pc_calidad_secado qm ON qm.pc_proceso_id = p.id AND qm.etapa = 'secado_maq'
+--   LEFT JOIN vw_lfp_postharvest_fotos ff ON ff.lot_id = p.id AND ff.stage = 'fermentado'
+--   LEFT JOIN vw_lfp_postharvest_fotos fs ON fs.lot_id = p.id AND fs.stage = 'secado_sol'
+--   LEFT JOIN vw_lfp_postharvest_fotos fm ON fm.lot_id = p.id AND fm.stage = 'secado_maq';
