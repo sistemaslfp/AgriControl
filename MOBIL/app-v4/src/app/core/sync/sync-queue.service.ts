@@ -108,7 +108,7 @@ export class SyncQueueService {
     await this.asegurarRuta();
     void this.sondear();
 
-    // `Network` queda SOLO como disparador: "algo cambió en la red, probá de
+    // `Network` queda SOLO como disparador: "algo cambió en la red, prueba de
     // nuevo ahora en vez de esperar el backoff". Su `connected` ya no decide
     // nada — ver el comentario de `servidorAlcanzable`. Por eso se reacciona a
     // CUALQUIER cambio, incluido pasar a una WiFi sin internet, que es
@@ -268,7 +268,7 @@ export class SyncQueueService {
     // el bug: bloqueaba el envío por un flag del sistema operativo que en una
     // LAN sin internet es `false` por definición.
     //
-    // Intentar y fallar no cuesta nada acá: `loteFallido()` devuelve el lote a
+    // Intentar y fallar no cuesta nada aquí: `loteFallido()` devuelve el lote a
     // PENDIENTE, nada se borra antes del ACK y el backoff evita el machaque.
     // El único que puede decir si el servidor está es el servidor.
     const espera = this.proximoReintentoMs();
@@ -399,7 +399,7 @@ export class SyncQueueService {
       const r = porGuid.get(guid);
       if (r && (r.status === 'created' || r.status === 'duplicate')) {
         // `lot_code` sólo viene en resultados de `pc_proceso`: recién con el
-        // ACK el servidor asigna la partida. Antes se descartaba acá mismo y
+        // ACK el servidor asigna la partida. Antes se descartaba aquí mismo y
         // la tarjeta de /registros no tenía forma de mostrar "Partida N".
         let metaJson: string | null = null;
         if (r.lot_code) {
@@ -539,7 +539,7 @@ export class SyncQueueService {
 
   /**
    * Limpieza manual desde Configuración. SOLO borra ENVIADOS y RECHAZADOS.
-   * Los PENDIENTES/ENVIANDO no se tocan desde acá: la pantalla bloquea la
+   * Los PENDIENTES/ENVIANDO no se tocan desde aquí: la pantalla bloquea la
    * sección entera si existen, y esta función lo revalida por si acaso.
    */
   async limpiarCerrados(): Promise<{ borrados: number } | { bloqueado: string }> {
@@ -547,7 +547,7 @@ export class SyncQueueService {
     const c = this.conteo();
     if (c.pendientes > 0 || c.enviando > 0) {
       return {
-        bloqueado: `Hay ${c.pendientes + c.enviando} registro(s) sin sincronizar. Sincronizá antes de limpiar.`,
+        bloqueado: `Hay ${c.pendientes + c.enviando} registro(s) sin sincronizar. Sincroniza antes de limpiar.`,
       };
     }
     const db = await this.database.abrir();

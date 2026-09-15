@@ -142,7 +142,7 @@ const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null, granos: null, v
  * Postcosecha — el proceso del cacao, de la balanza al peso final.
  *
  * **No cierra ninguna tarea AM**: desde el ruteo por unidad (2026-09-05) el
- * jornal de poscosecha lo paga el PM. Acá se registra el proceso, igual que
+ * jornal de poscosecha lo paga el PM. Aquí se registra el proceso, igual que
  * riego registra el agua.
  *
  * El detalle es **una ventana por etapa, deslizable**, como en v3 — y
@@ -491,7 +491,7 @@ export class PostcosechaPage implements OnInit {
     this.errorDias.set(null);
     this.dias.set([]);
     if (!this.config.baseUrl()) {
-      this.errorDias.set('Configurá el servidor: los días de cosecha vienen de allá.');
+      this.errorDias.set('Configura el servidor: los días de cosecha vienen de allí.');
       this.cargandoDias.set(false);
       return;
     }
@@ -591,7 +591,7 @@ export class PostcosechaPage implements OnInit {
       });
 
       await this.aviso(
-        'Partida abierta en presecado. Registrá la etapa cuando termine; ' +
+        'Partida abierta en presecado. Registra la etapa cuando termine; ' +
         'el número llega con el envío.',
       );
     } finally {
@@ -999,7 +999,7 @@ export class PostcosechaPage implements OnInit {
 
   /**
    * Tiempo empleado entre dos marcas. En v3 salía siempre "0 días, 0 horas"
-   * porque inicio y fin se escribían en el mismo instante; acá los dos los
+   * porque inicio y fin se escribían en el mismo instante; aquí los dos los
    * elige el supervisor, así que el número dice algo.
    */
   duracion(inicio: string | null, fin: string | null): string {

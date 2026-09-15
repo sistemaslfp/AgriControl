@@ -15,7 +15,7 @@
 -- contratación (FK a z_personal_estado: 1 Afiliado, 2 No afiliado, 3 Eventual,
 -- 4 Contratista, 6 Período de prueba). La vigencia de una persona la dice
 -- `eregistro` ('A' activo / 'I' inactivo). Esta migración no toca z_personal;
--- la advertencia está acá porque es donde se viene a mirar qué significa
+-- la advertencia está aquí porque es donde se viene a mirar qué significa
 -- `estado`. Detalle en docs/context/99-riesgos.md.
 --
 -- Aplicar en desarrollo:

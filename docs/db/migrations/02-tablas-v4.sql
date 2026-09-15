@@ -51,7 +51,7 @@
 --
 --    O sea: estas FK son compatibles con migrar "nada" o "el año en curso"
 --    (pendiente #3 de 00-plan.md, opciones 1 y 2). Migrar TODO el histórico
---    exigiría resolver ~9.000 referencias rotas primero. El dato está acá para
+--    exigiría resolver ~9.000 referencias rotas primero. El dato está aquí para
 --    que esa decisión se tome con el número a la vista, no de memoria.
 -- ---------------------------------------------------------------------------
 
@@ -66,7 +66,7 @@
 -- `cierre_*`, que después falla en el INSERT de agosto con un mensaje que no
 -- dice nada de esto.
 --
--- Si aborta acá: la base viene de un dump viejo. Correr
+-- Si aborta aquí: la base viene de un dump viejo. Correr
 -- `_historico/00-limpiar-intermedias.sql` para dejarla virgen, o pedir un dump
 -- regenerado. En PRODUCCIÓN nunca puede saltar: no hay ninguna tabla reg_*.
 --
@@ -106,7 +106,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- personal_id por fila.
 --
 -- No existe una tabla de PM: el cierre de la tarde es un UPDATE de esta misma
--- fila. Es idempotente porque el guid del cierre vive acá (`cierre_guid`), y
+-- fila. Es idempotente porque el guid del cierre vive aquí (`cierre_guid`), y
 -- el UPDATE lleva `AND cierre_guid IS NULL`, así que es atómico sin
 -- transacción. Mismo guid -> duplicate; otro guid sobre una fila ya cerrada
 -- -> rejected; el AM todavía no llegó -> el guid se omite de `results` y la
@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS reg_am (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- RESTRICCIONES QUE ESTA TABLA NO PUEDE EXPRESAR, y que hoy tampoco valida el
--- servidor. Anotadas acá porque es donde se van a buscar (ver también
+-- servidor. Anotadas aquí porque es donde se van a buscar (ver también
 -- docs/context/99-riesgos.md):
 --
 --   * La finca de la PERSONA y la del RESPONSABLE no se comparan contra
@@ -303,7 +303,7 @@ CREATE TABLE IF NOT EXISTS reg_cosecha_saco (
 -- 2023-11-27 a 2026-08-20), no sobre lo que declara:
 --
 --   * `modulo VARCHAR(50)`: cero filas con coma. Nunca fue CSV, siempre un
---     módulo. Por eso acá es modulo_id y NO una tabla hija como en AM/PM.
+--     módulo. Por eso aquí es modulo_id y NO una tabla hija como en AM/PM.
 --     Las 9.778 filas resuelven contra z_modulo.
 --   * `codigo_tarea` y `codigo_subtarea`: valen '0' en las 9.778 filas. Están
 --     muertos. subtarea_id queda NULLABLE por si la pantalla nueva los usa;
@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS pc_proceso (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   guid                CHAR(36)     NOT NULL,
   lot_code            CHAR(7)      NOT NULL,   -- dddnnaa, lo asigna el servidor
-  -- La fecha que NOMBRA la partida: de acá salen ddd y aa del lot_code.
+  -- La fecha que NOMBRA la partida: de aquí salen ddd y aa del lot_code.
   -- La elige el servidor (la menor de las cosechas enlazadas), no el usuario.
   -- Con partidas multi-fecha hay que elegir una, y esa elección queda escrita.
   fecha_cosecha       DATE         NOT NULL,
@@ -494,7 +494,7 @@ CREATE TABLE IF NOT EXISTS pc_calidad_secado (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- Hoy hay fotos en tres etapas: Secado Máquina (144), Fermentado (52) y
--- Secado Sol (51). Acá la etapa va como slug, no como texto de pantalla.
+-- Secado Sol (51). Aquí la etapa va como slug, no como texto de pantalla.
 CREATE TABLE IF NOT EXISTS pc_foto (
   id                 INT AUTO_INCREMENT PRIMARY KEY,
   guid               CHAR(36)     NOT NULL,

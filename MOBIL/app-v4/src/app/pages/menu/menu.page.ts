@@ -153,12 +153,12 @@ export class MenuPage implements OnInit {
 
   async actualizarMaestros(): Promise<void> {
     if (!this.config.baseUrl()) {
-      await this.aviso('Configurá primero la URL del servidor (engranaje, arriba a la derecha).');
+      await this.aviso('Configura primero la URL del servidor (engranaje, arriba a la derecha).');
       return;
     }
     try {
       // Las ventanas horarias y de retroactividad viajan por /v4/bootstrap y
-      // se refrescan acá mismo: si falla, no tumba la actualización de
+      // se refrescan aquí mismo: si falla, no tumba la actualización de
       // catálogos (la app sigue con los últimos valores guardados).
       try {
         await this.bootstrap.actualizar();

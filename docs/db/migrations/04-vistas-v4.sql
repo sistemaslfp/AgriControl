@@ -27,7 +27,7 @@
 -- quedar mal guardado.
 --
 -- Sin DISTINCT a propósito: vw_reporte_pago lo necesita porque la app vieja
--- generaba filas repetidas; acá el guid es único y un DISTINCT taparía un
+-- generaba filas repetidas; aquí el guid es único y un DISTINCT taparía un
 -- duplicado real si algún día aparece.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_reg_reporte_pago AS
@@ -270,7 +270,7 @@ SELECT DATE(am.fecha_proceso)                 AS fecha,
 --
 -- Sin GROUP BY: v3 lo necesitaba porque z_tabla_am repetía la misma
 -- combinación hasta 37 veces. En reg_am una fila ES una persona en una tarea,
--- así que agrupar acá escondería filas legítimas.
+-- así que agrupar aquí escondería filas legítimas.
 --
 -- CUADRE CONTRA v3, MEDIDO SOBRE AGOSTO (y hay que saberlo antes de comparar
 -- pantallas): v3 da 529 filas y V4 da 550. **No falta ni sobra nada**: las 529
@@ -313,7 +313,7 @@ SELECT CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED) AS anno,
 -- DOS VERRUGAS DE v3 QUE SE CONSERVAN, porque la pantalla las espera:
 --   1. `total` sale de FORMAT(...,3), o sea TEXTO con separador de miles. Con
 --      valores de cuatro cifras eso mete una coma y deja de ser numérico. No
---      se corrige acá: cambiarlo rompería el render de Grocery CRUD. El
+--      se corrige aquí: cambiarlo rompería el render de Grocery CRUD. El
 --      número de verdad está en vw_reg_reporte_pago.
 --   2. `lote` y `modulo` van como ID y como CSV de ids, no como nombres, que
 --      es lo que traían z_tabla_pm.lote y z_tabla_pm.modulo.
@@ -405,7 +405,7 @@ SELECT ROW_NUMBER() OVER (ORDER BY DATE(am.fecha_proceso))     AS id,
 -- `lot_date`; en V4 es pc_proceso_cosecha, que apunta al REGISTRO de cosecha y
 -- no a la fecha. Esa es justamente la mejora del modelo (02-tablas-v4.sql):
 -- una cosecha que llega tarde para una fecha ya consumida se DISTINGUE en vez
--- de confundirse con las que sí entraron. Por eso acá `id` puede venir NULL
+-- de confundirse con las que sí entraron. Por eso aquí `id` puede venir NULL
 -- para un día que ya tiene partida, si esa cosecha puntual no entró en ella --
 -- que es la respuesta correcta, no un hueco.
 -- ---------------------------------------------------------------------------

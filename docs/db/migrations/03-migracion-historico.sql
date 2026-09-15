@@ -61,7 +61,7 @@ USE lfp_prodapp;
 SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE';
 
 -- ---------------------------------------------------------------------------
--- ÍNDICES DE APOYO, temporales. SE CREAN ACÁ Y SE BORRAN AL FINAL.
+-- ÍNDICES DE APOYO, temporales. SE CREAN AQUÍ Y SE BORRAN AL FINAL.
 --
 -- POR QUÉ: la deduplicación compara cada fila contra todas las demás de su
 -- grupo con un `EXISTS` correlacionado. En la ventana de agosto eran 590 filas
@@ -128,7 +128,7 @@ CREATE INDEX IF NOT EXISTS ix_mig_pm_match ON z_tabla_pm (trabajador, fecha, lot
 -- 0.0 — Fechas que STR_TO_DATE no puede leer.
 -- `fecha` es VARCHAR en las cuatro tablas de origen y el formato NO es
 -- uniforme: z_tabla_pm tiene 1 fila en 'DD-MM-YYYY' y z_cosecha_cacao 2 en
--- 'MM/DD/YYYY'. Son tres filas en todo el histórico, pero si no se sacan acá
+-- 'MM/DD/YYYY'. Son tres filas en todo el histórico, pero si no se sacan aquí
 -- `STR_TO_DATE` devuelve NULL y con STRICT_ALL_TABLES el INSERT muere sin
 -- decir cuál fila fue.
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
@@ -301,7 +301,7 @@ WHERE 1 = 1
 -- 1.2 — Una fila por (captura, persona).
 --
 -- `hora` viene inconsistente en z_tabla_am ('7:31' y '15:26:02'): se normaliza
--- acá. Las filas con finca, responsable, cultivo, lote o subtarea en NULL se
+-- aquí. Las filas con finca, responsable, cultivo, lote o subtarea en NULL se
 -- omiten: no pasarían las FK.
 --
 -- `modulos` se copia tal cual de z_tabla_am salvo por la normalización: se
@@ -489,7 +489,7 @@ WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.cierre_guid = f.cierre_guid)
 -- reg_am cada una por (trabajador, subtarea, día) — verificado: ninguna con 0
 -- ni con 2.
 --
--- **No se cierra ningún AM acá.** 15 de esas 60 cuelgan de un AM que quedó
+-- **No se cierra ningún AM aquí.** 15 de esas 60 cuelgan de un AM que quedó
 -- abierto porque V3 tampoco tuvo PM para él; cerrarlos ahora haría que V4
 -- pagara 15 filas que V3 no paga, y el criterio de aceptación es que la nómina
 -- de agosto dé idéntica. Esas 15 quedan en `mig_descarte` con su payload y
@@ -892,7 +892,7 @@ ON DUPLICATE KEY UPDATE last_seq = GREATEST(last_seq, VALUES(last_seq));
 --
 --   TOTAL reg_am: 550 filas — 495 cerradas, 55 abiertas, 21 deducidas.
 --
---   EL CUADRE QUE VALE, y el criterio de aceptación de cualquier cambio acá:
+--   EL CUADRE QUE VALE, y el criterio de aceptación de cualquier cambio aquí:
 --   `vw_reg_reporte_pago` de agosto da 495 filas, 79.298,40 de cantidad y
 --   15.091,66 de total — idéntico a `vw_reporte_pago` desde z_tabla_pm. La
 --   nómina no se movió un centavo.

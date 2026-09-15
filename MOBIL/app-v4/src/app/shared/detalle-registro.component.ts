@@ -200,7 +200,7 @@ export class DetalleRegistroComponent {
 
   /**
    * Etiquetas legibles para los campos que SI se muestran. Lo que no está
-   * acá se muestra igual, con el nombre de columna pasado a texto plano
+   * aquí se muestra igual, con el nombre de columna pasado a texto plano
    * (`legible()`).
    */
   private static readonly ETIQUETAS: Record<string, string> = {
@@ -217,7 +217,7 @@ export class DetalleRegistroComponent {
   };
 
   /**
-   * Ningún id ni guid del payload se muestra acá (Kevin, 2026-09-09): el
+   * Ningún id ni guid del payload se muestra aquí (Kevin, 2026-09-09): el
    * único identificador de la ventana es el UUID del registro, que es el que
    * hace falta para revisar `sync_queue`/`sync_audit`. `am_guid`,
    * `captura_guid`, `finca_id`, `subtarea_id`, etc. no aportan nada que un

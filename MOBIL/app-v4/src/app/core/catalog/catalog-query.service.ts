@@ -200,7 +200,7 @@ export class CatalogQueryService {
    *
    * El payload de /v4/sync pide `subtarea_id` y `cultivo_id`, nunca
    * `tarea_id`: la tarea existe solo para acotar la elección en pantalla. La
-   * unidad de labor viaja acá porque el PM la muestra junto al avance, en vez
+   * unidad de labor viaja aquí porque el PM la muestra junto al avance, en vez
    * del selector muerto y gris de la app vieja (03-pantallas.md §PM).
    *
    * **El `codigo` no se muestra**: es control interno (Kevin, 2026-08-31).

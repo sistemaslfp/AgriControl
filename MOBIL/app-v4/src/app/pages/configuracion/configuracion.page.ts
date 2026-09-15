@@ -95,7 +95,7 @@ export class ConfiguracionPage implements OnInit {
   // --- Valores por defecto de captura ---
   //
   // Un equipo se queda en una finca y en un cultivo toda la temporada. Fijarlos
-  // acá ahorra dos toques por tarea y, sobre todo, evita el error de cargar en
+  // aquí ahorra dos toques por tarea y, sobre todo, evita el error de cargar en
   // la finca equivocada. Se pueden dejar vacíos: entonces se eligen a mano en
   // cada registro, como antes.
   readonly fincaDefecto = signal<OpcionCatalogo | null>(null);
@@ -377,7 +377,7 @@ export class ConfiguracionPage implements OnInit {
       return; // la UI ya lo impide; doble guarda
     }
     if (this.confirmacionEscrita.trim().toUpperCase() !== 'ELIMINAR') {
-      await this.aviso('Escribí ELIMINAR en el campo de confirmación.');
+      await this.aviso('Escribe ELIMINAR en el campo de confirmación.');
       return;
     }
     this.limpiando.set(true);

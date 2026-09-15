@@ -13,7 +13,7 @@ import { DatabaseService } from '../db/database.service';
  * 2. Las etapas y análisis ya cargados en ESTE equipo, **con sus datos**, para
  *    poder mostrarlos al volver a una etapa antes de que llegue el ACK.
  *
- * El `lot_code` **no se guarda acá**: llega con la lista del servidor y ese
+ * El `lot_code` **no se guarda aquí**: llega con la lista del servidor y ese
  * es su único lugar. Guardarlo sería una segunda copia que puede quedar vieja.
  */
 
@@ -90,7 +90,7 @@ export class PostcosechaService {
     await this.database.persistir();
   }
 
-  /** El peso final cierra el registro: deja de estar abierto también acá. */
+  /** El peso final cierra el registro: deja de estar abierto también aquí. */
   async cerrarProceso(procesoGuid: string): Promise<void> {
     const db = await this.database.abrir();
     await db.run(`UPDATE pc_proceso_local SET cerrada = 1 WHERE guid = ?;`, [procesoGuid]);

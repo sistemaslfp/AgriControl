@@ -164,7 +164,7 @@ import { OpcionCatalogo } from '../core/catalog/catalog-query.service';
   ],
 })
 export class SelectorComponent implements OnInit {
-  /** A partir de acá la lista deja de recorrerse de un vistazo. */
+  /** A partir de aquí la lista deja de recorrerse de un vistazo. */
   private static readonly UMBRAL_BUSCADOR = 10;
 
   @Input({ required: true }) titulo = '';

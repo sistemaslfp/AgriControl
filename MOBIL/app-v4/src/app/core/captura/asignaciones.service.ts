@@ -19,7 +19,7 @@ import { FechaService } from './fecha.service';
  * 2. Entre formularios, en ESTE equipo: **aviso que exige confirmar**. Se
  *    muestra el AM anterior (hora, lote, subtarea) y el responsable decide.
  * 3. Entre equipos: **no se cubre**. Un AM cargado en otra tablet es
- *    invisible acá, y offline no hay a quién preguntarle.
+ *    invisible aquí, y offline no hay a quién preguntarle.
  *
  * Por qué aviso y no bloqueo en el caso 2, con datos y no con opinión: en la
  * ventana de agosto (590 AM reales) hubo **9 reasignaciones legítimas** de la
@@ -31,7 +31,7 @@ import { FechaService } from './fecha.service';
  * La validación de verdad exige `reg_pm.am_id` (o equivalente) y un endpoint
  * de AM abiertos. Es un paso propio, posterior a estas pantallas.
  *
- * Definición de "cerrado" que se usa acá, la misma que mejor calzó contra los
+ * Definición de "cerrado" que se usa aquí, la misma que mejor calzó contra los
  * datos reales (533 de 590 AM de agosto): existe un PM del mismo
  * (persona, fecha, lote, subtarea).
  */

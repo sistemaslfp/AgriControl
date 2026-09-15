@@ -74,7 +74,7 @@ interface CierrePm {
  * justamente el agujero: antes se podía mandar un PM con un lote distinto al
  * de la programación de la mañana.
  *
- * El **responsable** sí se elige acá: es quien zanja la tarea, y no tiene por
+ * El **responsable** sí se elige aquí: es quien zanja la tarea, y no tiene por
  * qué ser el mismo que la programó.
  *
  * De dónde sale la lista, y por qué de dos lados:
@@ -298,7 +298,7 @@ export class PmPage implements OnInit {
     // Filtrado igual que el servidor: **el PM cierra todo lo que no se pesa**
     // (Kevin, 2026-09-05), y el espejo local no pasa por /v4/am_abiertos, así
     // que sin este filtro un AM de cosecha capturado en este equipo y todavía
-    // sin enviar seguiría apareciendo acá.
+    // sin enviar seguiría apareciendo aquí.
     const sePesan = await this.catalogo.subtareasQueSePesan();
     const locales = (await this.asignaciones.abiertasLocales(fecha)).filter(
       (a) => !sePesan.has(a.subtareaId),

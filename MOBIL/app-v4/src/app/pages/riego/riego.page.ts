@@ -80,7 +80,7 @@ const MINUTOS_SOSPECHOSOS = 360;
  * Kevin, 2026-09-03: *"Las tareas de riego AM son para el personal, estas se
  * cierran en PM. En riego únicamente se registran los tiempos, volumen, etc."*
  * Por eso esta pantalla **no lee tareas AM, no elige trabajador y no cierra
- * nada**: el AM/PM paga el jornal de la persona, acá se anota cuánta agua fue
+ * nada**: el AM/PM paga el jornal de la persona, aquí se anota cuánta agua fue
  * a qué lote y por cuánto tiempo. Los dos lados no tienen enlace y eso está
  * decidido así (02-bd-y-api.md §Riego).
  *

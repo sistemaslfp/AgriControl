@@ -1246,7 +1246,7 @@ class V4 extends RestController
         $sub = trim((string) $f->subtarea);
         return 'esa persona ya tiene la tarea AM #' . (int) $f->id . ' sin cerrar del ' . $dia
              . ($sub === '' ? '' : ' (' . $sub . ')')
-             . ': cerrala con el PM antes de cargarle otra';
+             . ': ciérrala con el PM antes de cargarle otra';
     }
 
     /**
@@ -1781,7 +1781,7 @@ class V4 extends RestController
      * Valida contra los catalogos con los mismos filtros que /v4/catalogos.
      *
      * LOS MOTIVOS SE ESCRIBEN PARA EL SUPERVISOR, NO PARA EL PROGRAMADOR. El
-     * texto que vuelve acá es lo único que la pantalla "Registros" le muestra a
+     * texto que vuelve aquí es lo único que la pantalla "Registros" le muestra a
      * quien tiene que corregir el registro en el campo, y un
      * "subtarea 88 inactiva" no le dice nada: no conoce los ids, no los ve en
      * ninguna pantalla, y el numero no le indica que tocar.

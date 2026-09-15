@@ -19,7 +19,7 @@ import { ClockService } from '../clock/clock.service';
 /**
  * Alias de `ModuloRetro`, que es la lista de verdad ([[bootstrap.service]]).
  *
- * Antes era una union escrita a mano acá, y agregar una pantalla con ventana
+ * Antes era una union escrita a mano aquí, y agregar una pantalla con ventana
  * propia obligaba a acordarse de tocar las dos: al construir riego el build
  * murio con TS2345 por eso. Ahora la lista vive en un solo lugar.
  */
@@ -33,7 +33,7 @@ export type TipoFecha = ModuloRetro;
 const SIN_VENTANA = { inicio: '00:00', fin: '23:59' };
 
 export interface EvaluacionFecha {
-  /** Rechazo duro: I1 del servidor. La UI no debería llegar acá. */
+  /** Rechazo duro: I1 del servidor. La UI no debería llegar aquí. */
   futuro: boolean;
   /** Más viejo que la ventana del módulo: exige justificación escrita. */
   excedeRetroactividad: boolean;

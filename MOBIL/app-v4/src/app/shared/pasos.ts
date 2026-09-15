@@ -15,7 +15,7 @@ import { chevronBackOutline, chevronForwardOutline } from 'ionicons/icons';
  *
  * Corrección transversal 1 de 03-pantallas.md: en la app vieja las flechas
  * `<` `>` flotan a media altura y quedan ENCIMA de "Seleccione Personal" y
- * de "Unidad de Labor", tapando el control. Acá van a una barra fija
+ * de "Unidad de Labor", tapando el control. Aquí van a una barra fija
  * inferior, fuera del área de scroll, con el indicador de paso al medio —
  * que tampoco existía: no había forma de saber cuántas tareas se llevaban
  * cargadas.

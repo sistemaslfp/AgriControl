@@ -9,7 +9,7 @@
  *    `limites(tipo, false)` con el `false` escrito a mano, así que la ventana
  *    de su módulo era un LIMITE DURO del calendario: 3 días para PM, 7 para
  *    cosecha y riego, 30 para postcosecha, sin forma de pasarse desde el
- *    teléfono. Eso es lo que se abre acá.
+ *    teléfono. Eso es lo que se abre aquí.
  *
  *  - La justificación dejó de viajar pegada dentro de `comentario` como
  *    '[RETROACTIVO] ...' y pasó a ser un campo propio, `justificacion_retro`,

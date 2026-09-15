@@ -242,7 +242,7 @@ export class CosechaPage implements OnInit {
       p.push('Sin sacos pesados no hay cosecha: carga al menos uno.');
     }
     if (c.sacos.some((s) => s.libras !== null && s.libras <= 0)) {
-      p.push('Hay sacos en 0: borrálos o poneles el peso.');
+      p.push('Hay sacos en 0: bórralos o ponles el peso.');
     }
     return p;
   }
@@ -538,7 +538,7 @@ export class CosechaPage implements OnInit {
     this.selectorAbierto.set(true);
   }
 
-  /** El mismo filtro de rol 8 que el PM; acá se llama Supervisor. */
+  /** El mismo filtro de rol 8 que el PM; aquí se llama Supervisor. */
   async abrirResponsable(): Promise<void> {
     const f = this.finca();
     this.destino = 'responsable';
