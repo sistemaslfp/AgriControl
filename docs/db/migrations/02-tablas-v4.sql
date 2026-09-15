@@ -564,7 +564,10 @@ CREATE TABLE IF NOT EXISTS mig_descarte (
   id_conservado INT         NULL,
   payload       JSON        NULL,      -- la fila completa, tal cual estaba
   created_at    DATETIME    NOT NULL,
-  KEY idx_mig_origen (tabla_origen, id_origen)
+  -- Con `motivo` adentro: la migración pregunta miles de veces "¿esta fila ya
+  -- está descartada POR ESTE motivo?", y sin el tercer campo cada pregunta
+  -- recorre todas las filas del mismo id de origen.
+  KEY idx_mig_origen (tabla_origen, id_origen, motivo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- =========================================================================

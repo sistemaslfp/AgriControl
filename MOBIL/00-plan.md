@@ -26,9 +26,20 @@ al día al **2026-09-02**.
 | 7 | **Riego** — bitácora propia, no cierra tareas AM | **HECHO** (2026-09-08) — `tipo: riego` en `/v4/sync` y la pantalla `/riego`. `reg_riego` no se tocó |
 | 8 | **Migración del histórico y corte** | diferido sin fecha |
 
-La migración de la ventana de agosto está **hecha y verificada**
-(`docs/db/migrations/03-migracion-agosto.sql`), y es independiente del paso 8:
-migra desde 2026-08-01, no el histórico.
+**La migración del histórico COMPLETO está hecha y verificada el 2026-09-14**
+(`docs/db/migrations/03-migracion-historico.sql`). Hasta ese día sólo cubría la
+ventana desde `2026-08-01`; **Kevin decidió migrar todo**. El archivo viejo
+quedó en `_historico/2026-09-14-03-migracion-agosto.sql`.
+
+Lo que entra: **91.736 filas en `reg_am`** (85.443 cerradas, 6.293 abiertas,
+6.571 deducidas de un avance sin AM), 11.429 cosechas con 59.215 sacos, 6.370
+riegos y 43 partidas de postcosecha. Lo que no entra queda auditado en
+`mig_descarte`: **58.433 filas**, con la fila completa en `payload` y sin tocar
+una sola fila de las `z_*`.
+
+**El cuadre de agosto sobrevivió intacto**, que es el criterio de aceptación:
+550 / 495 cerradas / 55 abiertas / 21 deducidas, y `vw_reg_reporte_pago` en
+**495 / 79.298,40 / 15.091,66**, idéntico a `vw_reporte_pago` de v3.
 
 ---
 
@@ -129,8 +140,33 @@ hasta el 2026-08-28.
 - **Las tablas `z_*` y los endpoints V3 quedan activos hasta nuevo aviso.** La
   web los usa como "Datos Históricos" y otra finca sigue trabajando con ese
   sistema. **No proponer renombrarlos a `_v3` ni apagar V3.**
-- **Se migró sólo desde `2026-08-01`**, ambas fincas. El histórico se queda en
-  `z_*`. La fusión completa está **diferida sin fecha**. *(Pendiente #3)*
+- **SE MIGRA TODO EL HISTÓRICO** (Kevin, 2026-09-14), ambas fincas. Reemplaza a
+  la decisión anterior —"sólo desde `2026-08-01`, la fusión completa diferida
+  sin fecha"— y cierra el pendiente #3. Las `z_*` no se tocan igual: siguen
+  siendo la fuente de v3 y de todo lo que se descartó.
+
+  **Lo que la ventana chica tapaba, y apareció al abrirla:**
+  - **25.477 filas con una referencia rota** a un catálogo borrado (14.012 de
+    AM, 11.465 de PM). Van a `mig_descarte` con `referencia_rota` y no entran:
+    la FK las rechaza y no se puede inventar a quién se referían. **El 86 % es
+    de 2021-2022**, cuando `Modulo.php` borraba catálogos en duro.
+  - **15.924 filas de AM duplicadas** (14 % de la tabla). En agosto eran 61.
+  - **El emparejamiento del cierre es ambiguo**: la clave (trabajador, fecha,
+    lote, subtarea) no lleva la hora, así que **798 avances matchean más de un
+    AM** (682 grupos, 1.381 filas). Se resuelve con una tabla puente y dos
+    restricciones; el avance que pierde se convierte en su propia fila `mig-pm`,
+    no se pierde.
+  - **Tres filas con la fecha en otro formato** y **dos con `fecha_registro` en
+    `0000-00-00`**, que bajo `STRICT_ALL_TABLES` tumban el INSERT.
+  - **Sin índices de apoyo la migración no termina**: 1.1b seguía corriendo a
+    los 19 minutos. Con ellos, el archivo entero corre en ~5 minutos.
+
+- **Los AM abiertos se migran ABIERTOS.** Son 6.293 y **no bloquean nada**,
+  medido: `am_abiertos_get()` exige el parámetro `fecha` y `sync_am_abierto()`
+  filtra al día, así que un abierto de 2022 no puede estorbar una captura de
+  2026; y `vw_reg_reporte_pago` los excluye solo con `cierre_guid IS NOT NULL`.
+  Un AM abierto no es basura: es la evidencia de que la tarea se asignó y nadie
+  la cerró.
 - **La web resuelve v3/v4 con un selector por período**: hasta 2026-07-31 sólo
   v3; agosto los dos (duplicado a propósito, es el colchón de comparación);
   desde 2026-09-01 sólo v4. **Con eso no hacen falta vistas UNION** — y hay tres

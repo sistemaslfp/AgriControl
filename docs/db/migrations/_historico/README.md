@@ -81,3 +81,22 @@ forma vieja, vacías. `CREATE TABLE IF NOT EXISTS` las acepta en silencio, así
 que `../02-tablas-v4.sql` parecería correr bien y dejaría un `reg_am` sin
 `personal_id` ni `cierre_*`. Por eso ese archivo abre con un guardián que
 **aborta con un mensaje legible** en vez de dejar pasar el error.
+
+## `2026-09-14-03-migracion-agosto.sql`
+
+**De qué estado a qué estado llevaba:** de la base con las tablas V4 vacías, a
+la base con **sólo la ventana desde `2026-08-01`** cargada. Era el archivo
+`03-migracion-agosto.sql`, y la ventana no era un parámetro: `>= '2026-08-01'`
+estaba escrito en veinte lugares.
+
+**Por qué se retiró (Kevin, 2026-09-14):** se decidió migrar **todo el
+histórico**, así que lo reemplaza `03-migracion-historico.sql`. La lógica es la
+misma; lo que cambió es que se quitaron esas veinte condiciones y se agregó lo
+que la ventana chica tapaba: referencias rotas a catálogos borrados, fechas en
+otro formato, fechas en cero, el emparejamiento ambiguo del cierre y los
+índices de apoyo sin los cuales la migración no termina.
+
+**Sigue sirviendo para una cosa:** reproducir el estado con el que se validó la
+nómina de agosto (495 / 79.298,40 / 15.091,66) sin cargar cinco años. El
+archivo nuevo da ese mismo cuadre para agosto, así que no hace falta — pero si
+alguna vez hay que aislar la ventana, está acá.

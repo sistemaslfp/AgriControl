@@ -626,10 +626,18 @@ corte, decida lo que decida el pendiente #10.
 
 ### El migrador — escrito y verificado
 
-`docs/db/migrations/03-migracion-agosto.sql`. Corrido dos veces seguidas sobre
-la copia real: la segunda no inserta nada **y los 550 guid son los mismos** —es
-idempotente y además reproducible, porque los guid se derivan del id de origen.
-Cero rechazos de FK, cero filas tocadas en las `z_*`.
+`docs/db/migrations/03-migracion-historico.sql` (hasta el 2026-09-14 cubría
+sólo la ventana de agosto y se llamaba `03-migracion-agosto.sql`). Corrido dos
+veces seguidas sobre la copia real: la segunda **no cambia ni un número** y los
+guid son los mismos —es idempotente y además reproducible, porque los guid se
+derivan del id de origen—. Cero rechazos de FK, cero filas tocadas en las `z_*`.
+
+**Hacer idempotente el cierre costó una condición que no es obvia.** En la
+segunda corrida la tarea que un avance ya cerró no está abierta, así que el
+emparejamiento le busca OTRA candidata y trata de escribirle el mismo
+`cierre_guid`: `Duplicate entry ... for key 'uq_am_cierre_guid'`. Por eso el
+`INSERT` de la tabla puente excluye los avances que ya figuran aplicados en
+`reg_am`.
 
 | origen (>= 2026-08-01) | destino |
 |---|---|

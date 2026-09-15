@@ -62,10 +62,17 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   (`Poscosecha cacao`), con lo que **se cierra el hueco de los 38 AM de
   poscosecha de agosto**. Verificado con curl contra CI3 + la base real y con
   las cuatro suites e2e.
-- **Migración de la ventana de agosto — HECHA y verificada.**
-  `docs/db/migrations/03-migracion-agosto.sql`.
+- **MIGRACIÓN DEL HISTÓRICO COMPLETO — HECHA y verificada (2026-09-14).**
+  `docs/db/migrations/03-migracion-historico.sql`. Hasta ese día cubría sólo
+  desde `2026-08-01`; Kevin decidió migrar todo, y el archivo viejo quedó en
+  `_historico/2026-09-14-03-migracion-agosto.sql`. **91.736 filas en `reg_am`**
+  (85.443 cerradas, 6.293 abiertas, 6.571 deducidas), 11.429 cosechas / 59.215
+  sacos, 6.370 riegos, 43 partidas, y **58.433 filas auditadas en
+  `mig_descarte`**. Corre en ~5 min y es idempotente.
+  **El cuadre de agosto no se movió**: 550 / 495 / 55 / 21 y
+  `vw_reg_reporte_pago` en 495 / 79.298,40 / 15.091,66.
 - **Migraciones consolidadas — HECHO (2026-09-02).** De seis archivos a cuatro
-  (`01-catalogos`, `02-tablas-v4`, `03-migracion-agosto`, `04-vistas-v4`). Las
+  (`01-catalogos`, `02-tablas-v4`, `03-migracion-historico`, `04-vistas-v4`). Las
   viejas están en `_historico/` con un README que explica de qué estado a qué
   estado llevaba cada una.
 
@@ -193,8 +200,10 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
   binaria aparte). Verificado con curl contra CI3 + la base real: alta,
   reenvío con `lot_code`, etapa repetida, calidad repetida, cosecha ya tomada,
   doble cierre y etapa sobre partida cerrada.
-- **Deduplicación — HECHA (2026-09-05).** Secciones 2.0 y 3.0 de
-  `03-migracion-agosto.sql`: 9 pares exactos de cosecha (41 cosechas, **201
+- **Deduplicación — HECHA (2026-09-05), ampliada a todo el histórico el
+  2026-09-14.** Secciones 2.0 y 3.0 de `03-migracion-historico.sql`. Sobre el
+  histórico completo son **15.924 filas de AM, 11.242 de PM, 3.408 de riego y
+  564 de cosecha**. Sobre la ventana de agosto eran: 9 pares exactos de cosecha (41 cosechas, **201
   sacos / 17.701,00 lb**, antes 217 / 19.055,40) y **173 filas de riego, todas
   del 2026-08-19** (`reg_riego` 279 → **106**). Poscosecha no tenía duplicados.
   Se marcan en `mig_descarte` como `duplicado_exacto` y **no se borra nada del
@@ -202,10 +211,10 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 
 ## Lo siguiente, en orden
 
-1. **Los pasos 1 a 7 están hechos.** Lo que queda del plan es el paso 8
-   (migración del histórico y corte), diferido sin fecha, y los flecos de abajo.
-   **Riego fue lo último grande** (2026-09-08); de postcosecha sólo faltan las
-   fotos, que Kevin dejó fuera a propósito.
+1. **Los pasos 1 a 7 están hechos, y la MIGRACIÓN DEL HISTÓRICO del paso 8
+   también** (2026-09-14). Del paso 8 queda **sólo el corte**: renombrar las
+   `z_*` a `_v3`, apuntar las pantallas a las vistas V4 y apagar la app vieja.
+   Sigue sin fecha.
 2. **Las fotos de postcosecha** y, con ellas, `vw_postharvest_rpt_001`, que
    depende de las tres vistas de fotos. Necesitan una cola binaria aparte.
 3. **Validar finca de persona y de subtarea en `sync_am`.** Las columnas existen
@@ -216,13 +225,22 @@ corriendo V3 con la app vieja**: ninguna migración de V4 está aplicada allá.
 5. **La IP fija del servidor de la finca** en `network_security_config.xml`
    (hay un `TODO(Kevin)`), y **probar el arreglo de LAN en la red real**: WiFi
    sin internet y datos móviles encendidos, que es el escenario que falla.
-6. **Las fotos de postcosecha**, que necesitan una cola binaria aparte.
+   **Kevin, 2026-09-14: el arreglo de LAN se prueba a futuro.**
+6. **Apuntar las pantallas a las vistas V4.** Las cinco vistas existen desde el
+   2026-09-14 con el contrato de columnas de v3, pero `AM.php`,
+   `Reporteam_model.php`, `PM.php`, `Pm_model.php`, `Cosechacacao.php` y
+   `Postharvest_model.php` **siguen leyendo las viejas**. Acá sí hace falta el
+   selector por período: hasta julio de 2026 los datos existían sólo en `z_*`
+   -- aunque desde la migración del histórico eso ya no es cierto, así que
+   conviene revisar si el selector sigue haciendo falta o si alcanza con
+   apuntar todo a V4.
 7. Después: el corte.
 
 **Cerrados el 2026-09-14, por si el texto viejo confunde:** el pendiente #1 (las
-cinco ventanas de retroactividad), el campo propio de la justificación, la
-subtarea 24 y `vw_reg_cosecha` —que ya existía desde el commit `e326b58`—.
-Detalle Registro está hecho desde el 2026-09-08.
+cinco ventanas de retroactividad), el pendiente #3 (la fusión del histórico:
+se migró todo), el campo propio de la justificación, la subtarea 24 y
+`vw_reg_cosecha` —que ya existía desde el commit `e326b58`—. Detalle Registro
+está hecho desde el 2026-09-08.
 
 Las decisiones cerradas —las que no hay que volver a discutir— están en
 **`00-plan.md`**, una conclusión por tema. No se repiten acá.
