@@ -7,9 +7,9 @@
 -- el 2026-09-05 y se descartó--, así que sacarla fue quitar esas veinte
 -- condiciones, no cambiar un número.
 --
--- Consolidada el 2026-09-02: carga reg_am DIRECTAMENTE en su forma final
+-- Consolidada el 2026-09-02: carga lfp_am DIRECTAMENTE en su forma final
 -- (una fila = una persona, con el cierre adentro). Producción nunca tuvo
--- reg_am_personal ni reg_pm, así que no pasa por ellas.
+-- lfp_am_personal ni lfp_pm, así que no pasa por ellas.
 -- Idempotente: se puede correr N veces. La segunda vez no inserta nada.
 -- Auditoría de todo lo descartado en mig_descarte (fila completa en payload).
 -- No modifica NI UNA fila de las tablas z_*.
@@ -17,7 +17,7 @@
 -- ---------------------------------------------------------------------------
 -- LO QUE CAMBIA AL ABRIR LA VENTANA, MEDIDO ANTES DE ESCRIBIRLO
 --
--- 1. LAS REFERENCIAS ROTAS DEJAN DE SER TEÓRICAS. Las FK de reg_am se
+-- 1. LAS REFERENCIAS ROTAS DEJAN DE SER TEÓRICAS. Las FK de lfp_am se
 --    declararon a propósito, y contra el histórico completo **14.012 filas de
 --    z_tabla_am (12,4 %) y 11.465 de z_tabla_pm (10,6 %) apuntan a un catálogo
 --    que ya no existe**. Por año:
@@ -41,9 +41,9 @@
 --    responde 400 sin él, y `sync_am_abierto()` filtra entre `00:00:00` y
 --    `23:59:59` de esa misma fecha--. Un abierto de 2022 no puede estorbar una
 --    captura de 2026. Y de la nómina ya quedan fuera solos:
---    `vw_reg_reporte_pago` lleva `WHERE cierre_guid IS NOT NULL`.
+--    `vw_lfp_reporte_pago` lleva `WHERE cierre_guid IS NOT NULL`.
 --    Un AM abierto NO es basura: es la evidencia de que la tarea se asignó y
---    nadie la cerró. Borrarla sería tirar justo el dato que reg_am guarda.
+--    nadie la cerró. Borrarla sería tirar justo el dato que lfp_am guarda.
 --
 -- 3. LOS DUPLICADOS SON MUCHÍSIMOS MÁS QUE EN AGOSTO. En la ventana de agosto
 --    eran 61 filas de AM; en el histórico completo son **15.924 filas
@@ -59,6 +59,13 @@
 
 USE lfp_prodapp;
 SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE';
+
+-- MySQL Workbench abre cada pestana con SQL_SAFE_UPDATES = 1 y rechaza con
+-- ERROR 1175 los dos UPDATE de este archivo: el del cierre (1.3) porque
+-- `cierre_guid IS NULL` no cuenta como uso de clave aunque la columna sea
+-- UNIQUE, y el de los totales de cosecha (2.x) porque filtra por `origen`,
+-- que no tiene indice. Sin esta linea el archivo se corta en el cierre.
+SET SQL_SAFE_UPDATES = 0;
 
 -- ---------------------------------------------------------------------------
 -- ÍNDICES DE APOYO, temporales. SE CREAN AQUÍ Y SE BORRAN AL FINAL.
@@ -83,7 +90,7 @@ CREATE INDEX IF NOT EXISTS ix_mig_am_dup ON z_tabla_am
 CREATE INDEX IF NOT EXISTS ix_mig_pm_dup ON z_tabla_pm
   (finca, fecha, subtarea, trabajador, cantidad, hora_inicio, hora_cierre, id);
 CREATE INDEX IF NOT EXISTS ix_mig_pm_match ON z_tabla_pm (trabajador, fecha, lote, subtarea);
--- Sobre reg_am, para el emparejamiento del cierre. Sin éste el optimizador
+-- Sobre lfp_am, para el emparejamiento del cierre. Sin éste el optimizador
 -- entra por `fk_am_lote` --sólo `lote_id`-- y el UPDATE de 1.3 no termina.
 
 -- ---------------------------------------------------------------------------
@@ -111,7 +118,7 @@ CREATE INDEX IF NOT EXISTS ix_mig_pm_match ON z_tabla_pm (trabajador, fecha, lot
 -- cultivo, lote, modulos, subtarea): exactamente lo que en la app es un
 -- formulario.
 
--- (El índice sobre reg_am se crea en 1.3, porque la tabla se llena recién ahí.)
+-- (El índice sobre lfp_am se crea en 1.3, porque la tabla se llena recién ahí.)
 
 -- ---------------------------------------------------------------------------
 -- 0. Lo que NO puede entrar: fechas ilegibles y referencias rotas
@@ -193,12 +200,12 @@ WHERE (   NOT EXISTS (SELECT 1 FROM z_personal x WHERE x.id = a.personal_id)
 -- OJO CON EL RESPONSABLE, QUE ES LA EXCEPCIÓN: 2.165 filas de z_tabla_pm
 -- tienen SÓLO `responsable` roto y todo lo demás bueno. Descartarlas de plano
 -- sería tirar 2.165 cierres reales --trabajo hecho y pagado-- porque no
--- sabemos quién los firmó. Como `reg_am.responsable_cierre_id` admite NULL y
--- `vw_reg_reporte_pago` ya hace `COALESCE(responsable_cierre_id,
+-- sabemos quién los firmó. Como `lfp_am.responsable_cierre_id` admite NULL y
+-- `vw_lfp_reporte_pago` ya hace `COALESCE(responsable_cierre_id,
 -- responsable_id)`, se marcan aparte con `responsable_cierre_desconocido`, que
 -- NO es un descarte sino una anotación: 1.3 la tolera --el cierre entra con el
 -- responsable en NULL-- y 1.4 la excluye, porque sin responsable no se puede
--- deducir un AM (`reg_am.responsable_id` es NOT NULL).
+-- deducir un AM (`lfp_am.responsable_id` es NOT NULL).
 --
 -- **CON ESTOS DATOS NO SALVA NINGUNO, Y ESO ESTÁ MEDIDO.** De las 2.165, a
 -- **2.066 el AM también se les descartó** --es la misma persona borrada, que
@@ -279,7 +286,7 @@ WHERE 1 = 1
 -- 1.1b — Descartes de AM: la misma persona repetida dentro de la misma captura
 -- es una programación duplicada. Antes la colapsaba solo el UNIQUE de la tabla
 -- puente; ahora que la persona ES la fila hay que filtrarla explícitamente,
--- porque dos filas idénticas de z_tabla_am darían dos filas de reg_am.
+-- porque dos filas idénticas de z_tabla_am darían dos filas de lfp_am.
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
 SELECT 'z_tabla_am', a.id, 'duplicado_cabecera_persona',
        (SELECT MIN(b.id) FROM z_tabla_am b
@@ -306,7 +313,7 @@ WHERE 1 = 1
 --
 -- `modulos` se copia tal cual de z_tabla_am salvo por la normalización: se
 -- reordena por valor y se quitan repetidos, que es el contrato de la columna.
-INSERT INTO reg_am
+INSERT INTO lfp_am
   (guid, captura_guid, fecha_proceso, finca_id, responsable_id, cultivo_id, lote_id,
    modulos, subtarea_id, personal_id, comentario, created_at_device,
    received_at_server, origen)
@@ -334,7 +341,7 @@ FROM (
         FROM z_tabla_am zz
        -- El MIN(id) del grupo es el que da el `captura_guid`. Si una fila
        -- descartada fuera la menor, TODAS las personas de esa captura
-       -- quedarían agrupadas bajo el guid de una fila que no existe en reg_am.
+       -- quedarían agrupadas bajo el guid de una fila que no existe en lfp_am.
        WHERE NOT EXISTS (SELECT 1 FROM mig_descarte d
                           WHERE d.tabla_origen='z_tabla_am' AND d.id_origen=zz.id
                             AND d.motivo IN ('referencia_rota','fecha_ilegible'))
@@ -351,7 +358,7 @@ FROM (
                        AND d.id_origen=a.id
                        AND d.motivo IN ('duplicado_cabecera_persona','referencia_rota','fecha_ilegible'))
 ) f
-WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.guid = f.guid);
+WHERE NOT EXISTS (SELECT 1 FROM lfp_am r WHERE r.guid = f.guid);
 
 -- 1.3 — El cierre: el avance de z_tabla_pm entra en la fila de esa persona.
 --
@@ -369,7 +376,7 @@ WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.guid = f.guid);
 -- hora --a propósito, porque z_tabla_pm.hora_inicio casi nunca coincide con
 -- z_tabla_am.hora--, así que una persona con la misma tarea dos veces el mismo
 -- día da varios candidatos para un mismo avance. Medido: **682 grupos / 1.381
--- filas de reg_am ambiguas, y 798 filas de z_tabla_pm que matchean más de un
+-- filas de lfp_am ambiguas, y 798 filas de z_tabla_pm que matchean más de un
 -- AM**. Un UPDATE con JOIN escribiría el mismo `cierre_guid` en dos filas.
 --
 -- Se resuelve con dos restricciones de la tabla puente:
@@ -380,7 +387,7 @@ WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.guid = f.guid);
 --
 -- El avance que pierde la pulseada NO se pierde: como no queda aplicado en
 -- ningún lado, la sección 1.4 le arma su propia fila con origen 'mig-pm'.
-CREATE INDEX IF NOT EXISTS ix_mig_regam_match ON reg_am (personal_id, lote_id, subtarea_id, fecha_proceso);
+CREATE INDEX IF NOT EXISTS ix_mig_regam_match ON lfp_am (personal_id, lote_id, subtarea_id, fecha_proceso);
 
 DROP TABLE IF EXISTS mig_pm_am;
 CREATE TABLE mig_pm_am (
@@ -392,7 +399,7 @@ CREATE TABLE mig_pm_am (
 INSERT IGNORE INTO mig_pm_am (pm_id, am_id)
 SELECT p.id, MIN(n.id)
   FROM z_tabla_pm p
-  JOIN reg_am n
+  JOIN lfp_am n
     ON  n.personal_id = p.trabajador
     AND DATE(n.fecha_proceso) = p.fecha
     AND n.lote_id     = p.lote
@@ -409,7 +416,7 @@ SELECT p.id, MIN(n.id)
    -- mismo `cierre_guid` -- `Duplicate entry ... for key 'uq_am_cierre_guid'`.
    -- Un avance ya aplicado no vuelve a emparejarse con nada.
    AND NOT EXISTS (
-         SELECT 1 FROM reg_am r
+         SELECT 1 FROM lfp_am r
           WHERE r.cierre_guid = LOWER(CONCAT(
                   SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),9,4),
                   '-5',SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),18,3),
@@ -417,7 +424,7 @@ SELECT p.id, MIN(n.id)
  GROUP BY p.id
  ORDER BY p.id;
 
-UPDATE reg_am n
+UPDATE lfp_am n
   JOIN mig_pm_am   m ON m.am_id = n.id
   JOIN z_tabla_pm  p ON p.id    = m.pm_id
    SET n.cantidad                 = p.cantidad,
@@ -425,7 +432,7 @@ UPDATE reg_am n
        n.comentario_cierre        = NULLIF(p.comentario,''),
        -- NULL cuando el responsable ya no existe (2.165 filas del histórico):
        -- la FK lo rechazaría, y el cierre en sí es un dato real que no se
-       -- tira por eso. `vw_reg_reporte_pago` cae al responsable de la mañana.
+       -- tira por eso. `vw_lfp_reporte_pago` cae al responsable de la mañana.
        n.responsable_cierre_id    = (SELECT x.id FROM z_personal x WHERE x.id = p.responsable),
        n.cierre_guid              = LOWER(CONCAT(SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),9,4),
                                       '-5',SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_tabla_pm:',p.id)),18,3),
@@ -443,7 +450,7 @@ UPDATE reg_am n
 -- mañana se reconstruye del propio avance. Quedan con origen 'mig-pm' para que
 -- se sepa que la programación se dedujo, no se capturó, y con captura_guid en
 -- NULL porque no salieron de ningún formulario.
-INSERT INTO reg_am
+INSERT INTO lfp_am
   (guid, captura_guid, fecha_proceso, finca_id, responsable_id, cultivo_id, lote_id,
    modulos, subtarea_id, personal_id, comentario, received_at_server, origen,
    cantidad, hora_cierre, comentario_cierre, responsable_cierre_id,
@@ -475,18 +482,18 @@ FROM (
      AND p.lote IS NOT NULL AND p.subtarea IS NOT NULL AND p.trabajador IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_tabla_pm' AND d.id_origen=p.id)
 ) f
-WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.cierre_guid = f.cierre_guid)
-  AND NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.guid       = f.guid);
+WHERE NOT EXISTS (SELECT 1 FROM lfp_am r WHERE r.cierre_guid = f.cierre_guid)
+  AND NOT EXISTS (SELECT 1 FROM lfp_am r WHERE r.guid       = f.guid);
 
 -- ---------------------------------------------------------------------------
 -- 2. Cosecha (+ sacos) — se CUELGA del AM, no es una fila suelta
 -- ---------------------------------------------------------------------------
--- Desde el 2026-09-03 una cosecha es el CIERRE de una tarea AM: `reg_cosecha`
+-- Desde el 2026-09-03 una cosecha es el CIERRE de una tarea AM: `lfp_cosecha`
 -- no repite finca, supervisor, subtarea, trabajador, lote ni fecha, y su guid
--- ES `reg_am.cierre_guid`.
+-- ES `lfp_am.cierre_guid`.
 --
 -- Las 60 filas de agosto de z_cosecha_cacao emparejan con **exactamente un**
--- reg_am cada una por (trabajador, subtarea, día) — verificado: ninguna con 0
+-- lfp_am cada una por (trabajador, subtarea, día) — verificado: ninguna con 0
 -- ni con 2.
 --
 -- **No se cierra ningún AM aquí.** 15 de esas 60 cuelgan de un AM que quedó
@@ -503,7 +510,7 @@ WHERE NOT EXISTS (SELECT 1 FROM reg_am r WHERE r.cierre_guid = f.cierre_guid)
 --
 -- La clave es TODA la fila menos id y created_at, sacos individuales incluidos:
 -- nunca se colapsan dos filas que difieran en un dato. En la ventana de agosto
--- son 9 pares byte a byte (4 del 08-03 que entran a reg_cosecha y 5 del 08-26),
+-- son 9 pares byte a byte (4 del 08-03 que entran a lfp_cosecha y 5 del 08-26),
 -- y da lo mismo con o sin los 15 sacos en la clave. Ojo con el trabajador 738:
 -- tiene DOS registros legitimos distintos ese dia (58,00 en el modulo 6 y 65,00
 -- en el 1), cada uno con su duplicado -- por eso `modulo` va en la clave.
@@ -539,9 +546,9 @@ WHERE 1 = 1
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
 SELECT 'z_cosecha_cacao', c.id, 'cosecha_sin_cierre_am', a.id,
        JSON_OBJECT('fecha',c.fecha,'trabajador',c.trabajador,'subtarea',c.subtarea,
-                   'total_sacos',c.total_sacos,'total_peso',c.total_peso,'reg_am_id',a.id), NOW()
+                   'total_sacos',c.total_sacos,'total_peso',c.total_peso,'lfp_am_id',a.id), NOW()
 FROM z_cosecha_cacao c
-JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+JOIN lfp_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
 WHERE a.cierre_guid IS NULL
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
@@ -556,7 +563,7 @@ INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payloa
 SELECT 'z_cosecha_cacao', c.id, 'cosecha_total_no_cuadra', a.id,
        JSON_OBJECT('cantidad_am',a.cantidad,'total_peso',c.total_peso,'origen_am',a.origen), NOW()
 FROM z_cosecha_cacao c
-JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+JOIN lfp_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
 WHERE a.cierre_guid IS NOT NULL
   AND ABS(a.cantidad - c.total_peso) >= 0.01
@@ -566,7 +573,7 @@ WHERE a.cierre_guid IS NOT NULL
                     AND d.id_origen=c.id AND d.motivo='cosecha_total_no_cuadra');
 
 -- El guid es el del cierre: una cosecha ES el cierre de esa tarea. Así el
--- invariante `reg_cosecha.guid = reg_am.cierre_guid` vale también para lo
+-- invariante `lfp_cosecha.guid = lfp_am.cierre_guid` vale también para lo
 -- migrado, y no hace falta inventar un guid nuevo.
 --
 -- Se AGRUPA por AM. Hasta el 2026-09-05 el comentario decía que las 8 tareas
@@ -576,21 +583,21 @@ WHERE a.cierre_guid IS NOT NULL
 -- existe y está a la vista: el trabajador 738 el 26-08 pesó en el módulo 6
 -- (58,00) y en el 1 (65,00) bajo el mismo AM — hoy no entra porque ese AM quedó
 -- abierto, pero el día que entre hay que sumarlo, no elegir uno.
-INSERT INTO reg_cosecha (guid, reg_am_id, total_sacos, total_peso, observaciones,
+INSERT INTO lfp_cosecha (guid, lfp_am_id, total_sacos, total_peso, observaciones,
                          created_at_device, received_at_server, origen)
 SELECT a.cierre_guid, a.id, SUM(c.total_sacos), SUM(c.total_peso),
        NULLIF(LEFT(GROUP_CONCAT(NULLIF(c.observaciones,'') SEPARATOR ' | '),500),''),
        MIN(c.created_at), NOW(), 'migracion'
 FROM z_cosecha_cacao c
-JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+JOIN lfp_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
 WHERE a.cierre_guid IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_cosecha_cacao'
                     AND d.id_origen=c.id AND d.motivo IN ('duplicado_exacto','fecha_ilegible','referencia_rota'))
-  AND NOT EXISTS (SELECT 1 FROM reg_cosecha r WHERE r.reg_am_id = a.id)
+  AND NOT EXISTS (SELECT 1 FROM lfp_cosecha r WHERE r.lfp_am_id = a.id)
 GROUP BY a.id, a.cierre_guid;
 
-INSERT IGNORE INTO reg_cosecha_saco (cosecha_id, numero, libras)
+INSERT IGNORE INTO lfp_cosecha_saco (cosecha_id, numero, libras)
 SELECT r.id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY c.id, n.numero),
        CASE n.numero
         WHEN 1 THEN c.saco1 WHEN 2 THEN c.saco2 WHEN 3 THEN c.saco3 WHEN 4 THEN c.saco4 WHEN 5 THEN c.saco5
@@ -598,9 +605,9 @@ SELECT r.id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY c.id, n.numero),
         WHEN 11 THEN c.saco11 WHEN 12 THEN c.saco12 WHEN 13 THEN c.saco13 WHEN 14 THEN c.saco14
         WHEN 15 THEN c.saco15 END
 FROM z_cosecha_cacao c
-JOIN reg_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
+JOIN lfp_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)
-JOIN reg_cosecha r ON r.reg_am_id = a.id
+JOIN lfp_cosecha r ON r.lfp_am_id = a.id
 JOIN (SELECT 1 numero UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
       UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
       UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15) n
@@ -615,9 +622,9 @@ WHERE 1 = 1
 
 -- Los totales se REDERIVAN de los sacos, la misma regla que aplica el servidor
 -- en sync_cosecha: lo que manda es el detalle, no el número que traía la fila.
-UPDATE reg_cosecha r
-   SET r.total_sacos = (SELECT COUNT(*)               FROM reg_cosecha_saco s WHERE s.cosecha_id = r.id),
-       r.total_peso  = (SELECT COALESCE(SUM(s.libras),0) FROM reg_cosecha_saco s WHERE s.cosecha_id = r.id)
+UPDATE lfp_cosecha r
+   SET r.total_sacos = (SELECT COUNT(*)               FROM lfp_cosecha_saco s WHERE s.cosecha_id = r.id),
+       r.total_peso  = (SELECT COALESCE(SUM(s.libras),0) FROM lfp_cosecha_saco s WHERE s.cosecha_id = r.id)
  WHERE r.origen = 'migracion';
 
 -- ---------------------------------------------------------------------------
@@ -660,7 +667,7 @@ WHERE 1 = 1
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_riego'
                     AND d.id_origen=a.id AND d.motivo IN ('duplicado_exacto','fecha_ilegible','referencia_rota'));
 
-INSERT INTO reg_riego (guid, fecha_proceso, finca_id, supervisor_id, lote_id, modulo_id, subtarea_id,
+INSERT INTO lfp_riego (guid, fecha_proceso, finca_id, supervisor_id, lote_id, modulo_id, subtarea_id,
                        tiempo_riego_min, volumen_riego, observaciones,
                        created_at_device, received_at_server, origen)
 SELECT LOWER(CONCAT(SUBSTR(MD5(CONCAT('z_riego:',g.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_riego:',g.id)),9,4),
@@ -680,7 +687,7 @@ FROM z_riego g
 WHERE 1 = 1
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_riego'
                     AND d.id_origen=g.id AND d.motivo IN ('duplicado_exacto','fecha_ilegible','referencia_rota'))
-  AND NOT EXISTS (SELECT 1 FROM reg_riego r WHERE r.guid = LOWER(CONCAT(
+  AND NOT EXISTS (SELECT 1 FROM lfp_riego r WHERE r.guid = LOWER(CONCAT(
         SUBSTR(MD5(CONCAT('z_riego:',g.id)),1,8),'-',SUBSTR(MD5(CONCAT('z_riego:',g.id)),9,4),
         '-5',SUBSTR(MD5(CONCAT('z_riego:',g.id)),14,3),'-a',SUBSTR(MD5(CONCAT('z_riego:',g.id)),18,3),
         '-',SUBSTR(MD5(CONCAT('z_riego:',g.id)),21,12))));
@@ -724,19 +731,19 @@ WHERE 1 = 1
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
 SELECT 'z_postharvest_weight', w.id, 'partida_sin_peso_respaldado', NULL,
        JSON_OBJECT('lot_number',w.lot_number,'lot_weight',w.lot_weight,
-                   'cosechas_enlazables',(SELECT COUNT(*) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+                   'cosechas_enlazables',(SELECT COUNT(*) FROM lfp_cosecha rc JOIN lfp_am ra ON ra.id = rc.lfp_am_id
             WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
                                               WHERE h2.created_at = w.created_at)),
-                   'suma_cosechas',(SELECT COALESCE(SUM(rc.total_peso),0) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+                   'suma_cosechas',(SELECT COALESCE(SUM(rc.total_peso),0) FROM lfp_cosecha rc JOIN lfp_am ra ON ra.id = rc.lfp_am_id
             WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
                                               WHERE h2.created_at = w.created_at)),
                    'created_at',DATE_FORMAT(w.created_at,'%Y-%m-%d %H:%i:%s')), NOW()
 FROM z_postharvest_weight w
 WHERE 1 = 1
   AND EXISTS (SELECT 1 FROM z_postharvest_lotsharvest h WHERE h.created_at = w.created_at)
-  AND ((SELECT COUNT(*) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+  AND ((SELECT COUNT(*) FROM lfp_cosecha rc JOIN lfp_am ra ON ra.id = rc.lfp_am_id
             WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
-                                              WHERE h2.created_at = w.created_at)) = 0 OR ABS(w.lot_weight - (SELECT COALESCE(SUM(rc.total_peso),0) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+                                              WHERE h2.created_at = w.created_at)) = 0 OR ABS(w.lot_weight - (SELECT COALESCE(SUM(rc.total_peso),0) FROM lfp_cosecha rc JOIN lfp_am ra ON ra.id = rc.lfp_am_id
             WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
                                               WHERE h2.created_at = w.created_at))) >= 0.01)
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_postharvest_weight'
@@ -764,10 +771,10 @@ FROM (
   GROUP BY w.lot_number, w.supervisor_id, w.lot_weight, w.container_weight, w.comments, w.created_at, r.output_weight
   -- El peso tiene que salir de las cosechas, no de v3. Va en HAVING y no en
   -- WHERE a propósito: así el ROW_NUMBER del `seq` sólo numera las que entran.
-  HAVING (SELECT COUNT(*) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+  HAVING (SELECT COUNT(*) FROM lfp_cosecha rc JOIN lfp_am ra ON ra.id = rc.lfp_am_id
             WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
                                               WHERE h2.created_at = w.created_at)) > 0
-     AND ABS(w.lot_weight - (SELECT COALESCE(SUM(rc.total_peso),0) FROM reg_cosecha rc JOIN reg_am ra ON ra.id = rc.reg_am_id
+     AND ABS(w.lot_weight - (SELECT COALESCE(SUM(rc.total_peso),0) FROM lfp_cosecha rc JOIN lfp_am ra ON ra.id = rc.lfp_am_id
             WHERE DATE(ra.fecha_proceso) IN (SELECT h2.lot_date FROM z_postharvest_lotsharvest h2
                                               WHERE h2.created_at = w.created_at))) < 0.01
 ) p
@@ -785,10 +792,10 @@ JOIN pc_proceso pp ON pp.guid = LOWER(CONCAT(
        SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),1,8),'-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),9,4),
        '-5',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),14,3),'-a',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),18,3),
        '-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),21,12)))
--- reg_cosecha ya no tiene fecha propia: cuelga del AM, y la fecha del trabajo
+-- lfp_cosecha ya no tiene fecha propia: cuelga del AM, y la fecha del trabajo
 -- es la de esa tarea.
-JOIN reg_cosecha rc ON TRUE
-JOIN reg_am ra ON ra.id = rc.reg_am_id AND DATE(ra.fecha_proceso) = h.lot_date
+JOIN lfp_cosecha rc ON TRUE
+JOIN lfp_am ra ON ra.id = rc.lfp_am_id AND DATE(ra.fecha_proceso) = h.lot_date
 WHERE 1 = 1;
 
 -- Etapas: cinco tablas casi idénticas -> una
@@ -884,25 +891,25 @@ ON DUPLICATE KEY UPDATE last_seq = GREATEST(last_seq, VALUES(last_seq));
 -- Cero rechazos de FK. Cero filas modificadas en cualquier tabla z_*.
 --
 --   ORIGEN (>= 2026-08-01)        ->  DESTINO
---   z_tabla_am        590 filas   ->  reg_am 529 filas en 367 capturas,
+--   z_tabla_am        590 filas   ->  lfp_am 529 filas en 367 capturas,
 --                                     61 descartes               (529+61 = 590)
 --   z_tabla_pm        598 filas   ->  495 cierres sobre esas filas + 21 filas
 --                                     nuevas con origen 'mig-pm' (avances sin
 --                                     AM), 103 descartes         (495+103 = 598)
 --
---   TOTAL reg_am: 550 filas — 495 cerradas, 55 abiertas, 21 deducidas.
+--   TOTAL lfp_am: 550 filas — 495 cerradas, 55 abiertas, 21 deducidas.
 --
 --   EL CUADRE QUE VALE, y el criterio de aceptación de cualquier cambio aquí:
---   `vw_reg_reporte_pago` de agosto da 495 filas, 79.298,40 de cantidad y
+--   `vw_lfp_reporte_pago` de agosto da 495 filas, 79.298,40 de cantidad y
 --   15.091,66 de total — idéntico a `vw_reporte_pago` desde z_tabla_pm. La
 --   nómina no se movió un centavo.
 --
 --   Comparado además fila por fila y columna por columna contra el resultado
 --   de la cadena vieja de seis migraciones: 550 de 550 emparejan y la única
 --   diferencia es el texto del comentario de las 21 filas deducidas.
---   z_cosecha_cacao    60 filas   ->  reg_cosecha 41, 201 sacos, 17.701,00 lb
+--   z_cosecha_cacao    60 filas   ->  lfp_cosecha 41, 201 sacos, 17.701,00 lb
 --                                     (9 duplicados exactos + 10 sin cierre AM)
---   z_riego           279 filas   ->  reg_riego 106 (173 duplicados exactos,
+--   z_riego           279 filas   ->  lfp_riego 106 (173 duplicados exactos,
 --                                     todos del 2026-08-19)
 --   z_postharvest_*     4 partidas->  pc_proceso 4, 25 enlaces de cosecha,
 --                                     13 etapas, 1 calidad ferm., 1 secado, 4 fotos
@@ -934,7 +941,7 @@ ON DUPLICATE KEY UPDATE last_seq = GREATEST(last_seq, VALUES(last_seq));
 -- este archivo.
 -- ---------------------------------------------------------------------------
 DROP TABLE IF EXISTS mig_pm_am;
-DROP INDEX IF EXISTS ix_mig_regam_match ON reg_am;
+DROP INDEX IF EXISTS ix_mig_regam_match ON lfp_am;
 DROP INDEX IF EXISTS ix_mig_am_dup   ON z_tabla_am;
 DROP INDEX IF EXISTS ix_mig_pm_dup   ON z_tabla_pm;
 DROP INDEX IF EXISTS ix_mig_pm_match ON z_tabla_pm;

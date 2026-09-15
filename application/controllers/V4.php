@@ -10,7 +10,7 @@ use chriskacerguis\RestServer\RestController;
  * del ACK: MOBIL/01-sincronizacion.md.
  *
  * V1.php, V2.php, V3.php y API/V3.php están CONGELADOS: no se tocan.
- * V4 escribe únicamente en tablas reg_* / pc_* (a partir del paso 2 del
+ * V4 escribe únicamente en tablas lfp_* / pc_* (a partir del paso 2 del
  * plan); los catálogos z_* se leen, jamás se escriben desde aquí.
  *
  * Seguridad: pendiente API key por dispositivo (02-bd-y-api.md §8).
@@ -136,8 +136,8 @@ class V4 extends RestController
             $db->select('DATE(am.fecha_proceso) AS fecha, COUNT(*) AS cosechas,
                          SUM(c.total_peso) AS peso, SUM(c.total_sacos) AS sacos,
                          GROUP_CONCAT(c.id ORDER BY c.id) AS ids', FALSE)
-               ->from('reg_cosecha c')
-               ->join('reg_am am', 'am.id = c.reg_am_id')
+               ->from('lfp_cosecha c')
+               ->join('lfp_am am', 'am.id = c.lfp_am_id')
                // Una cosecha entra en una sola partida: lo que ya se consumio
                // no se vuelve a ofrecer. Si un dia ya consumido recibe una
                // cosecha nueva, ese dia REAPARECE con el peso que falta --- en
@@ -318,7 +318,7 @@ class V4 extends RestController
                          (SELECT GROUP_CONCAT(zm.modulo ORDER BY zm.modulo SEPARATOR ", ")
                             FROM z_modulo zm
                            WHERE FIND_IN_SET(zm.id, am.modulos)) AS modulos', FALSE)
-               ->from('reg_am am')
+               ->from('lfp_am am')
                ->join('z_personal per', 'per.id = am.personal_id')
                ->join('z_lote l', 'l.id = am.lote_id', 'left')
                ->join('z_cultivo c', 'c.id = am.cultivo_id', 'left')
@@ -572,24 +572,24 @@ class V4 extends RestController
         $res = $this->sync_aplica($db, $rec, $guid, $tipo, $alias, $offset, $ahora);
 
         // Las marcas se escriben ACA y no adentro: `rejected` hace rollback y
-        // se llevaria el INSERT de reg_flag con el.
+        // se llevaria el INSERT de lfp_flag con el.
         if ($res === NULL) {
-            $this->reg_flag($db, $tipo, 'error', $guid, NULL,
+            $this->lfp_flag($db, $tipo, 'error', $guid, NULL,
                 'la base no acepto el registro; queda pendiente en el telefono',
                 $rec, $alias, $ahora);
         } elseif ($res['status'] === 'rejected') {
-            $this->reg_flag($db, $tipo, 'rechazado', $guid, NULL,
+            $this->lfp_flag($db, $tipo, 'rechazado', $guid, NULL,
                 $res['reason'], $rec, $alias, $ahora);
         } else {
             // Un registro puede traer las dos marcas: totales descuadrados y
             // ademas ser un duplicado.
             if (isset($res['_error'])) {
-                $this->reg_flag($db, $tipo, 'error', $guid, $res['id'],
+                $this->lfp_flag($db, $tipo, 'error', $guid, $res['id'],
                     $res['_error'], $rec, $alias, $ahora);
                 unset($res['_error']);
             }
             if (isset($res['_duplicado'])) {
-                $this->reg_flag($db, $tipo, 'duplicado', $guid, $res['id'],
+                $this->lfp_flag($db, $tipo, 'duplicado', $guid, $res['id'],
                     $res['_duplicado'], $rec, $alias, $ahora);
                 unset($res['_duplicado']);
             }
@@ -602,14 +602,14 @@ class V4 extends RestController
 
     private function sync_aplica($db, $rec, $guid, $tipo, $alias, $offset, $ahora)
     {
-        // El PM ya no es una tabla: es el cierre de la MISMA fila de reg_am, y
+        // El PM ya no es una tabla: es el cierre de la MISMA fila de lfp_am, y
         // su guid vive ahi, en `cierre_guid`. Eso es lo que vuelve al UPDATE
         // tan idempotente como era el INSERT.
         // Un registro = una persona en una tarea. La programacion de la
-        // manana y el cierre de la tarde son la MISMA fila de reg_am; lo que
+        // manana y el cierre de la tarde son la MISMA fila de lfp_am; lo que
         // cambia es en que columna vive el guid.
         // Idempotencia: el guid ya recibido no se vuelve a aplicar. El id que
-        // vuelve es el de reg_am en los tres tipos.
+        // vuelve es el de lfp_am en los tres tipos.
         try {
             $ya = $this->sync_id_publico($db, $tipo, $guid);
         } catch (Throwable $e) {
@@ -749,7 +749,7 @@ class V4 extends RestController
         // Una consulta contesta las tres preguntas: que existe, de que dia es y
         // cuanto pesa. Lo que falte en el resultado, no existe.
         $q = $db->select('c.id, c.total_peso, DATE(a.fecha_proceso) AS fecha', FALSE)
-                ->from('reg_cosecha c')->join('reg_am a', 'a.id = c.reg_am_id')
+                ->from('lfp_cosecha c')->join('lfp_am a', 'a.id = c.lfp_am_id')
                 ->where_in('c.id', $ids)->get();
         if ($q === FALSE) {
             return NULL;
@@ -1074,11 +1074,11 @@ class V4 extends RestController
     }
 
     /**
-     * El id que ve el telefono. En AM, PM y cosecha es el de `reg_am`; en
+     * El id que ve el telefono. En AM, PM y cosecha es el de `lfp_am`; en
      * postcosecha, el de la partida.
      *
      * No es cosmetico: sin esto un mismo guid devolvia 42 al crearse (el id
-     * del AM) y 1 al reenviarse (el id de reg_cosecha), y la app se guardaba
+     * del AM) y 1 al reenviarse (el id de lfp_cosecha), y la app se guardaba
      * el segundo encima del primero.
      */
     private function sync_id_publico($db, $tipo, $guid)
@@ -1095,16 +1095,16 @@ class V4 extends RestController
         } elseif ($tipo === 'pc_calidad_sec') {
             $q = $db->select('pc_proceso_id AS id')->from('pc_calidad_secado')->where('guid', $guid)->limit(1)->get();
         } elseif ($tipo === 'cosecha') {
-            $q = $db->select('reg_am_id AS id')->from('reg_cosecha')
+            $q = $db->select('lfp_am_id AS id')->from('lfp_cosecha')
                     ->where('guid', $guid)->limit(1)->get();
         } elseif ($tipo === 'riego') {
             // Riego NO cierra nada: su id publico es el suyo propio, no el de
             // ningun AM. Es una bitacora, no un cierre.
-            $q = $db->select('id')->from('reg_riego')->where('guid', $guid)->limit(1)->get();
+            $q = $db->select('id')->from('lfp_riego')->where('guid', $guid)->limit(1)->get();
         } elseif ($tipo === 'pm') {
-            $q = $db->select('id')->from('reg_am')->where('cierre_guid', $guid)->limit(1)->get();
+            $q = $db->select('id')->from('lfp_am')->where('cierre_guid', $guid)->limit(1)->get();
         } else {
-            $q = $db->select('id')->from('reg_am')->where('guid', $guid)->limit(1)->get();
+            $q = $db->select('id')->from('lfp_am')->where('guid', $guid)->limit(1)->get();
         }
         $f = ($q === FALSE) ? NULL : $q->row();
         return $f ? (int) $f->id : NULL;
@@ -1184,7 +1184,7 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, $abierto);
         }
 
-        $ok = $db->insert('reg_am', array(
+        $ok = $db->insert('lfp_am', array(
             'guid'                => $guid,
             'captura_guid'        => $captura,
             'fecha_proceso'       => $fecha->format('Y-m-d H:i:s'),
@@ -1228,7 +1228,7 @@ class V4 extends RestController
         $dia = $fecha->format('Y-m-d');
         try {
             $q = $db->select('am.id, s.nombre_subtarea AS subtarea')
-                    ->from('reg_am am')
+                    ->from('lfp_am am')
                     ->join('z_subtarea s', 's.id = am.subtarea_id', 'left')
                     ->where('am.personal_id', $personal_id)
                     ->where('am.guid !=', $guid)
@@ -1260,7 +1260,7 @@ class V4 extends RestController
     {
         $dia = $fecha->format('Y-m-d');
         try {
-            $q = $db->select('id')->from('reg_am')
+            $q = $db->select('id')->from('lfp_am')
                     ->where('personal_id', $ids['personal_id'])
                     ->where('subtarea_id', $ids['subtarea_id'])
                     ->where('finca_id', $ids['finca_id'])
@@ -1311,7 +1311,7 @@ class V4 extends RestController
         }
 
         $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid, subtarea_id')
-                ->from('reg_am')->where('guid', $am_guid)->limit(1)->get();
+                ->from('lfp_am')->where('guid', $am_guid)->limit(1)->get();
         if ($q === FALSE) {
             return NULL;   // la base no responde: PENDIENTE
         }
@@ -1405,7 +1405,7 @@ class V4 extends RestController
             ))
             ->where('id', (int) $am->id)
             ->where('cierre_guid IS NULL', NULL, FALSE)
-            ->update('reg_am');
+            ->update('lfp_am');
         if ($ok === FALSE) {
             return NULL;   // fallo de base: PENDIENTE, reenviar si lo arregla
         }
@@ -1415,7 +1415,7 @@ class V4 extends RestController
         }
 
         // El ano y la semana de pago NO se guardan: se derivan de
-        // fecha_proceso en vw_reg_reporte_pago, con WEEK(...,3) que es el ISO.
+        // fecha_proceso en vw_lfp_reporte_pago, con WEEK(...,3) que es el ISO.
         // V3 los guardaba calculados con 'Y'.'W' y por eso 181 filas del 29 al
         // 31 de diciembre de 2025 quedaron como (2025, semana 1). Un valor que
         // se deriva no puede quedar mal guardado.
@@ -1432,7 +1432,7 @@ class V4 extends RestController
 
     /**
      * Decision de Kevin (2026-09-03): cosecha funciona como el PM. Todas las
-     * tareas viven en `reg_am`; cosecha elige una de las que tienen tarea
+     * tareas viven en `lfp_am`; cosecha elige una de las que tienen tarea
      * "Cosecha" y le carga el detalle de sacos de esa persona. NO se vuelve a
      * elegir trabajador: la tarea ya lo trae.
      *
@@ -1441,7 +1441,7 @@ class V4 extends RestController
      *   [observaciones], [justificacion_retro]
      *
      * **La suma de las libras es el avance de la tarea**: este metodo escribe
-     * `reg_am.cantidad` con `total_peso`. No es una interpretacion: de 14.466
+     * `lfp_am.cantidad` con `total_peso`. No es una interpretacion: de 14.466
      * pares (PM de cosecha, fila de z_cosecha_cacao) del mismo dia, trabajador
      * y subtarea, 13.835 tienen `pm.cantidad = total_peso` (95,6 %) y NINGUNO
      * coincide con el conteo de sacos.
@@ -1455,7 +1455,7 @@ class V4 extends RestController
         }
 
         $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid, subtarea_id')
-                ->from('reg_am')->where('guid', $am_guid)->limit(1)->get();
+                ->from('lfp_am')->where('guid', $am_guid)->limit(1)->get();
         if ($q === FALSE) {
             return NULL;
         }
@@ -1534,12 +1534,12 @@ class V4 extends RestController
                 'cierre_received_at'       => date('Y-m-d H:i:s', $ahora),
                 'cierre_offset'            => $offset,
                 // No 'app': asi el reporte distingue quien cerro la tarea sin
-                // salir a buscar si hay fila en reg_cosecha.
+                // salir a buscar si hay fila en lfp_cosecha.
                 'cierre_origen'            => 'cosecha',
             ))
             ->where('id', (int) $am->id)
             ->where('cierre_guid IS NULL', NULL, FALSE)
-            ->update('reg_am');
+            ->update('lfp_am');
         if ($ok === FALSE) {
             return NULL;
         }
@@ -1547,9 +1547,9 @@ class V4 extends RestController
             return $this->sync_rechazo($guid, 'esa tarea de la manana ya fue cerrada');
         }
 
-        $ok = $db->insert('reg_cosecha', array(
+        $ok = $db->insert('lfp_cosecha', array(
             'guid'                => $guid,
-            'reg_am_id'           => (int) $am->id,
+            'lfp_am_id'           => (int) $am->id,
             'total_sacos'         => $total_sacos,
             'total_peso'          => $total_peso,
             'observaciones'       => $this->sync_texto($p, 'observaciones', 500),
@@ -1565,7 +1565,7 @@ class V4 extends RestController
         $cosecha_id = (int) $db->insert_id();
 
         foreach ($sacos as $sc) {
-            if ($db->insert('reg_cosecha_saco', array(
+            if ($db->insert('lfp_cosecha_saco', array(
                     'cosecha_id' => $cosecha_id,
                     'numero'     => $sc['numero'],
                     'libras'     => $sc['libras'],
@@ -1590,9 +1590,9 @@ class V4 extends RestController
     /**
      * Un parte de riego: cuanta agua fue a que lote y por cuanto tiempo.
      *
-     * **No cierra ninguna tarea AM y no toca `reg_am`** (Kevin, 2026-09-03).
+     * **No cierra ninguna tarea AM y no toca `lfp_am`** (Kevin, 2026-09-03).
      * Las tareas de riego del personal las cierra el PM --sus 7 subtareas son
-     * en Jornal--; esto registra el AGUA. Por eso `reg_riego` lleva finca,
+     * en Jornal--; esto registra el AGUA. Por eso `lfp_riego` lleva finca,
      * supervisor, lote y modulo PROPIOS: no es denormalizacion, es su unica
      * fuente de verdad.
      *
@@ -1687,7 +1687,7 @@ class V4 extends RestController
             $volumen = (float) $p['volumen_riego'];
         }
 
-        $ok = $db->insert('reg_riego', array(
+        $ok = $db->insert('lfp_riego', array(
             'guid'                => $guid,
             'fecha_proceso'       => $fecha->format('Y-m-d H:i:s'),
             'finca_id'            => $ids['finca_id'],
@@ -1930,10 +1930,10 @@ class V4 extends RestController
      * Bitacora de lo que no se pudo guardar bien. Best-effort: si falla, el
      * registro ya se resolvio y no se va a cambiar la respuesta por esto.
      */
-    private function reg_flag($db, $origen, $codigo, $guid, $registro_id, $detalle, $rec, $alias, $ahora)
+    private function lfp_flag($db, $origen, $codigo, $guid, $registro_id, $detalle, $rec, $alias, $ahora)
     {
         try {
-            $db->insert('reg_flag', array(
+            $db->insert('lfp_flag', array(
                 'origen'       => $origen,
                 'codigo'       => $codigo,
                 'guid'         => $guid,
@@ -1944,7 +1944,7 @@ class V4 extends RestController
                 'created_at'   => date('Y-m-d H:i:s', $ahora),
             ));
         } catch (Throwable $e) {
-            log_message('error', 'V4 reg_flag: no se pudo marcar ' . $guid . ': ' . $e->getMessage());
+            log_message('error', 'V4 lfp_flag: no se pudo marcar ' . $guid . ': ' . $e->getMessage());
         }
     }
 

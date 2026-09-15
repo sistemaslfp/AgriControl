@@ -60,7 +60,7 @@ class Modulo extends Public_controller {
 			// los datos: 3.119 filas de z_tabla_am (2,75%) apuntan a modulos
 			// que ya no existen -- se borraron y la columna `modulos`, que es
 			// texto separado por comas, no tenia como impedirlo. Lo mismo vale
-			// ahora para reg_am.modulos.
+			// ahora para lfp_am.modulos.
 			//
 			// La baja se hace con `estado` = Inactivo, que ya existe en esta
 			// misma pantalla: el modulo desaparece de los catalogos que sirve

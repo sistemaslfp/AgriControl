@@ -2,8 +2,8 @@
 -- Migración 02 — Tablas nuevas de la API V4
 -- Referencia: MOBIL/02-bd-y-api.md §3. Paso 2 del orden de MOBIL/00-plan.md.
 --
--- Consolidada el 2026-09-02: define reg_am DIRECTAMENTE en su forma final.
--- Producción nunca tuvo reg_am_personal, reg_pm, reg_am_modulo ni reg_pm_modulo,
+-- Consolidada el 2026-09-02: define lfp_am DIRECTAMENTE en su forma final.
+-- Producción nunca tuvo lfp_am_personal, lfp_pm, lfp_am_modulo ni lfp_pm_modulo,
 -- así que no tiene por qué pasar por ellas. Los archivos que las creaban y las
 -- deshacían están en _historico/ con su README.
 --
@@ -18,7 +18,9 @@
 --   ERROR 1267: Illegal mix of collations
 --     (utf8mb3_spanish2_ci,IMPLICIT) and (utf8mb3_general_ci,IMPLICIT)
 --
--- Idempotente: CREATE TABLE IF NOT EXISTS. Correrlo dos veces no hace nada.
+-- Casi idempotente: todo es CREATE TABLE IF NOT EXISTS MENOS `lfp_flag`,
+-- que se rehace con DROP + CREATE. Correrlo dos veces vacia los flags
+-- acumulados; el resto de las tablas no se toca.
 --
 -- Aplicar en desarrollo:
 --   docker compose exec -T mysql_dev_container mysql -uroot -proot_password lfp_prodapp \
@@ -56,24 +58,24 @@
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
--- GUARDIÁN: aborta si la base ya tiene un reg_am de un esquema anterior.
+-- GUARDIÁN: aborta si la base ya tiene un lfp_am de un esquema anterior.
 --
 -- Hace falta porque `docs/db/init/01-schema.sql` —el dump que se usa para
 -- levantar una copia— NO está limpio: trae las 17 tablas v4 en su forma vieja,
 -- vacías, porque se crearon a mano antes de esta consolidación. Y
 -- `CREATE TABLE IF NOT EXISTS` las acepta EN SILENCIO: la migración parece
--- correr bien y deja un reg_am sin `personal_id`, sin `modulos` y sin los
+-- correr bien y deja un lfp_am sin `personal_id`, sin `modulos` y sin los
 -- `cierre_*`, que después falla en el INSERT de agosto con un mensaje que no
 -- dice nada de esto.
 --
 -- Si aborta aquí: la base viene de un dump viejo. Correr
 -- `_historico/00-limpiar-intermedias.sql` para dejarla virgen, o pedir un dump
--- regenerado. En PRODUCCIÓN nunca puede saltar: no hay ninguna tabla reg_*.
+-- regenerado. En PRODUCCIÓN nunca puede saltar: no hay ninguna tabla lfp_*.
 --
--- Mira las tres tablas que el dump trae viejas (reg_am, reg_cosecha, reg_flag)
--- y las cuatro que ya no existen (reg_am_modulo, reg_am_personal, reg_pm,
--- reg_pm_modulo). Antes miraba solo reg_am, y por eso una reg_cosecha vieja
--- pasaba en silencio y recien explotaba al crear vw_reg_cosecha.
+-- Mira las tres tablas que el dump trae viejas (lfp_am, lfp_cosecha, lfp_flag)
+-- y las cuatro que ya no existen (lfp_am_modulo, lfp_am_personal, lfp_pm,
+-- lfp_pm_modulo). Antes miraba solo lfp_am, y por eso una lfp_cosecha vieja
+-- pasaba en silencio y recien explotaba al crear vw_lfp_cosecha.
 -- ---------------------------------------------------------------------------
 -- Sin DELIMITER y sin BEGIN NOT ATOMIC: eso es sintaxis de MariaDB que
 -- MySQL Workbench no parsea (error de sintaxis antes de mandar nada al
@@ -86,10 +88,10 @@ SET @guardian := (
   SELECT IF(EXISTS (
            SELECT 1 FROM information_schema.tables t
             WHERE t.table_schema = DATABASE()
-              AND ( (t.table_name = 'reg_am'      AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'reg_am'      AND c.column_name = 'cierre_guid'))
-                 OR (t.table_name = 'reg_cosecha' AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'reg_cosecha' AND c.column_name = 'reg_am_id'))
-                 OR (t.table_name = 'reg_flag'    AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'reg_flag'    AND c.column_name = 'payload'))
-                 OR  t.table_name IN ('reg_am_modulo','reg_am_personal','reg_pm','reg_pm_modulo') )),
+              AND ( (t.table_name = 'lfp_am'      AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'lfp_am'      AND c.column_name = 'cierre_guid'))
+                 OR (t.table_name = 'lfp_cosecha' AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'lfp_cosecha' AND c.column_name = 'lfp_am_id'))
+                 OR (t.table_name = 'lfp_flag'    AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name = 'lfp_flag'    AND c.column_name = 'payload'))
+                 OR  t.table_name IN ('lfp_am_modulo','lfp_am_personal','lfp_pm','lfp_pm_modulo') )),
          'SELECT * FROM ABORTADO_hay_tablas_v4_viejas_correr_historico_00_limpiar',
          'SELECT 1')
 );
@@ -128,7 +130,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- z_tabla_am hace exactamente esto con 113.410 filas y ocupa 8,7 MB.
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS reg_am (
+CREATE TABLE IF NOT EXISTS lfp_am (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   guid                CHAR(36)     NOT NULL,
   -- Lo comparten las N personas capturadas en el mismo formulario. Sin esto no
@@ -235,27 +237,27 @@ CREATE TABLE IF NOT EXISTS reg_am (
 -- COSECHA — el detalle de sacos de un AM ya programado
 --
 -- Cosecha NO crea tareas: CIERRA una tarea AM, igual que el PM. Todas las
--- tareas viven en reg_am; cosecha solo elige una de las que tienen tarea
+-- tareas viven en lfp_am; cosecha solo elige una de las que tienen tarea
 -- "Cosecha" y le carga los sacos de cada persona. Por eso esta tabla no
 -- repite finca, supervisor, subtarea, trabajador, lote, modulo ni fecha: todo
 -- eso ES el AM, y el telefono no puede contradecirlo.
 --
 -- LA SUMA DE LAS LIBRAS ES EL AVANCE DE LA TAREA: sync_cosecha escribe
--- `reg_am.cantidad` con `total_peso`. Medido sobre el historico: de 14.466
+-- `lfp_am.cantidad` con `total_peso`. Medido sobre el historico: de 14.466
 -- pares (PM de cosecha, fila de z_cosecha_cacao) del mismo dia, trabajador y
 -- subtarea, **13.835 tienen pm.cantidad = total_peso (95,6 %) y NINGUNO
 -- coincide con el conteo de sacos**. La unidad de labor de esas subtareas es
 -- Libra, no Saco.
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS reg_cosecha (
+CREATE TABLE IF NOT EXISTS lfp_cosecha (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
-  -- Es el mismo guid que queda en reg_am.cierre_guid: una cosecha ES el
+  -- Es el mismo guid que queda en lfp_am.cierre_guid: una cosecha ES el
   -- cierre de esa tarea, no un registro aparte que ademas la cierra.
   guid                CHAR(36)      NOT NULL,
-  reg_am_id           INT           NOT NULL,
-  -- Derivados de reg_cosecha_saco. El telefono los manda para comparar; si no
-  -- cuadran gana el servidor y queda una marca `error` en reg_flag.
+  lfp_am_id           INT           NOT NULL,
+  -- Derivados de lfp_cosecha_saco. El telefono los manda para comparar; si no
+  -- cuadran gana el servidor y queda una marca `error` en lfp_flag.
   total_sacos         SMALLINT      NOT NULL DEFAULT 0,
   total_peso          DECIMAL(11,2) NOT NULL DEFAULT 0,
   observaciones       VARCHAR(500)  NULL,
@@ -267,18 +269,18 @@ CREATE TABLE IF NOT EXISTS reg_cosecha (
   UNIQUE KEY uq_cosecha_guid (guid),
   -- Una tarea AM se cosecha UNA vez. Es el mismo invariante que
   -- `cierre_guid IS NULL` sostiene del otro lado.
-  UNIQUE KEY uq_cosecha_am (reg_am_id),
-  CONSTRAINT fk_cosecha_am FOREIGN KEY (reg_am_id) REFERENCES reg_am(id)
+  UNIQUE KEY uq_cosecha_am (lfp_am_id),
+  CONSTRAINT fk_cosecha_am FOREIGN KEY (lfp_am_id) REFERENCES lfp_am(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- Se acabo el techo de 15 sacos de z_cosecha_cacao.saco1..saco15.
-CREATE TABLE IF NOT EXISTS reg_cosecha_saco (
+CREATE TABLE IF NOT EXISTS lfp_cosecha_saco (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   cosecha_id INT          NOT NULL,
   numero     SMALLINT     NOT NULL,
   libras     DECIMAL(9,2) NOT NULL,
   UNIQUE KEY uq_saco (cosecha_id, numero),
-  CONSTRAINT fk_saco_cosecha FOREIGN KEY (cosecha_id) REFERENCES reg_cosecha(id) ON DELETE CASCADE
+  CONSTRAINT fk_saco_cosecha FOREIGN KEY (cosecha_id) REFERENCES lfp_cosecha(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- =========================================================================
@@ -313,7 +315,7 @@ CREATE TABLE IF NOT EXISTS reg_cosecha_saco (
 --     mismo defecto que fecha VARCHAR(10).
 -- =========================================================================
 
-CREATE TABLE IF NOT EXISTS reg_riego (
+CREATE TABLE IF NOT EXISTS lfp_riego (
   id                  INT AUTO_INCREMENT PRIMARY KEY,
   guid                CHAR(36)         NOT NULL,
   fecha_proceso       DATETIME         NOT NULL,
@@ -325,7 +327,7 @@ CREATE TABLE IF NOT EXISTS reg_riego (
   tiempo_riego_min    SMALLINT UNSIGNED NULL,   -- duración en minutos
   volumen_riego       DECIMAL(9,3)     NOT NULL DEFAULT 0,
   observaciones       VARCHAR(500)     NULL,    -- el máximo real hoy es 140
-  -- Ver el comentario de reg_am.justificacion_retro. En riego pesa mas que en
+  -- Ver el comentario de lfp_am.justificacion_retro. En riego pesa mas que en
   -- ningun otro modulo: las observaciones son POR FILA y un parte real son
   -- 18-25 filas, asi que meter el motivo ahi lo repetia 25 veces.
   justificacion_retro VARCHAR(255)     NULL,
@@ -391,7 +393,7 @@ CREATE TABLE IF NOT EXISTS pc_proceso (
   peso_baba           DECIMAL(9,3) AS (peso_lote - peso_mallas) STORED,
   peso_final          DECIMAL(9,3) NULL,       -- resultado, al cerrar el proceso
   comentario          VARCHAR(255) NULL,
-  -- Ver el comentario de reg_am.justificacion_retro. Aplica a `fecha_inicio`,
+  -- Ver el comentario de lfp_am.justificacion_retro. Aplica a `fecha_inicio`,
   -- que es la unica fecha de la partida que elige el usuario: `fecha_cosecha`
   -- la deriva el servidor de las cosechas enlazadas.
   justificacion_retro VARCHAR(255) NULL,
@@ -417,7 +419,7 @@ CREATE TABLE IF NOT EXISTS pc_proceso_cosecha (
   -- Una cosecha no puede entrar en dos partidas.
   UNIQUE KEY uq_cosecha_una_sola_vez (cosecha_id),
   CONSTRAINT fk_pcc_proceso FOREIGN KEY (pc_proceso_id) REFERENCES pc_proceso(id) ON DELETE CASCADE,
-  CONSTRAINT fk_pcc_cosecha FOREIGN KEY (cosecha_id)    REFERENCES reg_cosecha(id)
+  CONSTRAINT fk_pcc_cosecha FOREIGN KEY (cosecha_id)    REFERENCES lfp_cosecha(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
 
 -- Una fila por etapa, en lugar de las cinco tablas casi idénticas de hoy
@@ -521,15 +523,15 @@ CREATE TABLE IF NOT EXISTS pc_lot_code_seq (
 -- =========================================================================
 -- REVISIÓN DE REGISTROS
 -- Lo que la API no pudo guardar bien: rechazos, duplicados y fallos de base.
--- La escribe V4.php al sincronizar; se lee desde la base por `vw_reg_flag`.
+-- La escribe V4.php al sincronizar; se lee desde la base por `vw_lfp_flag`.
 -- No pasa por el usuario y no hay pantalla.
 -- =========================================================================
 
 -- Se rehace en cada migración: es una bitácora, no un dato de negocio, y el
 -- DROP limpia la forma vieja que trae el dump de docs/db/init/01-schema.sql.
-DROP TABLE IF EXISTS reg_flag;
+DROP TABLE IF EXISTS lfp_flag;
 
-CREATE TABLE reg_flag (
+CREATE TABLE lfp_flag (
   id           BIGINT AUTO_INCREMENT PRIMARY KEY,
   -- am | pm | cosecha | riego | postcosecha. AM y PM son la misma tabla; que
   -- venga de 'pm' quiere decir que lo que falló fue el UPDATE del cierre.
@@ -537,7 +539,7 @@ CREATE TABLE reg_flag (
   -- rechazado | duplicado | error
   codigo       VARCHAR(15)  NOT NULL,
   guid         CHAR(36)     NOT NULL,
-  -- NULL en un rechazo: esa fila nunca llegó a existir en reg_am. Por eso el
+  -- NULL en un rechazo: esa fila nunca llegó a existir en lfp_am. Por eso el
   -- payload no es opcional -- es el único rastro de lo que se intentó cargar.
   registro_id  INT          NULL,
   detalle      VARCHAR(255) NULL,
@@ -582,11 +584,11 @@ CREATE TABLE IF NOT EXISTS mig_descarte (
 -- En una base virgen no hacen nada: las columnas ya vienen en el CREATE.
 -- =========================================================================
 
-ALTER TABLE reg_am
+ALTER TABLE lfp_am
   ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER comentario,
   ADD COLUMN IF NOT EXISTS justificacion_retro_cierre VARCHAR(255) NULL AFTER comentario_cierre;
 
-ALTER TABLE reg_riego
+ALTER TABLE lfp_riego
   ADD COLUMN IF NOT EXISTS justificacion_retro VARCHAR(255) NULL AFTER observaciones;
 
 ALTER TABLE pc_proceso

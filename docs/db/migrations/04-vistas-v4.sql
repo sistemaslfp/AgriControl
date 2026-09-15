@@ -30,7 +30,7 @@
 -- generaba filas repetidas; aquí el guid es único y un DISTINCT taparía un
 -- duplicado real si algún día aparece.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_reporte_pago AS
+CREATE OR REPLACE VIEW vw_lfp_reporte_pago AS
 SELECT am.fecha_proceso                                          AS fecha,
        CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED)  AS anio,
        WEEK(am.fecha_proceso, 3)                                 AS semana,
@@ -45,7 +45,7 @@ SELECT am.fecha_proceso                                          AS fecha,
        am.cantidad                                               AS cantidad,
        sub.tarifa                                                AS tarifa,
        am.cantidad * sub.tarifa                                  AS total
-  FROM reg_am am
+  FROM lfp_am am
   JOIN z_personal tra ON tra.id = am.personal_id
   -- Quien cerró manda sobre quien programó: si el avance lo cargó otro
   -- responsable, el pago lo firma él. COALESCE porque las filas abiertas no
@@ -58,13 +58,13 @@ SELECT am.fecha_proceso                                          AS fecha,
  WHERE am.cierre_guid IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- La bitacora de reg_flag, legible. LEFT JOIN a reg_am porque un rechazo no
+-- La bitacora de lfp_flag, legible. LEFT JOIN a lfp_am porque un rechazo no
 -- tiene fila: la fila nunca llego a existir y el rastro es el payload.
 -- ---------------------------------------------------------------------------
-DROP VIEW IF EXISTS vw_reg_flag_resumen;
-DROP VIEW IF EXISTS vw_reg_flag_detalle;
+DROP VIEW IF EXISTS vw_lfp_flag_resumen;
+DROP VIEW IF EXISTS vw_lfp_flag_detalle;
 
-CREATE OR REPLACE VIEW vw_reg_flag AS
+CREATE OR REPLACE VIEW vw_lfp_flag AS
 SELECT f.id,
        f.created_at                                              AS marcado_at,
        f.origen,
@@ -72,7 +72,7 @@ SELECT f.id,
        f.detalle,
        f.guid,
        f.device_alias                                            AS dispositivo,
-       f.registro_id                                             AS reg_am_id,
+       f.registro_id                                             AS lfp_am_id,
        am.fecha_proceso,
        fin.nombre                                                AS finca,
        lot.lote                                                  AS lote,
@@ -84,8 +84,8 @@ SELECT f.id,
        COALESCE(rc.nombre, res.nombre)                           AS responsable,
        am.cantidad,
        f.payload
-  FROM reg_flag f
-  LEFT JOIN reg_am     am  ON am.id  = f.registro_id
+  FROM lfp_flag f
+  LEFT JOIN lfp_am     am  ON am.id  = f.registro_id
   LEFT JOIN z_finca    fin ON fin.id = am.finca_id
   LEFT JOIN z_lote     lot ON lot.id = am.lote_id
   LEFT JOIN z_subtarea sub ON sub.id = am.subtarea_id
@@ -98,7 +98,7 @@ SELECT f.id,
 -- Cosecha, plana. Equivalente V4 de lo que en v3 se leia de z_cosecha_cacao,
 -- que traia finca/lote/subtarea/trabajador repetidos en la propia fila.
 --
--- Aca NO se repiten: `reg_cosecha` solo guarda los sacos y cuelga del AM
+-- Aca NO se repiten: `lfp_cosecha` solo guarda los sacos y cuelga del AM
 -- (decision cerrada, 02-bd-y-api.md). Esta vista es la que paga ese join una
 -- sola vez para que ningun reporte web lo vuelva a escribir a mano — que es
 -- exactamente lo que 00-plan.md dejo anotado.
@@ -110,10 +110,10 @@ SELECT f.id,
 -- agrupamiento que cada reporte quiere distinto.
 --
 -- Se exponen los ids ADEMAS de los nombres, a diferencia de
--- vw_reg_reporte_pago: Grocery CRUD filtra por id (`$crud->where('finca', ...)`
+-- vw_lfp_reporte_pago: Grocery CRUD filtra por id (`$crud->where('finca', ...)`
 -- en Cosechacacao.php) y con solo el nombre habria que filtrar por texto.
 --
--- `id` es reg_cosecha.id y es unico: sirve de PK para Grocery CRUD
+-- `id` es lfp_cosecha.id y es unico: sirve de PK para Grocery CRUD
 -- (`$crud->set_primary_key('id')`).
 --
 -- El pago se calcula con `am.cantidad`, NO con total_peso. Hoy son el mismo
@@ -122,10 +122,10 @@ SELECT f.id,
 -- Por eso tambien va `unidad_labor`: una subtarea de cosecha que no se pague
 -- por peso haria que total_peso y cantidad dejaran de coincidir.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_cosecha AS
+CREATE OR REPLACE VIEW vw_lfp_cosecha AS
 SELECT c.id                                                      AS id,
        c.guid                                                    AS guid,
-       am.id                                                     AS reg_am_id,
+       am.id                                                     AS lfp_am_id,
        am.guid                                                   AS am_guid,
        am.fecha_proceso                                          AS fecha,
        CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED)  AS anio,
@@ -165,8 +165,8 @@ SELECT c.id                                                      AS id,
        c.device_alias                                            AS dispositivo,
        c.created_at_device                                       AS creado_en_dispositivo,
        c.received_at_server                                      AS recibido_en_servidor
-  FROM reg_cosecha c
-  JOIN reg_am      am  ON am.id  = c.reg_am_id
+  FROM lfp_cosecha c
+  JOIN lfp_am      am  ON am.id  = c.lfp_am_id
   JOIN z_personal  tra ON tra.id = am.personal_id
   JOIN z_personal  res ON res.id = COALESCE(am.responsable_cierre_id, am.responsable_id)
   JOIN z_subtarea  sub ON sub.id = am.subtarea_id
@@ -183,12 +183,12 @@ SELECT c.id                                                      AS id,
 -- El detalle saco por saco, para reemplazar las columnas saco1..saco15 de
 -- z_cosecha_cacao. Una fila por saco; el techo de 15 ya no existe.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_cosecha_saco AS
+CREATE OR REPLACE VIEW vw_lfp_cosecha_saco AS
 SELECT s.id            AS id,
        s.cosecha_id    AS cosecha_id,
        s.numero        AS numero,
        s.libras        AS libras,
-       v.reg_am_id,
+       v.lfp_am_id,
        v.fecha,
        v.finca,
        v.lote,
@@ -196,8 +196,8 @@ SELECT s.id            AS id,
        v.unidad_labor,
        v.nombre,
        v.cedula
-  FROM reg_cosecha_saco s
-  JOIN vw_reg_cosecha   v ON v.id = s.cosecha_id;
+  FROM lfp_cosecha_saco s
+  JOIN vw_lfp_cosecha   v ON v.id = s.cosecha_id;
 
 -- =========================================================================
 -- LAS CINCO VISTAS QUE LA WEB SÍ USA (2026-09-14)
@@ -237,7 +237,7 @@ SELECT s.id            AS id,
 -- `modulos` se deja como la CSV de ids CRUDA, igual que `z_tabla_am.modulos`.
 -- No se resuelve a nombres a propósito: la pantalla espera esa cadena.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_reporte_am_base AS
+CREATE OR REPLACE VIEW vw_lfp_reporte_am_base AS
 SELECT DATE(am.fecha_proceso)                 AS fecha,
        TIME_FORMAT(am.fecha_proceso, '%H:%i') AS hora,
        am.finca_id                            AS id_finca,
@@ -248,7 +248,7 @@ SELECT DATE(am.fecha_proceso)                 AS fecha,
        am.modulos                             AS modulos,
        UCASE(tra.nombre)                      AS operario,
        UCASE(sub.nombre_subtarea)             AS subtarea
-  FROM reg_am am
+  FROM lfp_am am
   JOIN z_personal tra ON tra.id = am.personal_id
   -- El de la MAÑANA, no el del cierre: esta vista es la programación.
   JOIN z_personal res ON res.id = am.responsable_id
@@ -264,23 +264,23 @@ SELECT DATE(am.fecha_proceso)                 AS fecha,
 -- ISO (`YEARWEEK(...,3)` / `WEEK(...,3)`), no con `year()`/`week()` a secas.
 -- v3 usa el modo 0, que es lo que puso 181 filas del 29 al 31 de diciembre de
 -- 2025 en (2025, semana 1). Es el mismo criterio que ya usa
--- vw_reg_reporte_pago, y el motivo por el que V4 DERIVA el año y la semana en
+-- vw_lfp_reporte_pago, y el motivo por el que V4 DERIVA el año y la semana en
 -- vez de guardarlos. En la ventana de agosto las dos formas coinciden; en
 -- diciembre no, y ahí v3 es el que está mal.
 --
 -- Sin GROUP BY: v3 lo necesitaba porque z_tabla_am repetía la misma
--- combinación hasta 37 veces. En reg_am una fila ES una persona en una tarea,
+-- combinación hasta 37 veces. En lfp_am una fila ES una persona en una tarea,
 -- así que agrupar aquí escondería filas legítimas.
 --
 -- CUADRE CONTRA v3, MEDIDO SOBRE AGOSTO (y hay que saberlo antes de comparar
 -- pantallas): v3 da 529 filas y V4 da 550. **No falta ni sobra nada**: las 529
--- son exactamente las `reg_am` con `origen = 'migracion'`, y las 21 de más son
+-- son exactamente las `lfp_am` con `origen = 'migracion'`, y las 21 de más son
 -- las de `origen = 'mig-pm'` -- tareas DEDUCIDAS de un cierre de z_tabla_pm que
 -- no tenía su fila en z_tabla_am. O sea: el reporte AM de V4 muestra 21 trabajos
 -- que de verdad pasaron y que el reporte AM de v3 no podía mostrar porque del
 -- lado del AM no existían.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_reporte_am AS
+CREATE OR REPLACE VIEW vw_lfp_reporte_am AS
 SELECT CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED) AS anno,
        WEEK(am.fecha_proceso, 3)                                AS semana,
        DATE(am.fecha_proceso)                                   AS fecha,
@@ -291,7 +291,7 @@ SELECT CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED) AS anno,
        lot.lote                                                 AS lote,
        UCASE(tra.nombre)                                        AS operario,
        UCASE(sub.nombre_subtarea)                               AS subtarea
-  FROM reg_am am
+  FROM lfp_am am
   JOIN z_personal tra ON tra.id = am.personal_id
   JOIN z_personal res ON res.id = am.responsable_id
   JOIN z_finca    fin ON fin.id = am.finca_id
@@ -307,18 +307,18 @@ SELECT CAST(LEFT(YEARWEEK(am.fecha_proceso, 3), 4) AS UNSIGNED) AS anno,
 -- avance no es un PM.
 --
 -- `nombre_supervisor` es QUIEN CERRÓ, con COALESCE al de la mañana, igual que
--- vw_reg_reporte_pago: si el avance lo cargó otro responsable, el reporte lo
+-- vw_lfp_reporte_pago: si el avance lo cargó otro responsable, el reporte lo
 -- firma él.
 --
 -- DOS VERRUGAS DE v3 QUE SE CONSERVAN, porque la pantalla las espera:
 --   1. `total` sale de FORMAT(...,3), o sea TEXTO con separador de miles. Con
 --      valores de cuatro cifras eso mete una coma y deja de ser numérico. No
 --      se corrige aquí: cambiarlo rompería el render de Grocery CRUD. El
---      número de verdad está en vw_reg_reporte_pago.
+--      número de verdad está en vw_lfp_reporte_pago.
 --   2. `lote` y `modulo` van como ID y como CSV de ids, no como nombres, que
 --      es lo que traían z_tabla_pm.lote y z_tabla_pm.modulo.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_reporte_pm AS
+CREATE OR REPLACE VIEW vw_lfp_reporte_pm AS
 SELECT tra.nombre                            AS nombre_trabajador,
        am.finca_id                           AS id_finca,
        fin.nombre                            AS nombre_finca,
@@ -337,7 +337,7 @@ SELECT tra.nombre                            AS nombre_trabajador,
        cul.nombre                            AS cultivo,
        am.comentario_cierre                  AS comentario,
        DATE(am.fecha_proceso)                AS fecha
-  FROM reg_am am
+  FROM lfp_am am
   JOIN z_personal        tra ON tra.id = am.personal_id
   JOIN z_personal        res ON res.id = am.responsable_id
   LEFT JOIN z_personal   rci ON rci.id = am.responsable_cierre_id
@@ -361,7 +361,7 @@ SELECT tra.nombre                            AS nombre_trabajador,
 --      pero NO lo propaga (00-plan.md: "los errores de v3 se migran igual,
 --      pero el flujo nuevo no los repite"). Una vista NUEVA no tiene por qué
 --      nacer rota.
---   2. `jornales` es COUNT(*) y no SUM(jornales), porque `reg_cosecha` no
+--   2. `jornales` es COUNT(*) y no SUM(jornales), porque `lfp_cosecha` no
 --      tiene esa columna: en V4 una fila ES una persona en una tarea, así que
 --      contarlas es el equivalente exacto. Y es más correcto: sobre las 12.559
 --      filas de z_cosecha_cacao, `jornales` vale 1 en 12.432 y 0 en 127 --esas
@@ -371,13 +371,13 @@ SELECT tra.nombre                            AS nombre_trabajador,
 -- agrupa, así que no hay un id natural.
 --
 -- CUADRE CONTRA v3, MEDIDO SOBRE AGOSTO: v3 tiene 60 filas en z_cosecha_cacao
--- y V4 tiene 41 en reg_cosecha. La resta cierra exacta: 22 filas de v3 están
+-- y V4 tiene 41 en lfp_cosecha. La resta cierra exacta: 22 filas de v3 están
 -- marcadas en `mig_descarte` (9 `duplicado_exacto`, 10 `cosecha_sin_cierre_am`
 -- y 3 `cosecha_total_no_cuadra`), quedan 38 -- y las 3 que faltan para 41
 -- cuelgan de AM con `origen = 'mig-pm'`, el mismo caso que las 21 del reporte
 -- AM. Peso y sacos de V4: 17.701,00 lb y 201 sacos, que es el cuadre que manda.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_cosecha_resumen AS
+CREATE OR REPLACE VIEW vw_lfp_cosecha_resumen AS
 SELECT ROW_NUMBER() OVER (ORDER BY DATE(am.fecha_proceso))     AS id,
        DATE(am.fecha_proceso)                                  AS fecha,
        COALESCE(am.responsable_cierre_id, am.responsable_id)   AS supervisor,
@@ -390,8 +390,8 @@ SELECT ROW_NUMBER() OVER (ORDER BY DATE(am.fecha_proceso))     AS id,
        SUM(c.total_peso)                                       AS total_peso,
        SUM(c.total_sacos)                                      AS total_sacos,
        COUNT(*)                                                AS jornales
-  FROM reg_cosecha c
-  JOIN reg_am     am ON am.id = c.reg_am_id
+  FROM lfp_cosecha c
+  JOIN lfp_am     am ON am.id = c.lfp_am_id
   JOIN z_subtarea sub ON sub.id = am.subtarea_id
  GROUP BY DATE(am.fecha_proceso),
           COALESCE(am.responsable_cierre_id, am.responsable_id),
@@ -409,12 +409,12 @@ SELECT ROW_NUMBER() OVER (ORDER BY DATE(am.fecha_proceso))     AS id,
 -- para un día que ya tiene partida, si esa cosecha puntual no entró en ella --
 -- que es la respuesta correcta, no un hueco.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_reg_harvest_pending_lots AS
+CREATE OR REPLACE VIEW vw_lfp_harvest_pending_lots AS
 SELECT DATE(am.fecha_proceso)  AS lot_date,
        SUM(c.total_peso)       AS lot_weight,
        pcc.pc_proceso_id       AS id
-  FROM reg_cosecha c
-  JOIN reg_am                 am  ON am.id = c.reg_am_id
+  FROM lfp_cosecha c
+  JOIN lfp_am                 am  ON am.id = c.lfp_am_id
   LEFT JOIN pc_proceso_cosecha pcc ON pcc.cosecha_id = c.id
  GROUP BY DATE(am.fecha_proceso), pcc.pc_proceso_id
  ORDER BY lot_date;
@@ -425,7 +425,7 @@ SELECT DATE(am.fecha_proceso)  AS lot_date,
 -- vwpm_paymentadjustment_fullreport y vw_temporaryworkers_pivot (las dos en
 -- Payment_model.php) leen tbl_pm_payment_daily_adjustment,
 -- tbl_pm_payment_weekly_deductions y tbl_pm_payment_paymenthistory. V4 no
--- modela nada de eso: vw_reg_reporte_pago calcula `cantidad * tarifa` y se
+-- modela nada de eso: vw_lfp_reporte_pago calcula `cantidad * tarifa` y se
 -- acaba -- sin ajustes, sin deducciones, sin historial.
 --
 -- SE DECIDIÓ NO MODELARLOS (Kevin, 2026-09-14) porque las tres tablas están

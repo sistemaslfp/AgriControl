@@ -47,3 +47,7 @@ UPDATE lfp_prodapp.z_lote l
                        WHERE m.lote_id = l.id AND m.estado = '1')
          THEN 1 ELSE 0 END
  WHERE l.id > 0;
+
+-- Eliminar los registros erronoeos de Faltas Justificadas/Injustificadas dentro de la tabla z_lotes
+select * from z_lote where id in (10,11);
+delete from z_lote where id in (10,11);
