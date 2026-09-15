@@ -1,29 +1,42 @@
-# lagricontrol — Apache + PHP 8.1
+# lagricontrol — Apache + PHP 7.3
 #
-# Decision de Kevin (2026-08-31): se trabaja en PHP 8.1.
+# Decision de Kevin (2026-09-15): el contenedor corre la MISMA version que
+# produccion. El servidor real es PHP 7.3.27 sobre XAMPP; desarrollar en 8.1
+# contra un destino 7.3 es probar en un runtime que no es el de llegada.
 #
-# El comentario anterior decia que Grocery CRUD y CodeIgniter 3.1.11 "rompen en
-# PHP 8.x". Se probo y NO es cierto: con la app corriendo en el contenedor bajo
-# PHP 8.4.21 (mas estricto que 8.1) arrancan CodeIgniter 3.1.11 e ion_auth, y
-# Grocery CRUD 1.6.1 renderiza el listado, el formulario de alta y el de
-# edicion sin un solo fatal ni un deprecation en el log.
+# La 7.3 tambien hace desaparecer el problema que nos costo la tarde: bajo
+# PHP 8.1, CodeIgniter 3.1.11 emite seis E_DEPRECATED al cargar
+# CI_Session_database_driver (implementa SessionHandlerInterface sin los tipos
+# de retorno nuevos), el _error_handler de CI los imprime, la salida sale antes
+# que los headers y se cae en cascada session_start() y el redirect a
+# auth/login. En 7.3 no existe ninguno de esos avisos.
 #
-# Lo que ese ensayo NO cubrio, y hay que mirar al levantar el contenedor:
-#   - guardar de verdad desde Grocery CRUD (POST de alta/edicion/borrado)
-#   - los campos de archivo/imagen (postcosecha)
-#   - el login real de ion_auth (POST) y las sesiones
-#   - los controladores de Operations/PM (reportes de pago)
+# SI ALGUN DIA SE SUBE PRODUCCION A 8.x: el arreglo NO es callar E_DEPRECATED,
+# es actualizar system/ a CodeIgniter 3.1.13. La 3.1.12 (2022-03-03) agrego
+# clases wrapper alrededor de los drivers de Session justo para esto, y la
+# 3.1.13 corrige un bug que aquella introdujo. 3.1.13 es la ultima de la rama 3
+# y sigue soportando PHP viejo, asi que sirve para 7.3 y para 8.1 a la vez.
 #
-# CAMBIO DE COMPORTAMIENTO IMPORTANTE: desde PHP 8.1 mysqli LANZA
-# mysqli_sql_exception en vez de devolver FALSE. CodeIgniter 3 no lo sabe: su
-# chequeo de db_debug no llega a correr y cualquier error de base se vuelve una
-# excepcion no capturada. V4.php ya lo maneja; V3 y la web NO. Si aparece una
-# pantalla de "uncaught Exception mysqli_sql_exception", es esto.
-FROM php:8.1-apache
+# La imagen oficial php:7.3-apache es 7.3.33 (produccion: 7.3.27). Son parches
+# de la misma minor: mismas funciones, mismo comportamiento del lenguaje.
+FROM php:7.3-apache
 
+# Debian buster esta ARCHIVADO. Sin esto, el apt-get update de abajo muere con
+# 404 contra deb.debian.org y la imagen no compila. Check-Valid-Until off
+# porque los indices archivados tienen la fecha de expiracion vencida.
+RUN set -eux; \
+    sed -i 's|deb.debian.org/debian|archive.debian.org/debian|g; \
+            s|security.debian.org/debian-security|archive.debian.org/debian-security|g; \
+            s|deb.debian.org/debian-security|archive.debian.org/debian-security|g; \
+            /buster-updates/d' /etc/apt/sources.list; \
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+
+# OJO con gd: en 7.3 las opciones llevan sufijo `-dir=`. La forma sin sufijo
+# (--with-freetype --with-jpeg) es de 7.4 en adelante y aqui se ignora con un
+# "unrecognized options", dejando gd sin soporte de JPEG ni FreeType.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpng-dev libjpeg-dev libfreetype6-dev libzip-dev unzip \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
     && docker-php-ext-install -j"$(nproc)" mysqli gd zip \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*

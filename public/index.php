@@ -66,6 +66,11 @@ define('ENVIRONMENT', 'development');
  */
 switch (ENVIRONMENT) {
 	case 'development':
+		// error_reporting(-1) a proposito: el runtime es PHP 7.3, el mismo de
+		// produccion, y ahi CodeIgniter 3.1.11 no emite deprecations. Si algun
+		// dia se sube el contenedor a PHP 8.1 hay que actualizar system/ a
+		// CodeIgniter 3.1.13 (3.1.12 metio las clases wrapper de Session que
+		// arreglan SessionHandlerInterface), NO callar E_DEPRECATED.
 		error_reporting(-1);
 		ini_set('display_errors', 1);
 		break;
