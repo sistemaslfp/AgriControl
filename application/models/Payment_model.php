@@ -12,8 +12,8 @@ class Payment_model extends CI_Model
     {
         // Subconsulta para obtener las semanas ya registradas en payment_records con la finca seleccionada
         $this->db->select('DISTINCT (pm_year) AS pm_year')
-            ->from('z_tabla_pm')
-            ->where('finca', $farm_id);
+            ->from('vw_lfp_ajuste_pago')
+            ->where('farm_id', $farm_id);
 
         $this->db->where("pm_week <> 0");
         $this->db->order_by("pm_year", "asc");
@@ -24,14 +24,30 @@ class Payment_model extends CI_Model
     public function getAvailableWeeks($farm_id, $year)
     {
         // Subconsulta para obtener las semanas ya registradas en payment_records con la finca seleccionada
-        $this->db->select('DISTINCT (z_tabla_pm.pm_week) AS payment_week')
-            ->from('z_tabla_pm')
-            ->where('finca', $farm_id)
+        $this->db->select('DISTINCT (pm_week) AS payment_week')
+            ->from('vw_lfp_ajuste_pago')
+            ->where('farm_id', $farm_id)
+            ->where('pm_fecha_proceso >=', ((int) $year - 1) . '-12-25')
+            ->where('pm_fecha_proceso <', ((int) $year + 1) . '-01-08')
             ->where('pm_year', $year)
             ->order_by("pm_week", "asc"); // Mover order_by aquí
         $query = $this->db->get();
 
         return $query->result_array(); // Retornar el resultado como un array
+    }
+
+    // vw_lfp_ajuste_pago deriva la semana ISO de fecha_proceso: acotar primero por
+    // la fecha deja usar el indice en vez de calcular WEEK() sobre todo lfp_am.
+    private function acotarSemana($year, $week)
+    {
+        $inicio = new DateTime();
+        $inicio->setISODate((int) $year, (int) $week);
+        $inicio->setTime(0, 0, 0);
+        $fin = clone $inicio;
+        $fin->modify('+7 days');
+
+        $this->db->where('pm_fecha_proceso >=', $inicio->format('Y-m-d H:i:s'));
+        $this->db->where('pm_fecha_proceso <', $fin->format('Y-m-d H:i:s'));
     }
 
     public function getFilteredPmRecords($farm, $year, $week, $status)
@@ -64,7 +80,8 @@ class Payment_model extends CI_Model
         observations
         ');
 
-        $this->db->from('vwpm_paymentadjustment_fullreport');
+        $this->db->from('vw_lfp_ajuste_pago');
+        $this->acotarSemana($year, $week);
         $this->db->where('farm_id', $farm);
         $this->db->where('pm_year', $year);
         $this->db->where('pm_week', $week);
@@ -121,7 +138,8 @@ class Payment_model extends CI_Model
     public function getUniqueDaysByYearWeekFarm($selected_year, $selected_week, $farmId)
     {
         $this->db->select('DISTINCT(pm_date)');
-        $this->db->from('vwpm_paymentadjustment_fullreport');
+        $this->db->from('vw_lfp_ajuste_pago');
+        $this->acotarSemana($selected_year, $selected_week);
         $this->db->where('pm_week', $selected_week);
         $this->db->where('pm_year', $selected_year);
         $this->db->where('farm_id', $farmId);
@@ -133,7 +151,8 @@ class Payment_model extends CI_Model
     public function getPaymentBonusDiscountReportByYearWeekFarm($selected_year, $selected_week, $farmId, $statusId)
     {
         $this->db->select('operator_id, operator_docid, operator_name, cost_group_name, pm_date, pm_total, bonus_discount, (pm_total + COALESCE(bonus_discount, 0)) as total_with_discount, deduction, observations, observation');
-        $this->db->from('vwpm_paymentadjustment_fullreport');
+        $this->db->from('vw_lfp_ajuste_pago');
+        $this->acotarSemana($selected_year, $selected_week);
         $this->db->where('pm_week', $selected_week);
         $this->db->where('pm_year', $selected_year);
         $this->db->where('farm_id', $farmId);
@@ -182,8 +201,8 @@ class Payment_model extends CI_Model
      */
     public function get_unique_weeks()
     {
-        $this->db->select('DISTINCT(payment_week)');
-        $this->db->from('vw_temporaryworkers_pivot');
+        $this->db->select('DISTINCT(pm_week) AS payment_week');
+        $this->db->from('vw_lfp_ajuste_pago');
         $this->db->order_by('payment_week', 'ASC');
         $query = $this->db->get();
         return $query->result_array(); // Devuelve las semanas en un array
@@ -274,13 +293,14 @@ class Payment_model extends CI_Model
     public function getResumeData($paymentYear, $paymentWeek, $farmId, $statusId)
     {
         $this->db->select('farm_id, operator_id, operator_name, operator_docid, SUM(pm_total + COALESCE(bonus_discount,0)) as total, AVG(NULLIF(deduction, 0)) as deduction, MIN(observation) as observation');
+        $this->acotarSemana($paymentYear, $paymentWeek);
         $this->db->where('farm_id', $farmId);
         $this->db->where('pm_week', $paymentWeek);
         $this->db->where('pm_year', $paymentYear);
         $this->db->where('operator_status', $statusId);
         $this->db->group_by(['farm_id', 'operator_id', 'operator_name', 'operator_docid']);
         // $this->db->order_by('pm_date', 'asc');
-        $query = $this->db->get('vwpm_paymentadjustment_fullreport');
+        $query = $this->db->get('vw_lfp_ajuste_pago');
 
         return $query->result();
     }
@@ -424,7 +444,7 @@ class Payment_model extends CI_Model
         $this->db->select('farm_name, pm_year, pm_week, SUM(bonus_discount) as total_bonus_discount, AVG(deduction) as average_deduction');
         $this->db->group_by(['farm_name', 'pm_year', 'pm_week']);
         // $this->db->having('SUM(bonus_discount) > 0 OR AVG(deduction) > 0');
-        $query = $this->db->get('vwpm_paymentadjustment_fullreport');
+        $query = $this->db->get('vw_lfp_ajuste_pago');
 
         return $query->result();
     }

@@ -213,11 +213,10 @@ SELECT s.id            AS id,
 --     Ningún controlador ni modelo las nombra; sólo aparecen en
 --     application/logs/log-2024-11-*.php. (vw_reporte_pago sigue siendo el
 --     criterio de aceptación de la nómina, pero la web no la lee.)
---   * 3 NO SE PUEDEN repuntar hoy: vwpm_paymentadjustment_fullreport y
---     vw_temporaryworkers_pivot dependen de las tablas tbl_pm_payment_*, que
---     V4 no modela -- ver el guardián al final de este archivo--, y
---     vw_postharvest_rpt_001 depende de las vistas de fotos, que quedaron
---     fuera de V4 a propósito.
+--   * 3 quedaron para despues y ya estan: vwpm_paymentadjustment_fullreport
+--     y vw_temporaryworkers_pivot pasan a vw_lfp_ajuste_pago en
+--     05-ajustes-pago-v4.sql, y vw_postharvest_rpt_001 a vw_lfp_postharvest_rpt
+--     al final de este archivo (2026-09-16).
 --   * Quedan ESTAS 5, que son las que la web abre de verdad.
 --
 -- REGLA: mismo contrato de columnas que su equivalente v3 -- mismos nombres,
@@ -419,46 +418,16 @@ SELECT DATE(am.fecha_proceso)  AS lot_date,
  GROUP BY DATE(am.fecha_proceso), pcc.pc_proceso_id
  ORDER BY lot_date;
 
--- =========================================================================
--- GUARDIÁN: los ajustes de pago siguen sin modelarse en V4
---
--- vwpm_paymentadjustment_fullreport y vw_temporaryworkers_pivot (las dos en
--- Payment_model.php) leen tbl_pm_payment_daily_adjustment,
--- tbl_pm_payment_weekly_deductions y tbl_pm_payment_paymenthistory. V4 no
--- modela nada de eso: vw_lfp_reporte_pago calcula `cantidad * tarifa` y se
--- acaba -- sin ajustes, sin deducciones, sin historial.
---
--- SE DECIDIÓ NO MODELARLOS (Kevin, 2026-09-14) porque las tres tablas están
--- VACÍAS: 0 filas cada una, medido sobre la copia de producción del
--- 2026-08-28. Es maquinaria construida y nunca usada.
---
--- Este guardián es el cable trampa de esa decisión: el día que alguien empiece
--- a cargar ajustes, este archivo deja de correr y el mensaje dice por qué.
--- Mejor eso que descubrirlo cuando la nómina V4 los ignore en silencio.
---
--- Si salta: hay que modelar los ajustes en V4 ANTES del corte, o dejar la
--- nómina en v3. No se arregla borrando estas líneas.
---
--- Mismo truco que el guardián de 02-tablas-v4.sql: sólo SET + PREPARE, que
--- entienden MariaDB y MySQL Workbench por igual.
--- =========================================================================
-SET @guardia_ajustes := (
-  SELECT IF((SELECT COUNT(*) FROM tbl_pm_payment_daily_adjustment)
-          + (SELECT COUNT(*) FROM tbl_pm_payment_weekly_deductions)
-          + (SELECT COUNT(*) FROM tbl_pm_payment_paymenthistory) > 0,
-         'SELECT * FROM ABORTADO_hay_ajustes_de_pago_y_V4_no_los_modela_ver_04_vistas',
-         'SELECT 1')
-);
-PREPARE guardia_ajustes FROM @guardia_ajustes;
-DEALLOCATE PREPARE guardia_ajustes;
+-- Los ajustes de pago se modelan en 05-ajustes-pago-v4.sql (Kevin, 2026-09-16).
+-- El guardian que abortaba este archivo si tbl_pm_payment_* tenia filas se
+-- movio alli: ahora protege el cambio de la FK de z_tabla_pm a lfp_am.
 
 
 -- ===========================================================================
--- POSTCOSECHA — DOS VISTAS ESCRITAS Y VERIFICADAS, DEJADAS COMENTADAS
+-- POSTCOSECHA — DOS VISTAS ESCRITAS Y VERIFICADAS
 --
--- Kevin, 2026-09-15: se dejan como opcion, la web NO se repunta a ellas por
--- ahora. Para activarlas: quitar el `-- ` de las lineas de abajo y volver a
--- correr este archivo. No hay que tocar nada mas; son de solo lectura.
+-- Kevin, 2026-09-16: la web se repunta a V4 y estas vistas quedan activas
+-- (el 2026-09-15 se habian dejado comentadas).
 --
 -- QUE REEMPLAZAN
 --   vw_lfp_postharvest_rpt    -> vw_postharvest_rpt_001  (Postharvest.php:34,84)
@@ -494,91 +463,91 @@ DEALLOCATE PREPARE guardia_ajustes;
 -- tablas z_postharvest_* (Postharvest.php:117-306). Una vista con JOINs es de
 -- solo lectura, asi que estas dos cubren el listado y las fotos, no la captura.
 -- ===========================================================================
--- CREATE OR REPLACE VIEW vw_lfp_postharvest_fotos AS
--- SELECT f.pc_proceso_id                                      AS lot_id,
---        f.etapa                                              AS stage,
---        MAX(CASE WHEN f.orden = 1 THEN f.archivo END)        AS picture1,
---        MAX(CASE WHEN f.orden = 2 THEN f.archivo END)        AS picture2,
---        MAX(CASE WHEN f.orden = 3 THEN f.archivo END)        AS picture3
---   FROM pc_foto f
---  GROUP BY f.pc_proceso_id, f.etapa;
---
--- CREATE OR REPLACE VIEW vw_lfp_postharvest_rpt AS
--- SELECT p.id                                                   AS id,
---        p.lot_code                                             AS numero_proceso,
---        per.nombre                                             AS supervisor,
---        p.fecha_inicio                                         AS fecha_pesaje,
---        p.peso_lote                                            AS peso,
---        p.peso_mallas                                          AS peso_mallas,
---        p.peso_baba                                            AS peso_fruta_neto,
---        p.comentario                                           AS comentarios_pesaje,
---        pre.inicio                                             AS fi_presecado,
---        pre.fin                                                AS ff_presecado,
---        TO_DAYS(pre.fin) - TO_DAYS(pre.inicio)                 AS dias_presecado,
---        pre.comentario                                         AS comentarios_presecado,
---        fer.inicio                                             AS fi_fermentado,
---        fer.fin                                                AS ff_fermentado,
---        TO_DAYS(fer.fin) - TO_DAYS(fer.inicio)                 AS dias_fermentado,
---        fer.comentario                                         AS comentarios_fermentado,
---        sol.inicio                                             AS fi_secado_sol,
---        sol.fin                                                AS ff_secado_sol,
---        TO_DAYS(sol.fin) - TO_DAYS(sol.inicio)                 AS dias_secado_sol,
---        sol.comentario                                         AS comentarios_secado_sol,
---        res.inicio                                             AS fecha_pesaje_final,
---        p.peso_final                                           AS peso_final,
---        p.peso_final / NULLIF(p.peso_baba,0)                   AS rendimiento,
---        res.comentario                                         AS comentarios_pesaje_final,
---        pre.id                                                 AS id_presecado,
---        fer.id                                                 AS id_fermentado,
---        sol.id                                                 AS id_secado_sol,
---        res.id                                                 AS id_resultados,
---        cf.id                                                  AS id_calidad_fermentado,
---        'fermentado'                                           AS fermentation_quality_stage,
---        cf.fecha_muestra                                       AS sample_date,
---        cf.buena                                               AS good,
---        cf.ligera                                              AS light,
---        cf.violeta                                             AS violet,
---        NULL                                                   AS good_perc,
---        NULL                                                   AS light_perc,
---        NULL                                                   AS violet_perc,
---        CASE WHEN qs.id IS NULL THEN NULL ELSE 'secado_sol' END AS sundrying_quality_stage,
---        qs.fecha_muestra                                       AS sundrying_sample_date,
---        qs.humedad_1                                           AS sundrying_moisture_1,
---        qs.humedad_2                                           AS sundrying_moisture_2,
---        qs.humedad_3                                           AS sundrying_moisture_3,
---        qs.humedad_promedio                                    AS avg_sundrying_bean_moisture,
---        qs.granos_muestra                                      AS sample_bean_count,
---        qs.indice_grano_g                                      AS sundrying_bean_index_grams,
---        qs.granos_vacios_pct                                   AS sundrying_percent_empty_beans,
---        CASE WHEN qm.id IS NULL THEN NULL ELSE 'secado_maq' END AS machinedrying_quality_stage,
---        qm.fecha_muestra                                       AS machinedrying_sample_date,
---        qm.humedad_1                                           AS machinedrying_bean_moisture_1,
---        qm.humedad_2                                           AS machinedrying_bean_moisture_2,
---        qm.humedad_3                                           AS machinedrying_bean_moisture_3,
---        qm.humedad_promedio                                    AS machinedrying_avg_bean_moisture,
---        qm.granos_muestra                                      AS machinedrying_sample_bean_count,
---        qm.indice_grano_g                                      AS machinedrying_bean_index_grams,
---        qm.granos_vacios_pct                                   AS machinedrying_percent_empty_beans,
---        ff.picture1                                            AS fermentation_picture1,
---        fs.picture1                                            AS sundrying_picture1,
---        fs.picture2                                            AS sundrying_picture2,
---        fs.picture3                                            AS sundrying_picture3,
---        fm.picture1                                            AS machinedrying_picture1,
---        fm.picture2                                            AS machinedrying_picture2,
---        fm.picture3                                            AS machinedrying_picture3,
---        maq.id                                                 AS id_secado_maquina,
---        qs.id                                                  AS id_calidad_secadosol,
---        qm.id                                                  AS id_calidad_secadomaquina
---   FROM pc_proceso p
---   LEFT JOIN z_personal per ON per.id = p.supervisor_id
---   LEFT JOIN pc_etapa pre ON pre.pc_proceso_id = p.id AND pre.etapa = 'presecado'
---   LEFT JOIN pc_etapa fer ON fer.pc_proceso_id = p.id AND fer.etapa = 'fermentado'
---   LEFT JOIN pc_etapa sol ON sol.pc_proceso_id = p.id AND sol.etapa = 'secado_sol'
---   LEFT JOIN pc_etapa maq ON maq.pc_proceso_id = p.id AND maq.etapa = 'secado_maq'
---   LEFT JOIN pc_etapa res ON res.pc_proceso_id = p.id AND res.etapa = 'resultado'
---   LEFT JOIN pc_calidad_fermentacion cf ON cf.pc_proceso_id = p.id
---   LEFT JOIN pc_calidad_secado qs ON qs.pc_proceso_id = p.id AND qs.etapa = 'secado_sol'
---   LEFT JOIN pc_calidad_secado qm ON qm.pc_proceso_id = p.id AND qm.etapa = 'secado_maq'
---   LEFT JOIN vw_lfp_postharvest_fotos ff ON ff.lot_id = p.id AND ff.stage = 'fermentado'
---   LEFT JOIN vw_lfp_postharvest_fotos fs ON fs.lot_id = p.id AND fs.stage = 'secado_sol'
---   LEFT JOIN vw_lfp_postharvest_fotos fm ON fm.lot_id = p.id AND fm.stage = 'secado_maq';
+CREATE OR REPLACE VIEW vw_lfp_postharvest_fotos AS
+SELECT f.pc_proceso_id                                      AS lot_id,
+       f.etapa                                              AS stage,
+       MAX(CASE WHEN f.orden = 1 THEN f.archivo END)        AS picture1,
+       MAX(CASE WHEN f.orden = 2 THEN f.archivo END)        AS picture2,
+       MAX(CASE WHEN f.orden = 3 THEN f.archivo END)        AS picture3
+  FROM pc_foto f
+ GROUP BY f.pc_proceso_id, f.etapa;
+
+CREATE OR REPLACE VIEW vw_lfp_postharvest_rpt AS
+SELECT p.id                                                   AS id,
+       p.lot_code                                             AS numero_proceso,
+       per.nombre                                             AS supervisor,
+       p.fecha_inicio                                         AS fecha_pesaje,
+       p.peso_lote                                            AS peso,
+       p.peso_mallas                                          AS peso_mallas,
+       p.peso_baba                                            AS peso_fruta_neto,
+       p.comentario                                           AS comentarios_pesaje,
+       pre.inicio                                             AS fi_presecado,
+       pre.fin                                                AS ff_presecado,
+       TO_DAYS(pre.fin) - TO_DAYS(pre.inicio)                 AS dias_presecado,
+       pre.comentario                                         AS comentarios_presecado,
+       fer.inicio                                             AS fi_fermentado,
+       fer.fin                                                AS ff_fermentado,
+       TO_DAYS(fer.fin) - TO_DAYS(fer.inicio)                 AS dias_fermentado,
+       fer.comentario                                         AS comentarios_fermentado,
+       sol.inicio                                             AS fi_secado_sol,
+       sol.fin                                                AS ff_secado_sol,
+       TO_DAYS(sol.fin) - TO_DAYS(sol.inicio)                 AS dias_secado_sol,
+       sol.comentario                                         AS comentarios_secado_sol,
+       res.inicio                                             AS fecha_pesaje_final,
+       p.peso_final                                           AS peso_final,
+       p.peso_final / NULLIF(p.peso_baba,0)                   AS rendimiento,
+       res.comentario                                         AS comentarios_pesaje_final,
+       pre.id                                                 AS id_presecado,
+       fer.id                                                 AS id_fermentado,
+       sol.id                                                 AS id_secado_sol,
+       res.id                                                 AS id_resultados,
+       cf.id                                                  AS id_calidad_fermentado,
+       'fermentado'                                           AS fermentation_quality_stage,
+       cf.fecha_muestra                                       AS sample_date,
+       cf.buena                                               AS good,
+       cf.ligera                                              AS light,
+       cf.violeta                                             AS violet,
+       NULL                                                   AS good_perc,
+       NULL                                                   AS light_perc,
+       NULL                                                   AS violet_perc,
+       CASE WHEN qs.id IS NULL THEN NULL ELSE 'secado_sol' END AS sundrying_quality_stage,
+       qs.fecha_muestra                                       AS sundrying_sample_date,
+       qs.humedad_1                                           AS sundrying_moisture_1,
+       qs.humedad_2                                           AS sundrying_moisture_2,
+       qs.humedad_3                                           AS sundrying_moisture_3,
+       qs.humedad_promedio                                    AS avg_sundrying_bean_moisture,
+       qs.granos_muestra                                      AS sample_bean_count,
+       qs.indice_grano_g                                      AS sundrying_bean_index_grams,
+       qs.granos_vacios_pct                                   AS sundrying_percent_empty_beans,
+       CASE WHEN qm.id IS NULL THEN NULL ELSE 'secado_maq' END AS machinedrying_quality_stage,
+       qm.fecha_muestra                                       AS machinedrying_sample_date,
+       qm.humedad_1                                           AS machinedrying_bean_moisture_1,
+       qm.humedad_2                                           AS machinedrying_bean_moisture_2,
+       qm.humedad_3                                           AS machinedrying_bean_moisture_3,
+       qm.humedad_promedio                                    AS machinedrying_avg_bean_moisture,
+       qm.granos_muestra                                      AS machinedrying_sample_bean_count,
+       qm.indice_grano_g                                      AS machinedrying_bean_index_grams,
+       qm.granos_vacios_pct                                   AS machinedrying_percent_empty_beans,
+       ff.picture1                                            AS fermentation_picture1,
+       fs.picture1                                            AS sundrying_picture1,
+       fs.picture2                                            AS sundrying_picture2,
+       fs.picture3                                            AS sundrying_picture3,
+       fm.picture1                                            AS machinedrying_picture1,
+       fm.picture2                                            AS machinedrying_picture2,
+       fm.picture3                                            AS machinedrying_picture3,
+       maq.id                                                 AS id_secado_maquina,
+       qs.id                                                  AS id_calidad_secadosol,
+       qm.id                                                  AS id_calidad_secadomaquina
+  FROM pc_proceso p
+  LEFT JOIN z_personal per ON per.id = p.supervisor_id
+  LEFT JOIN pc_etapa pre ON pre.pc_proceso_id = p.id AND pre.etapa = 'presecado'
+  LEFT JOIN pc_etapa fer ON fer.pc_proceso_id = p.id AND fer.etapa = 'fermentado'
+  LEFT JOIN pc_etapa sol ON sol.pc_proceso_id = p.id AND sol.etapa = 'secado_sol'
+  LEFT JOIN pc_etapa maq ON maq.pc_proceso_id = p.id AND maq.etapa = 'secado_maq'
+  LEFT JOIN pc_etapa res ON res.pc_proceso_id = p.id AND res.etapa = 'resultado'
+  LEFT JOIN pc_calidad_fermentacion cf ON cf.pc_proceso_id = p.id
+  LEFT JOIN pc_calidad_secado qs ON qs.pc_proceso_id = p.id AND qs.etapa = 'secado_sol'
+  LEFT JOIN pc_calidad_secado qm ON qm.pc_proceso_id = p.id AND qm.etapa = 'secado_maq'
+  LEFT JOIN vw_lfp_postharvest_fotos ff ON ff.lot_id = p.id AND ff.stage = 'fermentado'
+  LEFT JOIN vw_lfp_postharvest_fotos fs ON fs.lot_id = p.id AND fs.stage = 'secado_sol'
+  LEFT JOIN vw_lfp_postharvest_fotos fm ON fm.lot_id = p.id AND fm.stage = 'secado_maq';

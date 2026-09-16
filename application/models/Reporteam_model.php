@@ -18,7 +18,7 @@ class Reporteam_model  extends CI_Model  {
         $this->db->where('semana', $semana);
         $this->db->where('anno', $anno);
         $this->db->order_by('subtarea', 'ASC');
-        $lotesResult = $this->db->get('vw_reporte_am')->result();
+        $lotesResult = $this->db->get('vw_lfp_reporte_am')->result();
         return $lotesResult;
 
     }
@@ -27,7 +27,7 @@ class Reporteam_model  extends CI_Model  {
         $this->db->select('anno');
         $this->db->distinct();
         $this->db->order_by('anno', 'ASC');
-        $annosResult = $this->db->get('vw_reporte_am')->result();
+        $annosResult = $this->db->get('vw_lfp_reporte_am')->result();
         return $annosResult;
     }
 
@@ -35,7 +35,7 @@ class Reporteam_model  extends CI_Model  {
         $this->db->select('semana');
         $this->db->distinct();
         $this->db->order_by('semana', 'ASC');
-        $semanasResult = $this->db->get('vw_reporte_am')->result();
+        $semanasResult = $this->db->get('vw_lfp_reporte_am')->result();
         return $semanasResult;
     }
 
@@ -47,7 +47,7 @@ class Reporteam_model  extends CI_Model  {
         $this->db->distinct();
         $this->db->where('semana', $semana);
         $this->db->order_by('lote', 'ASC');
-        $lotesResult = $this->db->get('vw_reporte_am')->result();
+        $lotesResult = $this->db->get('vw_lfp_reporte_am')->result();
 
         $lotes = array();
     
@@ -68,7 +68,7 @@ class Reporteam_model  extends CI_Model  {
 
         $finalSQL = "SELECT subtarea, 
         $lotesSQL
-        FROM vw_reporte_am
+        FROM vw_lfp_reporte_am
         WHERE semana = $semana
         GROUP BY subtarea
         ;";

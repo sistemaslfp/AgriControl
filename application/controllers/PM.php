@@ -43,7 +43,7 @@ class PM extends Public_controller
         try {
             $crud = new grocery_CRUD();
 
-            $currentTable = 'vw_reporte_pm';
+            $currentTable = 'vw_lfp_reporte_pm';
 
             $crud->set_theme('tablestrap4_datefilter');
             // $crud->set_model('pm_model');
@@ -160,105 +160,42 @@ class PM extends Public_controller
     public function editarPM()
     {
         try {
-            // $this->load->library('form_validation');
             $crud = new grocery_CRUD($this);
 
             $crud->set_theme('tablestrap4');
-            // $crud->set_theme('bootstrap-v4');
-            // $crud->set_model('pm_model');
-            $crud->set_table('z_tabla_pm');
+            $crud->set_table('lfp_am');
             $crud->set_subject('PM');
 
-            // $crud->unset_read();
             $crud->unset_add();
-            // $crud->unset_jquery();
             $crud->unset_clone();
             $crud->unset_delete();
             $crud->unset_back_to_list();
 
-            $crud->columns('numero_registro', 'fecha', 'finca', 'lote', 'modulo', 'responsable', 'trabajador', 'cultivo', 'subtarea');
+            $crud->columns('fecha_proceso', 'finca_id', 'lote_id', 'modulos', 'responsable_cierre_id', 'personal_id', 'cultivo_id', 'subtarea_id', 'cantidad');
+            $crud->edit_fields('fecha_proceso', 'finca_id', 'lote_id', 'modulos', 'responsable_cierre_id', 'personal_id', 'cantidad', 'cultivo_id', 'subtarea_id', 'hora_cierre', 'comentario_cierre');
+            $this->_pmCamposComunes($crud);
 
-            $crud->edit_fields('numero_registro', 'fecha', 'pm_year', 'pm_week', 'finca', 'lote', 'modulo', 'responsable', 'trabajador', 'cantidad', 'cultivo', 'subtarea', 'hora_inicio', 'hora_cierre', 'comentario');
-
-            // Añadir campos al formulario de creación
-            // $crud->add_fields('numero_registro', 'fecha', 'finca', 'lote', 'modulo', 'responsable', 'trabajador', 'cantidad', 'cultivo', 'subtarea', 'hora_cierre', 'hora_inicio', 'comentario');
-
-            $crud->set_relation('finca', 'z_finca', 'nombre');
-            $crud->set_relation('responsable', 'z_personal', 'nombre');
-            $crud->set_relation('trabajador', 'z_personal', 'nombre');
-            $crud->set_relation('cultivo', 'z_cultivo', 'nombre');
-            $crud->set_primary_key('id', 'vw_util_finca_lotes');
-            $crud->set_relation('lote', 'vw_util_finca_lotes', '{nombre_finca} - Lote {lote}');
-            $crud->set_relation('subtarea', 'z_subtarea', 'nombre_subtarea');
-
-            $crud->callback_before_insert(array($this, 'calculateYearAndWeek'));
-
-            $state = $crud->getState();
-
-            $dateFrom = $this->input->get('fechaDesde');
-            $dateTo = $this->input->get('fechaHasta');
-
-            $dateFrom = date("Y-m-d", strtotime($dateFrom));
-            $dateTo = date("Y-m-d", strtotime($dateTo));
-
-            $dateFrom = strval($dateFrom);
-            $dateTo = strval($dateTo);
+            $crud->required_fields('finca_id', 'lote_id', 'personal_id', 'cantidad', 'cultivo_id', 'subtarea_id', 'hora_cierre');
 
             $group = $this->ion_auth->get_users_groups()->row()->id;
 
-            $crud->required_fields('finca', 'lote', 'trabajador', 'cantidad', 'cultivo', 'subtarea', 'hora_cierre', 'hora_inicio');
-
             if ($group != 1 && $group != 2) {
                 redirect('/', 'refresh');
-                // $crud->unset_edit();
             }
 
-            if ($group != 1) {
-                $crud->unset_add();
-            }
+            $state = $crud->getState();
 
-            if ($state == 'export' || $state == 'print') {
+            if (in_array($state, array('export', 'print', 'list', 'add'))) {
                 redirect('PM/listarPM');
             }
 
-            if ($state == "list") {
-                redirect('PM/listarPM');
+            if ($state == 'edit') {
+                $crud->callback_edit_field('fecha_proceso', array($this, '_campoFechaInicio'));
+                $crud->callback_edit_field('hora_cierre', array($this, '_campoHoraCierre'));
+                $crud->field_type('responsable_cierre_id', 'readonly');
             }
 
-            if ($state == "add") {
-                redirect('PM/listarPM');
-            }
-
-            if ($state == "edit") {
-                $crud->callback_edit_field('hora_inicio', function ($value, $primary_key) {
-                    return '<input type="time" name="hora_inicio" value="' . date('H:i', strtotime($value)) . '" />';
-                });
-
-                $crud->callback_edit_field('hora_cierre', function ($value, $primary_key) {
-                    return '<input type="time" name="hora_cierre" value="' . date('H:i', strtotime($value)) . '" />';
-                });
-
-                $crud->field_type('numero_registro', 'readonly');
-                $crud->field_type('fecha', 'readonly');
-                $crud->field_type('responsable', 'readonly');
-                $crud->field_type('fecha_registro', 'readonly');
-                $crud->field_type('pm_week', 'readonly');
-                $crud->field_type('pm_year', 'readonly');
-            }
-
-            $this->db->select('id_modulo, modulo, nombre_finca, lote');
-            $results = $this->db->get('vw_util_fincas_lotes_modulos')->result();
-            $modulos_multiselect = array();
-
-            foreach ($results as $result) {
-                $modulos_multiselect[$result->id_modulo] = $result->nombre_finca . ' - Lote ' . $result->lote . ' - Mód' . $result->modulo;
-            }
-
-            $crud->field_type('modulo', 'multiselect', $modulos_multiselect);
-
-            $crud->callback_before_update(array($this, 'validateFarmLot'));
-            // $crud->callback_before_update(array($this, 'validateModules'));
-            // $crud->callback_before_insert(array($this, 'validateModules'));
+            $crud->callback_before_update(array($this, 'pmAntesDeActualizar'));
 
             $output = $crud->render();
 
@@ -271,7 +208,6 @@ class PM extends Public_controller
             show_error($e->getMessage() . ' --- ' . $e->getTraceAsString());
         }
     }
-
     // public function verPM()
     // {
     //     try {
@@ -424,7 +360,7 @@ class PM extends Public_controller
             $crud = new grocery_CRUD($this);
 
             $crud->set_theme('tablestrap4');
-            $crud->set_table('z_tabla_pm');
+            $crud->set_table('lfp_am');
             $crud->set_subject('PM');
 
             $crud->unset_read();
@@ -433,39 +369,22 @@ class PM extends Public_controller
             $crud->unset_delete();
             $crud->unset_back_to_list();
 
-            $crud->columns('numero_registro', 'fecha', 'finca', 'lote', 'modulo', 'responsable', 'trabajador', 'cultivo', 'subtarea');
+            $crud->columns('fecha_proceso', 'finca_id', 'lote_id', 'modulos', 'responsable_cierre_id', 'personal_id', 'cultivo_id', 'subtarea_id', 'cantidad');
+            $crud->add_fields('fecha_proceso', 'finca_id', 'lote_id', 'modulos', 'responsable_id', 'personal_id', 'cantidad', 'cultivo_id', 'subtarea_id', 'hora_cierre', 'comentario_cierre',
+                'guid', 'cierre_guid', 'responsable_cierre_id', 'origen', 'cierre_origen', 'received_at_server', 'cierre_received_at');
+            $this->_pmCamposComunes($crud, !in_array($crud->getState(), array('add', 'insert', 'insert_validation')));
 
-            // Añadir campos al formulario de creación
-            $crud->add_fields('numero_registro', 'fecha', 'pm_year', 'pm_week', 'finca', 'lote', 'modulo', 'responsable', 'trabajador', 'cantidad', 'cultivo', 'subtarea', 'hora_inicio', 'hora_cierre', 'comentario', 'fecha_registro');
+            foreach (array('guid', 'cierre_guid', 'responsable_cierre_id', 'origen', 'cierre_origen', 'received_at_server', 'cierre_received_at') as $campo) {
+                $crud->field_type($campo, 'invisible');
+            }
 
-            $crud->set_relation('finca', 'z_finca', 'nombre');
-            $crud->set_relation('responsable', 'z_personal', 'nombre');
-            $crud->set_relation('trabajador', 'z_personal', 'nombre');
-            $crud->set_relation('cultivo', 'z_cultivo', 'nombre');
-            $crud->set_primary_key('id', 'vw_util_finca_lotes');
-            $crud->set_relation('lote', 'vw_util_finca_lotes', '{nombre_finca} - Lote {lote}');
-            $crud->set_relation('subtarea', 'z_subtarea', 'nombre_subtarea');
-
-            $crud->field_type('fecha', 'date');
-            $crud->field_type('pm_year', 'hidden');
-            $crud->field_type('pm_week', 'hidden');
-            $crud->field_type('fecha_registro', 'hidden');
-
-            $crud->callback_before_insert(array($this, 'calculateYearAndWeek'));
             $crud->add_action('Editar', '', 'edit', 'edit', array($this, '_callback_column_edit'));
             $crud->add_action('Ver', '', 'eye', 'eye', array($this, '_callback_column_view'));
-            $crud->callback_before_update(array($this, 'validateFarmLot'));
+            $crud->callback_before_insert(array($this, 'pmAntesDeInsertar'));
 
             $state = $crud->getState();
 
-            $dateFrom = $this->input->get('fechaDesde');
-            $dateTo = $this->input->get('fechaHasta');
-
-            $dateFrom = date("Y-m-d", strtotime($dateFrom));
-            $dateTo = date("Y-m-d", strtotime($dateTo));
-
             $group = $this->ion_auth->get_users_groups()->row()->id;
-            $crud->field_type('fecha', 'date');
 
             if ($group != 1 && $group != 2) {
                 redirect('/', 'refresh');
@@ -480,53 +399,36 @@ class PM extends Public_controller
             }
 
             if ($state == 'add') {
-                $crud->callback_add_field('hora_inicio', function ($value, $primary_key) {
-                    return '<input type="time" name="hora_inicio" value="' . date('H:i', strtotime($value)) . '" />';
-                });
-
-                $crud->callback_add_field('hora_cierre', function ($value, $primary_key) {
-                    return '<input type="time" name="hora_cierre" value="' . date('H:i', strtotime($value)) . '" />';
-                });
+                $crud->callback_add_field('fecha_proceso', array($this, '_campoFechaInicio'));
+                $crud->callback_add_field('hora_cierre', array($this, '_campoHoraCierre'));
             }
+
+            // Una fila de lfp_am sin cierre es una programacion AM, no un PM.
+            $crud->where('cierre_guid IS NOT NULL', null, false);
 
             if ($state == 'export' || $state == 'print') {
                 if ($this->uri->segment(4) === "fechaDesde") {
-                    $reportDateFrom = $this->uri->segment(5);
-                    $crud->where('fecha >= "' . $reportDateFrom . '"');
+                    $crud->where('fecha_proceso >=', $this->_fechaSql($this->uri->segment(5)));
                 }
 
                 if ($this->uri->segment(6) === "fechaHasta") {
-                    $reportDateTo = $this->uri->segment(7);
-                    $crud->where('fecha <= "' . $reportDateTo . '"');
+                    $crud->where('fecha_proceso <', $this->_diaSiguiente($this->uri->segment(7)));
                 }
 
                 if ($this->uri->segment(8) === "finca") {
-                    $reportIdFinca = $this->uri->segment(9);
-                    $crud->where('finca = ' . $reportIdFinca);
+                    $crud->where('lfp_am.finca_id', (int) $this->uri->segment(9));
                 }
             } else {
-                $crud->where('fecha >= "' . $dateFrom . '"');
-                $crud->where('fecha <= "' . $dateTo . '"');
+                $crud->where('fecha_proceso >=', $this->_fechaSql($this->input->get('fechaDesde')));
+                $crud->where('fecha_proceso <', $this->_diaSiguiente($this->input->get('fechaHasta')));
 
                 $filtro_finca_pm = $this->input->get('id_finca');
                 if (isset($filtro_finca_pm) && $filtro_finca_pm > 0) {
-                    $crud->where('finca', $filtro_finca_pm);
+                    $crud->where('lfp_am.finca_id', (int) $filtro_finca_pm);
                 }
             }
 
-            $crud->field_type('numero_registro', 'hidden');
-
-            $crud->required_fields('fecha', 'finca', 'lote', 'responsable', 'trabajador', 'cantidad', 'cultivo', 'subtarea', 'hora_cierre', 'hora_inicio');
-
-            $this->db->select('id_modulo, modulo, nombre_finca, lote');
-            $results = $this->db->get('vw_util_fincas_lotes_modulos')->result();
-            $modulos_multiselect = array();
-
-            foreach ($results as $result) {
-                $modulos_multiselect[$result->id_modulo] = $result->nombre_finca . ' - Lote ' . $result->lote . ' - Mód' . $result->modulo;
-            }
-
-            $crud->field_type('modulo', 'multiselect', $modulos_multiselect);
+            $crud->required_fields('finca_id', 'lote_id', 'responsable_id', 'personal_id', 'cantidad', 'cultivo_id', 'subtarea_id', 'hora_cierre');
 
             $output = $crud->render();
 
@@ -550,39 +452,183 @@ class PM extends Public_controller
         return site_url('PM/editarPM/read/' . $row->id);
     }
 
-    public function calculateYearAndWeek($post_array)
+    private function _pmCamposComunes($crud, $relacionCierre = true)
     {
-        $fecha = new DateTime($post_array['fecha']);
-        $post_array['pm_year'] = $fecha->format('Y');
-        $post_array['pm_week'] = $fecha->format('W');
+        $crud->display_as('fecha_proceso', 'Fecha')
+            ->display_as('finca_id', 'Finca')
+            ->display_as('lote_id', 'Lote')
+            ->display_as('modulos', 'Módulos')
+            ->display_as('responsable_id', 'Responsable')
+            ->display_as('responsable_cierre_id', 'Responsable')
+            ->display_as('personal_id', 'Trabajador')
+            ->display_as('cultivo_id', 'Cultivo')
+            ->display_as('subtarea_id', 'Subtarea')
+            ->display_as('cantidad', 'Cantidad')
+            ->display_as('hora_cierre', 'Hora cierre')
+            ->display_as('comentario_cierre', 'Comentario');
 
-        // Establecer fecha_registro a la fecha y hora actual en GMT-5
-        $now = new DateTime('now', new DateTimeZone('America/Guayaquil')); // GMT-5
-        $post_array['fecha_registro'] = $now->format('Y-m-d H:i:s');
+        $crud->set_relation('finca_id', 'z_finca', 'nombre');
+        $crud->set_relation('responsable_id', 'z_personal', 'nombre');
+        if ($relacionCierre) {
+            $crud->set_relation('responsable_cierre_id', 'z_personal', 'nombre');
+        }
+        $crud->set_relation('personal_id', 'z_personal', 'nombre');
+        $crud->set_relation('cultivo_id', 'z_cultivo', 'nombre');
+        $crud->set_primary_key('id', 'vw_util_finca_lotes');
+        $crud->set_relation('lote_id', 'vw_util_finca_lotes', '{nombre_finca} - Lote {lote}');
+        $crud->set_relation('subtarea_id', 'z_subtarea', 'nombre_subtarea');
 
-        // Generar un UUID para numero_registro
-        $post_array['numero_registro'] = $this->generateUUID();
+        $this->db->select('id_modulo, modulo, nombre_finca, lote');
+        $results = $this->db->get('vw_util_fincas_lotes_modulos')->result();
+        $modulos_multiselect = array();
+
+        foreach ($results as $result) {
+            $modulos_multiselect[$result->id_modulo] = $result->nombre_finca . ' - Lote ' . $result->lote . ' - Mód' . $result->modulo;
+        }
+
+        $crud->field_type('modulos', 'multiselect', $modulos_multiselect);
+    }
+
+    public function _campoFechaInicio($value, $primary_key = null)
+    {
+        if ($primary_key === null) {
+            $valor = $value ? date('Y-m-d\TH:i', strtotime($value)) : '';
+            return '<input type="datetime-local" name="fecha_inicio" value="' . $valor . '" required />';
+        }
+
+        // Al editar la fecha no cambia: moverla cambia la semana de pago. Solo la hora.
+        return date('Y-m-d', strtotime($value))
+            . ' <input type="time" name="hora_inicio" value="' . date('H:i', strtotime($value)) . '" />';
+    }
+
+    public function _campoHoraCierre($value, $primary_key = null)
+    {
+        $valor = $value ? date('Y-m-d\TH:i', strtotime($value)) : '';
+        return '<input type="datetime-local" name="hora_cierre" value="' . $valor . '" />';
+    }
+
+    public function pmAntesDeInsertar($post_array)
+    {
+        $inicio = $this->_datetimeSql(isset($post_array['fecha_inicio']) ? $post_array['fecha_inicio'] : '');
+        $cierre = $this->_datetimeSql(isset($post_array['hora_cierre']) ? $post_array['hora_cierre'] : '');
+
+        if ($inicio === null || $cierre === null || $cierre < $inicio) {
+            return false;
+        }
+
+        if (!$this->_loteYModulosValidos($post_array)) {
+            return false;
+        }
+
+        $ahora = date('Y-m-d H:i:s');
+
+        $post_array['fecha_proceso'] = $inicio;
+        $post_array['hora_cierre'] = $cierre;
+        $post_array['modulos'] = $this->_modulosCsv(isset($post_array['modulos']) ? $post_array['modulos'] : array());
+        $post_array['guid'] = $this->generateUUID();
+        $post_array['cierre_guid'] = $this->generateUUID();
+        $post_array['responsable_cierre_id'] = $post_array['responsable_id'];
+        $post_array['origen'] = 'web';
+        $post_array['cierre_origen'] = 'web';
+        $post_array['received_at_server'] = $ahora;
+        $post_array['cierre_received_at'] = $ahora;
+
+        unset($post_array['fecha_inicio']);
 
         return $post_array;
     }
 
-    private function generateUUID()
+    public function pmAntesDeActualizar($post_array, $primary_key)
     {
-        // Generar un UUID v4
-        return sprintf(
-            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-            mt_rand(0, 0xffff),
-            mt_rand(0, 0xffff),
-            mt_rand(0, 0xffff),
-            mt_rand(0, 0x0fff) | 0x4000,
-            mt_rand(0, 0x3fff) | 0x8000,
-            mt_rand(0, 0xffff),
-            mt_rand(0, 0xffff),
-            mt_rand(0, 0xffff)
-        );
+        $fila = $this->db->select('fecha_proceso, cierre_guid')->where('id', $primary_key)->get('lfp_am')->row();
+
+        if (!$fila || $fila->cierre_guid === null) {
+            return false;
+        }
+
+        $hora = isset($post_array['hora_inicio']) && preg_match('/^\d{2}:\d{2}$/', $post_array['hora_inicio'])
+            ? $post_array['hora_inicio']
+            : date('H:i', strtotime($fila->fecha_proceso));
+        $inicio = date('Y-m-d', strtotime($fila->fecha_proceso)) . ' ' . $hora . ':00';
+        $cierre = $this->_datetimeSql(isset($post_array['hora_cierre']) ? $post_array['hora_cierre'] : '');
+
+        if ($cierre === null || $cierre < $inicio) {
+            return false;
+        }
+
+        if (!$this->_loteYModulosValidos($post_array)) {
+            return false;
+        }
+
+        $post_array['fecha_proceso'] = $inicio;
+        $post_array['hora_cierre'] = $cierre;
+        $post_array['modulos'] = $this->_modulosCsv(isset($post_array['modulos']) ? $post_array['modulos'] : array());
+        unset($post_array['hora_inicio']);
+
+        return $post_array;
     }
 
+    private function _loteYModulosValidos($post_array)
+    {
+        $lote = $this->db->where('id', (int) $post_array['lote_id'])
+            ->where('finca_id', (int) $post_array['finca_id'])
+            ->get('z_lote')->row();
 
+        if (!$lote) {
+            return false;
+        }
+
+        $modulos = isset($post_array['modulos']) && is_array($post_array['modulos']) ? $post_array['modulos'] : array();
+
+        foreach ($modulos as $moduloId) {
+            $ok = $this->db->where('id', (int) $moduloId)->where('lote_id', (int) $lote->id)->count_all_results('z_modulo');
+            if ($ok == 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // lfp_am.modulos es la CSV ordenada y sin repetidos que tambien escribe V4.php.
+    private function _modulosCsv($modulos)
+    {
+        if (!is_array($modulos)) {
+            $modulos = explode(',', (string) $modulos);
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $modulos))));
+        sort($ids);
+
+        return $ids ? $ids : array();
+    }
+
+    private function _datetimeSql($valor)
+    {
+        $valor = str_replace('T', ' ', trim((string) $valor));
+        $ts = strtotime($valor);
+
+        return ($valor === '' || $ts === false) ? null : date('Y-m-d H:i:s', $ts);
+    }
+
+    private function _fechaSql($valor)
+    {
+        return date('Y-m-d', strtotime((string) $valor));
+    }
+
+    private function _diaSiguiente($valor)
+    {
+        return date('Y-m-d', strtotime((string) $valor . ' +1 day'));
+    }
+
+    private function generateUUID()
+    {
+        $b = random_bytes(16);
+        $b[6] = chr(ord($b[6]) & 0x0f | 0x40);
+        $b[8] = chr(ord($b[8]) & 0x3f | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($b), 4));
+    }
     function export($filtro_fecha)
     {
         $file_name = 'reporte_pm' . date('Ymd') . '.csv';
@@ -631,69 +677,4 @@ class PM extends Public_controller
         echo json_encode($lotes);
     }
 
-    function validateFarmLot($post_array, $primary_key)
-    {
-        // Obtener los valores de finca_id y lote_id del formulario
-        $finca_id = $post_array['finca'];
-        $lote_id = $post_array['lote'];
-
-        // Verificar si el lote pertenece a la finca
-        $this->db->where('id', $lote_id);
-        $this->db->where('finca_id', $finca_id);
-        $query = $this->db->get('z_lote');
-
-        if ($query->num_rows() == 0) {
-            // Si no se encuentra el lote para la finca dada, retornar un mensaje de error
-            $this->form_validation->set_message('validateFarmLot', 'El lote seleccionado no pertenece a la finca.');
-            // echo '<script>alert("El lote seleccionado no pertenece a la finca.");</script>';
-            error_log('Error en la validación de lote y finca');
-            return false;
-        }
-
-        $lotId = $post_array['lote'];
-        $selectedModules = $post_array['modulo'];
-
-        // Convierte la cadena de módulos seleccionados en un array
-        // $modulesArray = explode(',', $selectedModules);
-
-        // Verifica cada módulo
-        foreach ($selectedModules as $moduleId) {
-            $this->db->where('id', $moduleId);
-            $this->db->where('lote_id', $lotId);
-            $query = $this->db->get('z_modulo');
-
-            if ($query->num_rows() == 0) {
-                return array(
-                    'success' => false,
-                    'error_message' => 'El campo obligatorio no puede estar vacío. Por favor, complétalo.'
-                );
-            }
-        }
-
-        // Si todo está bien, devuelve los datos sin modificar
-        return $post_array;
-    }
-
-    function validateModules($post_array, $primary_key)
-    {
-        $lotId = $post_array['lote'];
-        $selectedModules = $post_array['modulo'];
-
-        // Convierte la cadena de módulos seleccionados en un array
-        $modulesArray = explode(',', $selectedModules);
-
-        // Verifica cada módulo
-        foreach ($modulesArray as $moduleId) {
-            $this->db->where('id', $moduleId);
-            $this->db->where('lote_id', $lotId);
-            $query = $this->db->get('z_modulo');
-
-            if ($query->num_rows() == 0) {
-                return false;
-            }
-        }
-
-        // Si todo está bien, devuelve los datos sin modificar
-        return true;
-    }
 }

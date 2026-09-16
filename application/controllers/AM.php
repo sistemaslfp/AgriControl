@@ -26,7 +26,7 @@ class AM extends Public_controller {
 
         //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('vw_reporte_am_base');
+        $crud->set_table('vw_lfp_reporte_am_base');
         $crud->set_primary_key('operario');
         $crud->set_subject('AM');
         $crud->unset_jquery();  

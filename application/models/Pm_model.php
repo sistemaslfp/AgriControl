@@ -37,7 +37,7 @@ class Pm_model  extends CI_Model  {
 
     public function date_filter($date) {
         $this->db->select("*");
-        $this->db->from("vw_reporte_pm");
+        $this->db->from("vw_lfp_reporte_pm");
         $this->db->where("fecha", $date);
         return $this->db->get();
     }

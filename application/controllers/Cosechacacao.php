@@ -34,159 +34,82 @@ class Cosechacacao extends Public_controller
 	{
 
 		try {
-			/* #region CRUD Configuration */
 			$crud = new grocery_CRUD();
 
+			// Cosecha en V4 es el cierre de una tarea AM con sus sacos en una tabla hija:
+			// la pantalla es de solo lectura y el detalle de sacos va en su propia vista.
 			$crud->set_theme('tablestrap4_datefilter');
-			$crud->set_table('z_cosecha_cacao');
+			$crud->set_table('vw_lfp_cosecha');
+			$crud->set_primary_key('id');
 			$crud->set_subject('Cosecha de Cacao');
-			// $crud->unset_read();
 			$crud->unset_jquery();
 			$crud->unset_clone();
-			// $crud->unset_edit();
+			$crud->unset_add();
+			$crud->unset_edit();
 			$crud->unset_delete();
-
-			$group = $this->ion_auth->get_users_groups()->row()->id;
-
-			// Check permissions
-
-			if ($group != 1) {
-				$crud->unset_delete();
-			}
-
-			if ($group != 1 && $group != 2) {
-				// redirect('/', 'refresh');
-				$crud->unset_edit();
-			}
-
-			$crud->callback_column('total', array($this, '_totalWeight_callback'));
-
-			$crud->set_relation('supervisor', 'z_personal', 'nombre');
-			$crud->set_relation('subtarea', 'z_subtarea', 'nombre_subtarea');
-			$crud->set_relation('finca', 'z_finca', 'nombre');
-			$crud->set_relation('trabajador', 'z_personal', 'nombre');
-			// $crud->set_relation('subtarea', 'vw_util_tareas_subtareas', 'tarea_nombre');
-			$crud->set_relation('lote', 'z_lote', 'lote');
-			$crud->set_relation('modulo', 'z_modulo', 'modulo');
-
-			$crud->callback_column('tarea', function ($value, $row) {
-				$ci =& get_instance();
-				$ci->load->database();
-
-				// Obtener tarea_id
-				$ci->db->where('id', $row->subtarea);
-				$subtarea = $ci->db->get('z_subtarea')->row();
-
-				// Obtener nombre de la tarea
-				$ci->db->where('id', $subtarea->tarea_id);
-				$tarea = $ci->db->get('z_tarea')->row();
-
-				return $tarea ? $tarea->nombre : 'N/A';
-			});
-
-			$crud->callback_edit_field('tarea', function ($value, $primary_key) {
-				$ci =& get_instance();
-				$ci->load->database();
-
-				// Obtener subtarea para el registro actual
-				$ci->db->where('id', $primary_key);
-				$subtarea = $ci->db->get('z_cosecha_cacao')->row();
-
-				// Obtener tarea_id y luego el nombre de la tarea
-				if ($subtarea) {
-					$ci->db->where('id', $subtarea->subtarea);
-					$tareaId = $ci->db->get('z_subtarea')->row();
-
-					if ($tareaId) {
-						$ci->db->where('id', $tareaId->tarea_id);
-						$tarea = $ci->db->get('z_tarea')->row();
-					}
-
-					return $tarea ? $tarea->nombre : 'N/A';
-				}
-
-				return 'N/A';
-			});
+			$crud->unset_read();
 
 			$crud->columns(
-				'supervisor',
+				'nombre1',
 				'finca',
 				'lote',
 				'modulo',
 				'fecha',
-				'hora',
+				'hora_cierre',
 				'tarea',
-				'subtarea',
-				'trabajador',
-				'total',
-				'saco1',
-				'saco2',
-				'saco3',
-				'saco4',
-				'saco5',
-				'saco6',
-				'saco7',
-				'saco8',
-				'saco9',
-				'saco10',
-				'saco11',
-				'saco12',
-				'saco13',
-				'saco14',
-				'saco15',
+				'nombre_subtarea',
+				'nombre',
+				'total_peso',
+				'total_sacos',
+				'peso_promedio_saco',
 				'observaciones'
 			);
 
-			$crud->field_type('created_at', 'readonly');
-			/* #endregion */
+			$crud->display_as('nombre1', 'Supervisor')
+				->display_as('finca', 'Finca')
+				->display_as('lote', 'Lote')
+				->display_as('modulo', 'Módulo')
+				->display_as('fecha', 'Fecha')
+				->display_as('hora_cierre', 'Hora')
+				->display_as('tarea', 'Tarea')
+				->display_as('nombre_subtarea', 'Subtarea')
+				->display_as('nombre', 'Trabajador')
+				->display_as('total_peso', 'Total')
+				->display_as('total_sacos', 'Sacos')
+				->display_as('peso_promedio_saco', 'Promedio saco')
+				->display_as('observaciones', 'Observaciones');
 
-			/* #region Date filter */
-
-			$dateFrom = $this->input->get('fechaDesde');
-			$dateTo = $this->input->get('fechaHasta');
-
-			isset($dateFrom) ? $dateFrom = date("Y-m-d", strtotime($dateFrom)) : $dateFrom = date("Y-m-d");
-			isset($dateFrom) ? $dateTo = date("Y-m-d", strtotime($dateTo)) : $dateTo = date("Y-m-d");
-
-			$dateFrom = strval($dateFrom);
-			$dateTo = strval($dateTo);
-			/* #endregion */
-
-			/* #region Print & Export filter */
-
-			$crud->callback_before_update(array($this, '_updateTotalWeight'));
+			$crud->add_action('Sacos', '', '', 'list', array($this, '_sacosButton'));
+			$crud->callback_column('fecha', array($this, '_soloFecha'));
 
 			$state = $crud->getState();
 
 			if ($state == 'export' || $state == 'print') {
 
 				if ($this->uri->segment(4) === "fechaDesde") {
-					$reportDateFrom = $this->uri->segment(5);
-					$crud->where('fecha >= "' . $reportDateFrom . '"');
+					$crud->where('fecha >=', $this->_fechaSql($this->uri->segment(5)));
 				}
 
 				if ($this->uri->segment(6) === "fechaHasta") {
-					$reportDateTo = $this->uri->segment(7);
-					$crud->where('fecha <= "' . $reportDateTo . '"');
+					$crud->where('fecha <', $this->_diaSiguiente($this->uri->segment(7)));
 				}
 
 				if ($this->uri->segment(8) === "id_finca") {
-					$reportIdFinca = $this->uri->segment(9);
-					$crud->where('finca = "' . $reportIdFinca . '"');
+					$crud->where('finca_id', (int) $this->uri->segment(9));
 				}
 
 			} else {
-				$crud->where('fecha >= "' . $dateFrom . '"');
-				$crud->where('fecha <= "' . $dateTo . '"');
+				$dateFrom = $this->input->get('fechaDesde');
+				$dateTo = $this->input->get('fechaHasta');
+
+				$crud->where('fecha >=', isset($dateFrom) ? $this->_fechaSql($dateFrom) : date('Y-m-d'));
+				$crud->where('fecha <', isset($dateTo) ? $this->_diaSiguiente($dateTo) : $this->_diaSiguiente(date('Y-m-d')));
 
 				$filtro_finca_pm = $this->input->get('id_finca');
-				if (isset($filtro_finca_pm)) {
-					if ($filtro_finca_pm > 0) {
-						$crud->where('finca', $filtro_finca_pm);
-					}
+				if (isset($filtro_finca_pm) && $filtro_finca_pm > 0) {
+					$crud->where('finca_id', (int) $filtro_finca_pm);
 				}
 			}
-			/* #endregion */
 
 			$output = $crud->render();
 
@@ -201,6 +124,48 @@ class Cosechacacao extends Public_controller
 		}
 	}
 
+	public function sacos()
+	{
+		try {
+			$crud = new grocery_CRUD();
+
+			$crud->set_theme('tablestrap4');
+			$crud->set_table('vw_lfp_cosecha_saco');
+			$crud->set_primary_key('id');
+			$crud->set_subject('Sacos');
+			$crud->unset_add();
+			$crud->unset_edit();
+			$crud->unset_delete();
+			$crud->unset_read();
+			$crud->unset_clone();
+
+			$crud->columns('fecha', 'finca', 'lote', 'nombre_subtarea', 'nombre', 'numero', 'libras');
+			$crud->display_as('fecha', 'Fecha')
+				->display_as('finca', 'Finca')
+				->display_as('lote', 'Lote')
+				->display_as('nombre_subtarea', 'Subtarea')
+				->display_as('nombre', 'Trabajador')
+				->display_as('numero', 'Saco')
+				->display_as('libras', 'Libras');
+
+			$crud->callback_column('fecha', array($this, '_soloFecha'));
+			$crud->where('cosecha_id', (int) $this->input->get('cosecha_id'));
+			$crud->order_by('numero', 'asc');
+
+			$output = $crud->render();
+
+			$this->load->view('Crud/default', (array) $output);
+
+		} catch (Exception $e) {
+			show_error($e->getMessage() . ' --- ' . $e->getTraceAsString());
+		}
+	}
+
+	public function _sacosButton($primary_key, $row)
+	{
+		return site_url('Cosechacacao/sacos') . '?cosecha_id=' . $row->id;
+	}
+
 	public function resumen()
 	{
 		try {
@@ -208,7 +173,7 @@ class Cosechacacao extends Public_controller
 			/* #region CRUD basic configuration */
 			$crud = new grocery_CRUD();
 
-			$currentTable = 'vw_cosecha_cacao_resumen';
+			$currentTable = 'vw_lfp_cosecha_resumen';
 
 			$crud->set_theme('tablestrap4_datefilter');
 			$crud->set_table($currentTable);
@@ -314,21 +279,6 @@ class Cosechacacao extends Public_controller
 
 			// $crud->callback_column('jornales', array($this, '_sumWageColumn_callback'));
 
-			/* #region Sum Wages */
-			$this->db->select_sum('jornales');
-			if ($this->input->get('id_finca')) {
-				$this->db->where('finca', $this->input->get('id_finca'));
-			}
-			if ($this->input->get('fechaDesde')) {
-				$this->db->where('fecha >=', $this->input->get('fechaDesde'));
-			}
-			if ($this->input->get('fechaHasta')) {
-				$this->db->where('fecha <=', $this->input->get('fechaHasta'));
-			}
-			$query = $this->db->get('z_cosecha_cacao');
-			$result = $query->row();
-			$suma = $result->jornales;
-			/* #endregion */
 
 			$output = $crud->render();
 
@@ -343,29 +293,19 @@ class Cosechacacao extends Public_controller
 		}
 	}
 
-	public function _totalWeight_callback($value, $row)
+	public function _soloFecha($value, $row)
 	{
-		return $row->saco1 + $row->saco2 + $row->saco3 + $row->saco4 + $row->saco5 + $row->saco6 + $row->saco7
-			+ $row->saco8 + $row->saco9 + $row->saco10 + $row->saco11 + $row->saco12 + $row->saco13 + $row->saco14 + $row->saco15;
+		return substr((string) $value, 0, 10);
 	}
 
-	private function _sumWageColumn_callback($value, $row)
+	private function _fechaSql($valor)
 	{
-		static $total_sum = 0;
-
-		$total_sum += $value;
-		return $total_sum;
+		return date('Y-m-d', strtotime((string) $valor));
 	}
 
-	function _updateTotalWeight($post_array, $primary_key)
+	private function _diaSiguiente($valor)
 	{
-		$sacos = array($post_array['saco1'], $post_array['saco2'], $post_array['saco3'], $post_array['saco4'], $post_array['saco5'], $post_array['saco6'], $post_array['saco7'], $post_array['saco8'], $post_array['saco9'], $post_array['saco10'], $post_array['saco11'], $post_array['saco12'], $post_array['saco13'], $post_array['saco14'], $post_array['saco15']);
-		$post_array['total_peso'] = array_sum($sacos);
-		$post_array['total_sacos'] = count(array_filter($sacos, function ($saco) {
-			return $saco > 0;
-		}));
-		return $post_array;
+		return date('Y-m-d', strtotime((string) $valor . ' +1 day'));
 	}
-
 
 }

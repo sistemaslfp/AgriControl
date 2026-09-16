@@ -31,7 +31,7 @@ class Postharvest extends Public_controller
 
         //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('vw_postharvest_rpt_001');
+        $crud->set_table('vw_lfp_postharvest_rpt');
         $crud->set_primary_key('id');
         $crud->set_subject('Poscosecha');
         $crud->unset_jquery();
@@ -81,7 +81,7 @@ class Postharvest extends Public_controller
 
         //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('vw_postharvest_rpt_001');
+        $crud->set_table('vw_lfp_postharvest_rpt');
         $crud->set_primary_key('id');
         $crud->set_subject('Poscosecha');
         $crud->unset_jquery();
@@ -103,158 +103,54 @@ class Postharvest extends Public_controller
 
     public function Predrying()
     {
-
-        $group = $this->ion_auth->get_users_groups()->row()->id;
-
-        if ($group == 3) {
-            redirect('/', 'refresh');
-        }
-
-        $crud = new grocery_CRUD();
-
-        //$crud->set_theme('tablestrap4_datefilter');
-        $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_predrying');
-        $crud->set_subject('Presecado');
-        $crud->unset_jquery();
-        $crud->unset_add();
-        // $crud->unset_edit();
-        $crud->unset_delete();
-
-        $crud->columns('start_date', 'end_date', 'comments');
-        $crud->edit_fields('start_date', 'end_date', 'comments');
-
-        $crud->display_as('start_date', 'Fecha de inicio');
-        $crud->display_as('end_date', 'Fecha de fin');
-        $crud->display_as('comments', 'Comentarios');
-
-        $output = $crud->render();
-
-        $this->load->view('Crud/farm-date_filter', (array) $output);
+        $this->_editarEtapa('presecado', 'Presecado');
     }
 
     public function Fermentation()
     {
-
-        $group = $this->ion_auth->get_users_groups()->row()->id;
-
-        if ($group == 3) {
-            redirect('/', 'refresh');
-        }
-
-        $crud = new grocery_CRUD();
-
-        //$crud->set_theme('tablestrap4_datefilter');
-        $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_fermentation');
-        $crud->set_subject('Fermentado');
-        $crud->unset_jquery();
-        $crud->unset_add();
-        // $crud->unset_edit();
-        $crud->unset_delete();
-
-        $crud->columns('start_date', 'end_date', 'comments');
-        $crud->edit_fields('start_date', 'end_date', 'comments');
-
-        $crud->display_as('start_date', 'Fecha de inicio');
-        $crud->display_as('end_date', 'Fecha de fin');
-        $crud->display_as('comments', 'Comentarios');
-
-        $output = $crud->render();
-
-        $this->load->view('Crud/farm-date_filter', (array) $output);
+        $this->_editarEtapa('fermentado', 'Fermentado');
     }
 
     public function SunDrying()
     {
-
-        $group = $this->ion_auth->get_users_groups()->row()->id;
-
-        if ($group == 3) {
-            redirect('/', 'refresh');
-        }
-
-        $crud = new grocery_CRUD();
-
-        //$crud->set_theme('tablestrap4_datefilter');
-        $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_sundrying');
-        $crud->set_subject('Secado Sol');
-        $crud->unset_jquery();
-        $crud->unset_add();
-        // $crud->unset_edit();
-        $crud->unset_delete();
-
-        $crud->columns('start_date', 'end_date', 'comments');
-        $crud->edit_fields('start_date', 'end_date', 'comments');
-
-        $crud->display_as('start_date', 'Fecha de inicio');
-        $crud->display_as('end_date', 'Fecha de fin');
-        $crud->display_as('comments', 'Comentarios');
-
-        $output = $crud->render();
-
-        $this->load->view('Crud/farm-date_filter', (array) $output);
+        $this->_editarEtapa('secado_sol', 'Secado Sol');
     }
 
     public function MachineDrying()
     {
-
-        $group = $this->ion_auth->get_users_groups()->row()->id;
-
-        if ($group == 3) {
-            redirect('/', 'refresh');
-        }
-
-        $crud = new grocery_CRUD();
-
-        //$crud->set_theme('tablestrap4_datefilter');
-        $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_machinedrying');
-        $crud->set_subject('Secado Máquina');
-        $crud->unset_jquery();
-        $crud->unset_add();
-        // $crud->unset_edit();
-        $crud->unset_delete();
-
-        $crud->columns('start_date', 'end_date', 'comments');
-        $crud->edit_fields('start_date', 'end_date', 'comments');
-
-        $crud->display_as('start_date', 'Fecha de inicio');
-        $crud->display_as('end_date', 'Fecha de fin');
-        $crud->display_as('comments', 'Comentarios');
-
-        $output = $crud->render();
-
-        $this->load->view('Crud/farm-date_filter', (array) $output);
+        $this->_editarEtapa('secado_maq', 'Secado Máquina');
     }
 
     public function Results()
     {
-
         $group = $this->ion_auth->get_users_groups()->row()->id;
 
         if ($group == 3) {
             redirect('/', 'refresh');
         }
 
-        $crud = new grocery_CRUD();
+        $crud = $this->_crudEtapa('resultado', 'Resultado');
 
-        //$crud->set_theme('tablestrap4_datefilter');
-        $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_result');
-        $crud->set_subject('Resultado');
-        $crud->unset_jquery();
-        $crud->unset_add();
-        // $crud->unset_edit();
-        $crud->unset_delete();
+        $crud->columns('inicio', 'peso_final', 'comentario');
 
-        $crud->columns('weighing_date', 'output_weight', 'comments');
-        $crud->edit_fields('weighing_date', 'output_weight', 'comments');
+        // Grocery CRUD revienta en "read" con campos que no son columnas: solo se declaran al editar.
+        if ($crud->getState() == 'read') {
+            $crud->edit_fields('inicio', 'comentario');
+        } else {
+            $crud->edit_fields('inicio', 'peso_final', 'comentario', 'fin');
+            $crud->field_type('fin', 'invisible');
+        }
 
-        $crud->display_as('weighing_date', 'Fecha pesaje');
-        $crud->display_as('output_weight', 'Peso Final');
-        $crud->display_as('comments', 'Comentarios');
+        $crud->display_as('inicio', 'Fecha pesaje');
+        $crud->display_as('peso_final', 'Peso Final');
+        $crud->display_as('comentario', 'Comentarios');
+
+        $crud->required_fields('inicio');
+        $crud->callback_edit_field('inicio', array($this, '_campoInicio'));
+        $crud->callback_column('peso_final', array($this, '_pesoFinalColumna'));
+        $crud->callback_edit_field('peso_final', array($this, '_pesoFinalCampo'));
+        $crud->callback_read_field('peso_final', array($this, '_pesoFinalCampo'));
+        $crud->callback_before_update(array($this, 'resultadoAntesDeActualizar'));
 
         $output = $crud->render();
 
@@ -272,18 +168,31 @@ class Postharvest extends Public_controller
 
         $crud = new grocery_CRUD();
 
-        //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_fermentationquality');
+        $crud->set_table('pc_calidad_fermentacion');
         $crud->set_subject('Calidad Fermentado');
         $crud->unset_jquery();
         $crud->unset_add();
-        // $crud->unset_edit();
         $crud->unset_delete();
 
-        $crud->edit_fields('lot_id', 'stage', 'sample_date', 'good', 'light', 'violet', 'good_perc', 'light_perc', 'violet_perc', 'picture1');
+        $crud->columns('pc_proceso_id', 'fecha_muestra', 'buena', 'ligera', 'violeta');
+        $crud->edit_fields('pc_proceso_id', 'fecha_muestra', 'buena', 'ligera', 'violeta');
+        if ($crud->getState() != 'read') {
+            $crud->edit_fields('pc_proceso_id', 'fecha_muestra', 'buena', 'ligera', 'violeta', 'foto1');
+        }
+        $crud->required_fields('fecha_muestra');
+        $crud->field_type('pc_proceso_id', 'readonly');
+        $crud->set_relation('pc_proceso_id', 'pc_proceso', 'lot_code');
 
-        $crud->callback_edit_field('picture1', array($this, 'edit_field_picture1_link'));
+        $crud->display_as('pc_proceso_id', 'Partida')
+            ->display_as('fecha_muestra', 'Fecha muestra')
+            ->display_as('buena', 'Buena')
+            ->display_as('ligera', 'Ligera')
+            ->display_as('violeta', 'Violeta')
+            ->display_as('foto1', 'Foto');
+
+        $crud->callback_edit_field('foto1', array($this, 'fotoFermentado'));
+        $crud->callback_read_field('foto1', array($this, 'fotoFermentado'));
 
         $output = $crud->render();
 
@@ -301,178 +210,206 @@ class Postharvest extends Public_controller
 
         $crud = new grocery_CRUD();
 
-        //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
-        $crud->set_table('z_postharvest_dryingquality');
+        $crud->set_table('pc_calidad_secado');
         $crud->set_subject('Calidad Secado');
-        // $crud->unset_jquery();
         $crud->unset_add();
-        // $crud->unset_edit();
         $crud->unset_delete();
 
-        $crud->edit_fields('lot_id', 'stage', 'sample_date', 'bean_moisture1', 'bean_moisture2', 'bean_moisture2', 'bean_moisture3', 'avg_bean_moisture', 'sample_bean_count', 'sample_bean_count', 'bean_index_grams', 'percent_empty_beans', 'picture1', 'picture2', 'picture3');
+        $crud->columns('pc_proceso_id', 'etapa', 'fecha_muestra', 'humedad_promedio', 'granos_muestra', 'indice_grano_g', 'granos_vacios_pct');
+        $crud->edit_fields('pc_proceso_id', 'etapa', 'fecha_muestra', 'humedad_1', 'humedad_2', 'humedad_3', 'humedad_promedio', 'granos_muestra', 'indice_grano_g', 'granos_vacios_pct');
+        if ($crud->getState() != 'read') {
+            $crud->edit_fields('pc_proceso_id', 'etapa', 'fecha_muestra', 'humedad_1', 'humedad_2', 'humedad_3', 'humedad_promedio', 'granos_muestra', 'indice_grano_g', 'granos_vacios_pct', 'foto1', 'foto2', 'foto3');
+        }
+        $crud->required_fields('fecha_muestra', 'humedad_1', 'humedad_2', 'humedad_3');
+        $crud->field_type('pc_proceso_id', 'readonly');
+        $crud->field_type('etapa', 'readonly');
+        $crud->field_type('humedad_promedio', 'readonly');
+        $crud->set_relation('pc_proceso_id', 'pc_proceso', 'lot_code');
 
-        $crud->callback_edit_field('picture1', array($this, 'edit_field_picture1_link_drying'));
-        $crud->callback_edit_field('picture2', array($this, 'edit_field_picture2_link_drying'));
-        $crud->callback_edit_field('picture3', array($this, 'edit_field_picture3_link_drying'));
+        $crud->display_as('pc_proceso_id', 'Partida')
+            ->display_as('etapa', 'Etapa')
+            ->display_as('fecha_muestra', 'Fecha muestra')
+            ->display_as('humedad_1', 'Humedad 1')
+            ->display_as('humedad_2', 'Humedad 2')
+            ->display_as('humedad_3', 'Humedad 3')
+            ->display_as('humedad_promedio', 'Humedad promedio')
+            ->display_as('granos_muestra', 'Granos muestra')
+            ->display_as('indice_grano_g', 'Índice grano (g)')
+            ->display_as('granos_vacios_pct', '% granos vacíos')
+            ->display_as('foto1', 'Foto 1')
+            ->display_as('foto2', 'Foto 2')
+            ->display_as('foto3', 'Foto 3');
+
+        foreach (array(1, 2, 3) as $orden) {
+            $crud->callback_edit_field('foto' . $orden, array($this, 'fotoSecado' . $orden));
+            $crud->callback_read_field('foto' . $orden, array($this, 'fotoSecado' . $orden));
+        }
 
         $output = $crud->render();
 
         $this->load->view('Crud/farm-date_filter', (array) $output);
     }
 
-    public function callback_picture1_link($value, $row)
+    private function _crudEtapa($etapa, $titulo)
     {
-        $lot_id = $row->lot_id;
-        $picture1 = $this->get_picture1($lot_id);
+        $crud = new grocery_CRUD();
 
-        if ($picture1) {
-            return '<a href="' . base_url("uploads/" . $picture1) . '" target="_blank">Ver Imagen</a>';
-        } else {
+        $crud->set_theme('tablestrap4_datefilter');
+        $crud->set_table('pc_etapa');
+        $crud->set_subject($titulo);
+        $crud->unset_jquery();
+        $crud->unset_add();
+        $crud->unset_delete();
+        $crud->where('etapa', $etapa);
+
+        return $crud;
+    }
+
+    private function _editarEtapa($etapa, $titulo)
+    {
+        $group = $this->ion_auth->get_users_groups()->row()->id;
+
+        if ($group == 3) {
+            redirect('/', 'refresh');
+        }
+
+        $crud = $this->_crudEtapa($etapa, $titulo);
+
+        $crud->columns('inicio', 'fin', 'comentario');
+        $crud->edit_fields('inicio', 'fin', 'comentario');
+        $crud->required_fields('inicio', 'fin');
+
+        $crud->display_as('inicio', 'Fecha de inicio');
+        $crud->display_as('fin', 'Fecha de fin');
+        $crud->display_as('comentario', 'Comentarios');
+
+        $crud->callback_edit_field('inicio', array($this, '_campoInicio'));
+        $crud->callback_edit_field('fin', array($this, '_campoFin'));
+        $crud->callback_before_update(array($this, 'etapaAntesDeActualizar'));
+
+        $output = $crud->render();
+
+        $this->load->view('Crud/farm-date_filter', (array) $output);
+    }
+
+    public function _campoInicio($value, $primary_key = null)
+    {
+        return $this->_inputFecha('inicio', $value);
+    }
+
+    public function _campoFin($value, $primary_key = null)
+    {
+        return $this->_inputFecha('fin', $value);
+    }
+
+    private function _inputFecha($nombre, $value)
+    {
+        $valor = $value ? date('Y-m-d\TH:i', strtotime($value)) : '';
+        return '<input type="datetime-local" name="' . $nombre . '" value="' . $valor . '" required />';
+    }
+
+    // Misma regla que V4.php para una etapa: inicio y fin obligatorios, y fin no antes que inicio.
+    public function etapaAntesDeActualizar($post_array, $primary_key)
+    {
+        $inicio = strtotime(str_replace('T', ' ', (string) $post_array['inicio']));
+        $fin = strtotime(str_replace('T', ' ', (string) $post_array['fin']));
+
+        if ($inicio === false || $fin === false || $fin < $inicio) {
+            return false;
+        }
+
+        $post_array['inicio'] = date('Y-m-d H:i:s', $inicio);
+        $post_array['fin'] = date('Y-m-d H:i:s', $fin);
+
+        return $post_array;
+    }
+
+    public function resultadoAntesDeActualizar($post_array, $primary_key)
+    {
+        $inicio = strtotime(str_replace('T', ' ', (string) $post_array['inicio']));
+        $peso = isset($post_array['peso_final']) ? trim((string) $post_array['peso_final']) : '';
+
+        if ($inicio === false || ($peso !== '' && !is_numeric($peso))) {
+            return false;
+        }
+
+        $etapa = $this->db->select('pc_proceso_id')->where('id', $primary_key)->where('etapa', 'resultado')->get('pc_etapa')->row();
+
+        if (!$etapa) {
+            return false;
+        }
+
+        // El peso final vive en pc_proceso, no en la etapa.
+        $this->db->where('id', $etapa->pc_proceso_id)->update('pc_proceso', array('peso_final' => $peso === '' ? null : $peso));
+
+        $post_array['inicio'] = date('Y-m-d H:i:s', $inicio);
+        $post_array['fin'] = $post_array['inicio'];
+        unset($post_array['peso_final']);
+
+        return $post_array;
+    }
+
+    public function _pesoFinalColumna($value, $row)
+    {
+        return $this->_pesoFinal($row->id);
+    }
+
+    public function _pesoFinalCampo($value, $primary_key = null)
+    {
+        return '<input type="number" step="0.001" name="peso_final" value="' . $this->_pesoFinal($primary_key) . '" />';
+    }
+
+    private function _pesoFinal($etapaId)
+    {
+        $fila = $this->db->select('p.peso_final')
+            ->from('pc_etapa e')
+            ->join('pc_proceso p', 'p.id = e.pc_proceso_id')
+            ->where('e.id', $etapaId)
+            ->get()->row();
+
+        return $fila ? $fila->peso_final : '';
+    }
+
+    public function fotoFermentado($value, $primary_key = null)
+    {
+        return $this->_enlaceFoto('pc_calidad_fermentacion', $primary_key, 'fermentado', 1);
+    }
+
+    public function fotoSecado1($value, $primary_key = null)
+    {
+        return $this->_enlaceFoto('pc_calidad_secado', $primary_key, null, 1);
+    }
+
+    public function fotoSecado2($value, $primary_key = null)
+    {
+        return $this->_enlaceFoto('pc_calidad_secado', $primary_key, null, 2);
+    }
+
+    public function fotoSecado3($value, $primary_key = null)
+    {
+        return $this->_enlaceFoto('pc_calidad_secado', $primary_key, null, 3);
+    }
+
+    private function _enlaceFoto($tabla, $primary_key, $etapa, $orden)
+    {
+        $calidad = $this->db->where('id', $primary_key)->get($tabla)->row();
+
+        if (!$calidad) {
             return 'Sin Imagen';
         }
-    }
 
-    public function edit_field_picture1_link($value, $primary_key)
-    {
-        // Obtener el lot_id usando el primary_key
-        $lot_id = $this->get_lot_id($primary_key);
-        $picture1 = $this->get_picture1($lot_id);
+        $foto = $this->db->select('archivo')
+            ->where('pc_proceso_id', $calidad->pc_proceso_id)
+            ->where('etapa', $etapa !== null ? $etapa : $calidad->etapa)
+            ->where('orden', $orden)
+            ->get('pc_foto')->row();
 
-        if ($picture1) {
-            return '<a href="' . base_url("uploads/" . $picture1) . '" target="_blank">Ver Imagen</a>';
-        } else {
-            return 'Sin Imagen';
+        if ($foto) {
+            return '<a href="' . base_url("uploads/" . $foto->archivo) . '" target="_blank">Ver Imagen</a>';
         }
-    }
 
-    public function edit_field_picture1_link_drying($value, $primary_key)
-    {
-        // Obtener el lot_id usando el primary_key
-        $lot_id = $this->get_lot_id_drying($primary_key);
-        $picture1 = $this->get_picture_sundrying1($lot_id);
-
-        if ($picture1) {
-            return '<a href="' . base_url("uploads/" . $picture1) . '" target="_blank">Ver Imagen</a>';
-        } else {
-            return 'Sin Imagen';
-        }
-    }
-
-    public function edit_field_picture2_link_drying($value, $primary_key)
-    {
-        // Obtener el lot_id usando el primary_key
-        $lot_id = $this->get_lot_id_drying($primary_key);
-        $picture2 = $this->get_picture_sundrying2($lot_id);
-
-        if ($picture2) {
-            return '<a href="' . base_url("uploads/" . $picture2) . '" target="_blank">Ver Imagen</a>';
-        } else {
-            return 'Sin Imagen';
-        }
-    }
-
-    public function edit_field_picture3_link_drying($value, $primary_key)
-    {
-        // Obtener el lot_id usando el primary_key
-        $lot_id = $this->get_lot_id_drying($primary_key);
-        $picture1 = $this->get_picture_sundrying3($lot_id);
-
-        if ($picture1) {
-            return '<a href="' . base_url("uploads/" . $picture1) . '" target="_blank">Ver Imagen</a>';
-        } else {
-            return 'Sin Imagen';
-        }
-    }
-
-    private function get_picture1($lot_id)
-    {
-        $this->db->select('picture1');
-        $this->db->from('vw_postharvest_photos_fermentation');
-        $this->db->where('lot_id', $lot_id);
-        $query = $this->db->get();
-        $result = $query->row();
-
-        if ($result && !empty($result->picture1)) {
-            return $result->picture1;
-        } else {
-            return null;
-        }
-    }
-
-    private function get_picture_sundrying1($lot_id)
-    {
-        $this->db->select('picture1');
-        $this->db->from('vw_postharvest_photos_sundrying');
-        $this->db->where('lot_id', $lot_id);
-        $query = $this->db->get();
-        $result = $query->row();
-
-        if ($result && !empty($result->picture1)) {
-            return $result->picture1;
-        } else {
-            return null;
-        }
-    }
-
-    private function get_picture_sundrying2($lot_id)
-    {
-        $this->db->select('picture2');
-        $this->db->from('vw_postharvest_photos_sundrying');
-        $this->db->where('lot_id', $lot_id);
-        $query = $this->db->get();
-        $result = $query->row();
-
-        if ($result && !empty($result->picture2)) {
-            return $result->picture2;
-        } else {
-            return null;
-        }
-    }
-
-    private function get_picture_sundrying3($lot_id)
-    {
-        $this->db->select('picture3');
-        $this->db->from('vw_postharvest_photos_sundrying');
-        $this->db->where('lot_id', $lot_id);
-        $query = $this->db->get();
-        $result = $query->row();
-
-        if ($result && !empty($result->picture3)) {
-            return $result->picture3;
-        } else {
-            return null;
-        }
-    }
-
-    private function get_lot_id($primary_key)
-    {
-        $this->db->select('lot_id');
-        $this->db->from('z_postharvest_fermentationquality'); // Asumiendo que esta es la tabla donde se encuentra el lot_id
-        $this->db->where('id', $primary_key); // 'id' es el campo clave primaria en esta tabla
-        $query = $this->db->get();
-        $result = $query->row();
-
-        if ($result) {
-            return $result->lot_id;
-        } else {
-            return null;
-        }
-    }
-
-    private function get_lot_id_drying($primary_key)
-    {
-        $this->db->select('lot_id');
-        $this->db->from('z_postharvest_dryingquality'); // Asumiendo que esta es la tabla donde se encuentra el lot_id
-        $this->db->where('id', $primary_key); // 'id' es el campo clave primaria en esta tabla
-        $query = $this->db->get();
-        $result = $query->row();
-
-        if ($result) {
-            return $result->lot_id;
-        } else {
-            return null;
-        }
+        return 'Sin Imagen';
     }
 
     function formatPercentage($number)
