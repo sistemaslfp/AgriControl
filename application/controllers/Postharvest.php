@@ -13,6 +13,8 @@ class Postharvest extends Public_controller
 
         $this->load->library('grocery_CRUD');
 
+        $this->load->model('fincas_model');
+
         $this->_init();
 
     }
@@ -24,10 +26,13 @@ class Postharvest extends Public_controller
 
     public function index()
     {
-        $this->load->helper('html');
-        echo link_tag('assets/hacks.css');
-
         $crud = new grocery_CRUD();
+
+        // Cualquier echo antes de render() rompe la exportacion: los headers del archivo ya no salen.
+        if (!in_array($crud->getState(), array('export', 'print'))) {
+            $this->load->helper('html');
+            echo link_tag('assets/hacks.css');
+        }
 
         //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
@@ -42,8 +47,13 @@ class Postharvest extends Public_controller
 
         // $crud->set_relation('lot_number', 'z_postharvest_predrying', 'start_date');
         // $crud->set_relation('lot_number', 'z_postharvest_predrying', 'end_date');
-        $crud->columns('numero_proceso', 'supervisor', 'fecha_pesaje', 'peso', 'peso_mallas', 'peso_fruta_neto', 'dias_presecado', 'dias_fermentado', 'dias_secado_sol', 'dias_secado_maquina', 'fecha_pesaje_final', 'peso_final', 'rendimiento');
+        $crud->columns('numero_proceso', 'supervisor', 'fi_presecado', 'fecha_pesaje', 'peso', 'peso_mallas', 'peso_fruta_neto', 'dias_presecado', 'dias_fermentado', 'dias_secado_sol', 'dias_secado_maquina', 'fecha_pesaje_final', 'peso_final', 'rendimiento');
         $crud->display_as('numero_proceso', '#Proc.');
+        $crud->display_as('fi_presecado', 'Inicio proceso');
+        $crud->callback_column('fi_presecado', array($this, '_inicioProcesoColumna'));
+        $crud->order_by('fi_presecado', 'desc');
+
+        $this->_filtrarPorInicio($crud);
 
         $group = $this->ion_auth->get_users_groups()->row()->id;
 
@@ -66,18 +76,22 @@ class Postharvest extends Public_controller
 
 
         $output = $crud->render();
+        $output->data = array('listadoFincas' => $this->fincas_model->getFincasCombobox());
 
-        $this->load->view('Crud/farm-date_filter', (array) $output);
+        $this->load->view('Crud/date-range_filter', (array) $output);
 
 
     }
 
     public function Master()
     {
-        $this->load->helper('html');
-        echo link_tag('assets/hacks.css');
-
         $crud = new grocery_CRUD();
+
+        // Cualquier echo antes de render() rompe la exportacion: los headers del archivo ya no salen.
+        if (!in_array($crud->getState(), array('export', 'print'))) {
+            $this->load->helper('html');
+            echo link_tag('assets/hacks.css');
+        }
 
         //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
@@ -94,11 +108,67 @@ class Postharvest extends Public_controller
         // $crud->set_relation('lot_number', 'z_postharvest_predrying', 'end_date');
         // $crud->columns('numero_proceso', 'supervisor', 'fecha_pesaje', 'peso', 'peso_mallas', 'peso_fruta_neto', 'dias_presecado', 'dias_fermentado', 'dias_secado_sol', 'dias_secado_maquina', 'fecha_pesaje_final', 'peso_final', 'rendimiento');
         $crud->display_as('numero_proceso', '#Proc.');
+        $crud->order_by('fi_presecado', 'desc');
+
+        $this->_filtrarPorInicio($crud);
 
         $output = $crud->render();
+        $output->data = array('listadoFincas' => $this->fincas_model->getFincasCombobox());
 
-        $this->load->view('Crud/farm-date_filter', (array) $output);
+        $this->load->view('Crud/date-range_filter', (array) $output);
 
+    }
+
+    // El proceso arranca con el presecado; si no se registro, con el pesaje (la app precarga
+    // el inicio del presecado con esa misma fecha). pc_proceso no tiene finca: sale de sus cosechas.
+    private function _filtrarPorInicio($crud)
+    {
+        $state = $crud->getState();
+
+        if ($state == 'export' || $state == 'print') {
+            $segmentos = $this->uri->segment_array();
+            $valorDe = function ($clave) use ($segmentos) {
+                $i = array_search($clave, $segmentos, true);
+                return ($i !== false && isset($segmentos[$i + 1])) ? $segmentos[$i + 1] : null;
+            };
+            $desde = $valorDe('fechaDesde');
+            $hasta = $valorDe('fechaHasta');
+            $finca = $valorDe('finca');
+        } else {
+            if (!$this->input->get('fechaDesde') || !$this->input->get('fechaHasta')) {
+                $_GET['fechaDesde'] = date('m/d/Y', strtotime('-1 year'));
+                $_GET['fechaHasta'] = date('m/d/Y');
+            }
+            if (!isset($_GET['id_finca'])) {
+                $_GET['id_finca'] = 0;
+            }
+            $desde = $this->input->get('fechaDesde');
+            $hasta = $this->input->get('fechaHasta');
+            $finca = $this->input->get('id_finca');
+        }
+
+        $inicio = 'COALESCE(fi_presecado, fecha_pesaje)';
+
+        if ($desde && strtotime($desde) !== false) {
+            $crud->where($inicio . ' >= ' . $this->db->escape(date('Y-m-d', strtotime($desde))), null, false);
+        }
+
+        if ($hasta && strtotime($hasta) !== false) {
+            $crud->where($inicio . ' < ' . $this->db->escape(date('Y-m-d', strtotime($hasta . ' +1 day'))), null, false);
+        }
+
+        if ((int) $finca > 0) {
+            $crud->where('EXISTS (SELECT 1 FROM pc_proceso_cosecha pcc'
+                . ' JOIN lfp_cosecha c ON c.id = pcc.cosecha_id'
+                . ' JOIN lfp_am a ON a.id = c.lfp_am_id'
+                . ' WHERE pcc.pc_proceso_id = vw_lfp_postharvest_rpt.id AND a.finca_id = ' . (int) $finca . ')', null, false);
+        }
+    }
+
+    public function _inicioProcesoColumna($value, $row)
+    {
+        $fecha = $value ? $value : $row->fecha_pesaje;
+        return $fecha ? date('Y-m-d - H:i', strtotime($fecha)) : '';
     }
 
     public function Predrying()

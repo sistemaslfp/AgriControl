@@ -15,4 +15,6 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 if ($base_url = getenv('APP_BASE_URL')) {
     $config['base_url'] = $base_url;
+    // Solo en Docker: con 4 cada request escribe ~40 lineas de log en el bind mount de Windows.
+    $config['log_threshold'] = 1;
 }

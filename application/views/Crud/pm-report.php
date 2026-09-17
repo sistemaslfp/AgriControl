@@ -1,14 +1,5 @@
-<script>
-    $(document).ready(function () {
-        var table = $('.display').DataTable({
-            rowReorder: {
-                selector: 'td:nth-child(2)'
-            },
-            responsive: true
-        });
-    });
-
-</script>
+<!-- Sin init propio: si esta vista inicializa DataTables primero, el tema
+     (datatables.js, bRetrieve) reutiliza esa instancia e ignora su configuracion. -->
 
 
 <div style="padding: 10px">
@@ -21,6 +12,7 @@
                     style="width: 100%; float: left; min-height: 35px; padding: 6px 12px">
                     <?php
                     $listadoFincas = $data['listadoFincas'];
+                        $IdFinca = 0;
                     if (isset($_GET["id_finca"])) {
                         $IdFinca = $_GET["id_finca"];
                     }

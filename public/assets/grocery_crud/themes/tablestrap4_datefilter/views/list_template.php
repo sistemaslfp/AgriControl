@@ -16,7 +16,8 @@
 	$this->set_js_lib($this->default_theme_path.'/tablestrap4/js/dataTables.bootstrap4.min.js');
 
 	$this->set_js($this->default_theme_path.'/tablestrap4/js/pnotify.custom.min.js');
-	$this->set_js($this->default_theme_path.'/tablestrap4/js/datatables.js');
+	// ?v= para que el navegador no siga usando una copia vieja cuando cambia este archivo.
+	$this->set_js($this->default_theme_path.'/tablestrap4/js/datatables.js?v='.@filemtime(FCPATH.$this->default_theme_path.'/tablestrap4/js/datatables.js'));
 	$this->set_js($this->default_theme_path.'/tablestrap4/extras/TableTools/media/js/ZeroClipboard.js');
 	$this->set_js($this->default_theme_path.'/tablestrap4/extras/TableTools/media/js/TableTools.min.js');
 ?>

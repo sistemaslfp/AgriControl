@@ -75,6 +75,24 @@ RUN { \
       echo 'date.timezone = America/Guayaquil'; \
     } > /usr/local/etc/php/conf.d/zz-lagricontrol.ini
 
+# RENDIMIENTO (2026-09-17): el codigo vive en un bind mount de Windows y cada
+# include de PHP es I/O lento sobre ese mount. Medido en el log de CI: la pantalla
+# de login tardaba 3-6 s y el reporte de pagos 5,5-6,3 s, casi todo repartido en
+# cargar clases (la parte de Grocery CRUD + SQL no pasaba de 1 s). Sin opcache,
+# PHP relee y recompila unos 80 archivos en cada request.
+# revalidate_freq=2: un cambio en un .php se ve a los 2 s como maximo.
+RUN set -eux; \
+    docker-php-ext-install opcache; \
+    { \
+      echo 'opcache.enable = 1'; \
+      echo 'opcache.memory_consumption = 128'; \
+      echo 'opcache.max_accelerated_files = 10000'; \
+      echo 'opcache.validate_timestamps = 1'; \
+      echo 'opcache.revalidate_freq = 2'; \
+      echo 'realpath_cache_size = 4096K'; \
+      echo 'realpath_cache_ttl = 600'; \
+    } > /usr/local/etc/php/conf.d/zz-opcache.ini
+
 COPY vhost.conf /etc/apache2/sites-available/000-default.conf
 
 WORKDIR /var/www/html

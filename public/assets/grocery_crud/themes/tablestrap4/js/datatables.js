@@ -142,6 +142,8 @@ function loadDataTable(this_datatables) {
     return $(this_datatables).dataTable({
         "bJQueryUI": true,
         "sPaginationType": "numbers",
+        "bPaginate": false,
+        "bLengthChange": false,
         "bStateSave": use_storage,
         "fnStateSave": function(oSettings, oData) {
             localStorage.setItem('DataTables_' + unique_hash, JSON.stringify(oData));
@@ -186,7 +188,7 @@ function loadDataTable(this_datatables) {
             add_edit_button_listener();
             $('.DTTT_button_text').attr('href', export_url);
         },
-        "sDom": '<"table-responsive"<"spacer visible-xs-block"><"row container-fluid"<"col-md-3"l><"col-md-9 hidden-xs"f>>t><"panel-footer"ip>',
+        "sDom": '<"row container-fluid"<"col-md-3"l><"col-md-9 hidden-xs"f>><"table-responsive gc-scroll"t><"panel-footer"ip>',
         "oTableTools": {
             "sSwfPath": base_url + "assets/grocery_crud/themes/datatables/extras/TableTools/media/swf/copy_csv_xls_pdf.swf"
         }

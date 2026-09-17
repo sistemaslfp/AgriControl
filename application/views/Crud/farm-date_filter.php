@@ -1,4 +1,4 @@
-<script>
+<!--<script>
     $(document).ready(function() {
     var table = $('.display').DataTable( {
         rowReorder: {
@@ -8,7 +8,7 @@
     } );
 } );
 
-</script>
+</script>-->
     <div style="padding: 10px">
         <!--PLY-HS00000001 - Filtro de reporte-->
     	<div style="display: block;min-height:60px;margin: 10px;">
@@ -18,6 +18,7 @@
                     <select name="id_finca" id="id_finca" style="width: 100%; float: left; min-height: 35px; padding: 6px 12px">
                         <?php 
                         $listadoFincas = $data['listadoFincas'];
+                        $IdFinca = 0;
                         if (isset($_GET["id_finca"])){   
                             $IdFinca = $_GET["id_finca"];
                         }

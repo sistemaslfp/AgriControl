@@ -438,6 +438,8 @@ SELECT DATE(am.fecha_proceso)  AS lot_date,
 -- mismos nombres y el mismo orden que vw_postharvest_rpt_001, verificado contra
 -- information_schema. Cambiar la pantalla seria cambiar el nombre de la tabla.
 --
+-- Desde 2026-09-16 hay una columna 66, `dias_secado_maquina`, al final.
+--
 -- VERIFICADO sobre las 41 partidas migradas: pesos, rendimiento, fechas de las
 -- cuatro etapas, calidad de fermentacion, humedades de secado sol y maquina
 -- (promedio incluido) y las siete fotos dan IDENTICO a v3 en las 41.
@@ -537,7 +539,9 @@ SELECT p.id                                                   AS id,
        fm.picture3                                            AS machinedrying_picture3,
        maq.id                                                 AS id_secado_maquina,
        qs.id                                                  AS id_calidad_secadosol,
-       qm.id                                                  AS id_calidad_secadomaquina
+       qm.id                                                  AS id_calidad_secadomaquina,
+       -- 66a, fuera del contrato v3: rpt_001 nunca la tuvo y la pantalla la mostraba vacia.
+       TO_DAYS(maq.fin) - TO_DAYS(maq.inicio)                 AS dias_secado_maquina
   FROM pc_proceso p
   LEFT JOIN z_personal per ON per.id = p.supervisor_id
   LEFT JOIN pc_etapa pre ON pre.pc_proceso_id = p.id AND pre.etapa = 'presecado'

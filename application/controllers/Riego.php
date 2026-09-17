@@ -83,8 +83,11 @@ class Riego extends Public_controller
 				}
 
 			} else {
-				$crud->where('fecha_proceso >=', $this->_fechaSql($this->input->get('fechaDesde')));
-				$crud->where('fecha_proceso <', $this->_diaSiguiente($this->input->get('fechaHasta')));
+				// Sin fechas (el enlace del menu) se filtraba desde 1970: traia todo el historico.
+				$desde = $this->input->get('fechaDesde') ? $this->input->get('fechaDesde') : date('Y-m-d');
+				$hasta = $this->input->get('fechaHasta') ? $this->input->get('fechaHasta') : date('Y-m-d');
+				$crud->where('fecha_proceso >=', $this->_fechaSql($desde));
+				$crud->where('fecha_proceso <', $this->_diaSiguiente($hasta));
 
 				$filtro_finca_pm = $this->input->get('id_finca');
 				if (isset($filtro_finca_pm) && $filtro_finca_pm > 0) {

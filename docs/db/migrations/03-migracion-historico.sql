@@ -733,6 +733,12 @@ WHERE 1 = 1
 --
 -- Los hijos (etapas, calidades, fotos) entran por JOIN contra pc_proceso, así
 -- que las partidas descartadas se llevan a los suyos sin regla aparte.
+--
+-- CAMBIO 2026-09-16 (Kevin): la web ya no lee z_*, asi que "se quedan en z_*"
+-- dejo de ser verdad y el historial de postcosecha desaparecio de la pantalla.
+-- Las partidas SIN peso respaldado tambien entran (4.1b), con el peso de v3. Su
+-- fila en mig_descarte queda como ANOTACION, no como descarte: dice que para
+-- esa partida peso_lote es el numero de v3 y no la suma de sus enlaces.
 
 INSERT INTO mig_descarte (tabla_origen, id_origen, motivo, id_conservado, payload, created_at)
 SELECT 'z_postharvest_weight', w.id, 'sin_lote_de_cosecha_emparejable', NULL,
@@ -801,6 +807,36 @@ WHERE NOT EXISTS (SELECT 1 FROM pc_proceso x WHERE x.guid = LOWER(CONCAT(
         SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),1,8),'-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),9,4),
         '-5',SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),14,3),'-a',SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),18,3),
         '-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',p.lot_number)),21,12))));
+
+-- 4.1b Partidas sin peso respaldado (2026-09-16). fecha_cosecha: la menor fecha
+-- enlazada en v3, o el dia del pesaje si no hay enlace. El consecutivo del
+-- lot_code sigue despues del mayor ya usado ese dia, para no chocar con 4.1.
+INSERT INTO pc_proceso (guid, lot_code, fecha_cosecha, fecha_inicio, supervisor_id,
+                        peso_lote, peso_mallas, peso_final, comentario,
+                        created_at_device, received_at_server, origen)
+SELECT q.guid,
+       CONCAT(LPAD(DAYOFYEAR(q.fecha_cosecha),3,'0'), LPAD(COALESCE(o.max_seq,0) + q.seq,2,'0'), DATE_FORMAT(q.fecha_cosecha,'%y')),
+       q.fecha_cosecha, q.created_at, q.supervisor_id,
+       q.lot_weight, q.container_weight, q.output_weight, NULLIF(q.comments,''),
+       q.created_at, NOW(), 'migracion'
+FROM (
+  SELECT t.*, ROW_NUMBER() OVER (PARTITION BY t.fecha_cosecha ORDER BY t.lot_number) AS seq
+  FROM (
+    SELECT w.lot_number, w.supervisor_id, w.lot_weight, w.container_weight, w.comments, w.created_at,
+           LOWER(CONCAT(SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),1,8),'-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),9,4),
+                 '-5',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),14,3),'-a',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),18,3),
+                 '-',SUBSTR(MD5(CONCAT('z_postharvest_weight:',w.lot_number)),21,12))) AS guid,
+           COALESCE((SELECT MIN(h.lot_date) FROM z_postharvest_lotsharvest h WHERE h.created_at = w.created_at),
+                    DATE(w.created_at)) AS fecha_cosecha,
+           (SELECT r.output_weight FROM z_postharvest_result r WHERE r.lot_id = w.lot_number) AS output_weight
+    FROM z_postharvest_weight w
+    WHERE EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_postharvest_weight' AND d.id_origen=w.id
+                    AND d.motivo IN ('partida_sin_peso_respaldado','sin_lote_de_cosecha_emparejable'))
+  ) t
+  WHERE NOT EXISTS (SELECT 1 FROM pc_proceso x WHERE x.guid = t.guid)
+) q
+LEFT JOIN (SELECT fecha_cosecha, MAX(CAST(SUBSTR(lot_code,4,2) AS UNSIGNED)) AS max_seq
+             FROM pc_proceso GROUP BY fecha_cosecha) o ON o.fecha_cosecha = q.fecha_cosecha;
 
 -- Enlace partida -> cosechas de esa(s) fecha(s)
 INSERT IGNORE INTO pc_proceso_cosecha (pc_proceso_id, cosecha_id)

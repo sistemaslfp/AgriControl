@@ -69,6 +69,17 @@
 
   <!-- Custom Theme Style -->
   <link href="<?php echo base_url(); ?>assets/themes/admin/build/css/custom.min.css" rel="stylesheet">
+  <style>
+    /* custom.min.css pone overflow:auto en .dataTables_wrapper > .row y el margen negativo
+       del .row dejaba el area con scroll 10px fuera del panel por cada lado. */
+    .right_col .dataTables_wrapper { padding: 0 15px; }
+    .right_col .dataTables_wrapper > .row { margin-left: 0; margin-right: 0; }
+    .right_col .dataTables_wrapper > .row > [class*="col-"] { padding-left: 0; padding-right: 0; }
+    .right_col .dataTables_wrapper .panel-footer::after { content: ""; display: table; clear: both; }
+    .right_col .gc-scroll { max-height: 70vh; overflow: auto; margin-bottom: 0; }
+    /* important: el CSS de DataTables se carga despues y pone position:relative en los th ordenables */
+    .right_col .gc-scroll thead th { position: sticky !important; top: 0; z-index: 2; background: #fff; box-shadow: inset 0 -2px 0 #dee2e6; }
+  </style>
   <script>
     $(document).ready(function() {
       $('.ui-pnotify-text').remove();
