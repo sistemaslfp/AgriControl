@@ -26,10 +26,15 @@ export function problemasRetroactivo(
         'activa "Estoy cargando un día anterior".',
     );
   }
-  if (activo && justificacion.trim().length < MINIMO_JUSTIFICACION) {
+  if (activo && !justificacionCompleta(activo, justificacion)) {
     p.push('Un registro retroactivo necesita una justificación escrita.');
   }
   return p;
+}
+
+/** Con esto la alerta roja de "hace mas de N dias" ya no tiene nada que pedir. */
+export function justificacionCompleta(activo: boolean, justificacion: string): boolean {
+  return activo && justificacion.trim().length >= MINIMO_JUSTIFICACION;
 }
 
 /**

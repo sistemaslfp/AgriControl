@@ -42,6 +42,7 @@ import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
 import {
   RetroactivoComponent,
+  justificacionCompleta,
   justificacionParaEnviar,
   problemasRetroactivo,
 } from '../../shared/retroactivo.component';
@@ -135,6 +136,9 @@ export class AmPage implements OnInit {
   readonly fechaLocal = signal('');
   readonly retroactivo = signal(false);
   readonly justificacion = signal('');
+  readonly retroJustificado = computed(() =>
+    justificacionCompleta(this.retroactivo(), this.justificacion()),
+  );
   readonly finca = signal<Ref | null>(null);
   readonly responsable = signal<Ref | null>(null);
 

@@ -52,7 +52,7 @@
     </ion-list>
 
     @if (evaluacion(); as ev) {
-      @if (ev.excedeRetroactividad) {
+      @if (ev.excedeRetroactividad && !retroJustificado()) {
         <div class="banner alerta">
           La fecha es de hace más de {{ ev.diasRetroactividad }} días.
           Activa "Estoy cargando un día anterior" y explica el motivo.

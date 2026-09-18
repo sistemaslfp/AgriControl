@@ -45,6 +45,7 @@ import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
 import {
   RetroactivoComponent,
+  justificacionCompleta,
   justificacionParaEnviar,
   problemasRetroactivo,
 } from '../../shared/retroactivo.component';
@@ -210,6 +211,9 @@ export class PmPage implements OnInit {
   // cerrar un AM de la semana pasada desde el telefono.
   readonly retroactivo = signal(false);
   readonly justificacion = signal('');
+  readonly retroJustificado = computed(() =>
+    justificacionCompleta(this.retroactivo(), this.justificacion()),
+  );
   readonly limites = computed(() => this.fechas.limites('pm', this.retroactivo()));
   readonly evaluacion = computed(() =>
     this.fecha() && this.horaCierre()

@@ -47,6 +47,7 @@ import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
 import {
   RetroactivoComponent,
+  justificacionCompleta,
   justificacionParaEnviar,
   problemasRetroactivo,
 } from '../../shared/retroactivo.component';
@@ -188,6 +189,9 @@ export class CosechaPage implements OnInit {
   // duro del calendario y no habia como pesar una cosecha mas vieja.
   readonly retroactivo = signal(false);
   readonly justificacion = signal('');
+  readonly retroJustificado = computed(() =>
+    justificacionCompleta(this.retroactivo(), this.justificacion()),
+  );
   readonly limites = computed(() => this.fechas.limites('cosecha', this.retroactivo()));
   readonly evaluacion = computed(() =>
     this.fecha() && this.horaCierre()

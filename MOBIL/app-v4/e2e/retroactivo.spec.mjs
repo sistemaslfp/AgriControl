@@ -144,6 +144,13 @@ ok(
 await motivo.fill('El equipo estuvo sin bateria toda la semana.');
 await t(500);
 
+const alertasConMotivo = (await p.locator('app-am .banner.alerta').allInnerTexts()).join(' ');
+ok(
+  '06b con el motivo escrito se apaga la alerta roja de la fecha',
+  !alertasConMotivo.includes('hace más de'),
+  alertasConMotivo.replace(/\n/g, ' ').slice(0, 110),
+);
+
 // Encabezado completo y una tarea mínima, para poder guardar.
 const campo = (texto) => p.locator('app-am ion-item', { hasText: texto }).first();
 const elegirUno = async (etiqueta, opcion) => {

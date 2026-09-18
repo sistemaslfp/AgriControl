@@ -39,6 +39,7 @@ import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { SelectorComponent } from '../../shared/selector.component';
 import {
   RetroactivoComponent,
+  justificacionCompleta,
   justificacionParaEnviar,
   problemasRetroactivo,
 } from '../../shared/retroactivo.component';
@@ -177,6 +178,9 @@ export class RiegoPage implements OnInit {
   // modulo: un parte son 18-25 filas y cargarlo entero atrasado es normal.
   readonly retroactivo = signal(false);
   readonly justificacion = signal('');
+  readonly retroJustificado = computed(() =>
+    justificacionCompleta(this.retroactivo(), this.justificacion()),
+  );
   readonly limites = computed(() => this.fechas.limites('riego', this.retroactivo()));
   readonly evaluacion = computed(() =>
     this.fecha() && this.horaInicio()
