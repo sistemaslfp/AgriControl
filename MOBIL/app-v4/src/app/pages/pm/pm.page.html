@@ -197,7 +197,11 @@
           placeholder="0"
           [value]="c.cantidad"
           (ionInput)="setCampo(i, 'cantidad', $any($event.target).value ?? '')"
-        ></ion-input>
+        >
+          @if (c.asignacion.unidadLabor) {
+            <span slot="end" class="unidad-avance">{{ c.asignacion.unidadLabor }}</span>
+          }
+        </ion-input>
       </ion-item>
       <ion-item>
         <ion-input

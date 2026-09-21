@@ -41,6 +41,8 @@ export interface RegistroMeta {
   /** "3, 4" o '' si el lote no trabaja por módulos, ya resuelto. */
   modulos?: string;
   trabajador?: string;
+  /** Unidad de labor de la subtarea (Ha, Jornal, Planta...): da sentido al avance del PM. */
+  unidadLabor?: string | null;
   /** Partida de postcosecha. `null` hasta que el ACK de pc_proceso la trae. */
   lotCode?: string | null;
   /** Etapa de postcosecha (pc_etapa / pc_calidad_sec). */

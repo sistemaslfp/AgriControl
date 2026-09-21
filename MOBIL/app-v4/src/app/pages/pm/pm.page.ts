@@ -656,6 +656,7 @@ export class PmPage implements OnInit {
           subtarea: a.subtarea,
           modulos: a.modulos,
           trabajador: a.trabajador,
+          unidadLabor: a.unidadLabor,
         };
         const guid = await this.cola.enqueue('pm', payload, meta);
         guids.push(guid);

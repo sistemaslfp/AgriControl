@@ -483,6 +483,8 @@ const avance = await p.locator(`${raiz} ion-input`).filter({ hasText: 'Avance' }
 // PODA DE FORMACION se paga por Jornal. Y no puede ser de otra unidad: desde
 // el 2026-09-05 lo que se paga por Libra lo cierra Cosecha, no el PM.
 ok('27 la unidad de labor viene de la tarea AM', avance.includes('Jornal'), avance);
+const sufijo = await p.locator(`${raiz} ion-input .unidad-avance`).first().innerText().catch(() => '');
+ok('27b la unidad se ve junto al valor del avance', sufijo.trim() === 'Jornal', sufijo);
 
 await p.evaluate(() => {
   const c = window['ng'].getComponent(document.querySelector('app-pm'));
@@ -515,6 +517,17 @@ ok('33 la app no manda lote, subtarea, cultivo ni finca en el PM',
 // V3 calcula pm_year con 'Y' y guardó 181 filas de diciembre de 2025 como
 // (2025, semana 1). En V4 lo calcula el servidor con 'o'. La app NO lo manda.
 ok('34 la app no manda pm_year ni pm_week', !('pm_year' in pp) && !('pm_week' in pp));
+
+// El detalle del PM enviado dice en qué unidad es el avance.
+await p.goto(`${APP}/registros?vista=enviados`, { waitUntil: 'networkidle' });
+await t(1500);
+await p.locator('app-registros ion-item', { hasText: 'PM ·' }).first().click();
+await t(800);
+const detallePm = await p.locator('app-detalle-registro').innerText();
+ok('34b el detalle del PM muestra el avance con su unidad',
+  /Avance\s+3\.5 Jornal/.test(detallePm), detallePm.replace(/\n+/g, ' | ').slice(0, 200));
+await p.locator('app-detalle-registro ion-button.boton-cerrar').click();
+await t(500);
 
 // La asignación cerrada desaparece de la lista.
 await p.goto(`${APP}/menu`, { waitUntil: 'networkidle' });

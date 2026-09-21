@@ -238,12 +238,26 @@ export class DetalleRegistroComponent {
       registro,
       campos: Object.entries(registro.payload)
         .filter(([k]) => !DetalleRegistroComponent.CAMPO_ID.test(k))
-        .map(([k, v]) => ({
-          etiqueta: DetalleRegistroComponent.ETIQUETAS[k] ?? this.legible(k),
-          valor: this.formatearValor(v),
-        })),
+        .map(([k, v]) => this.campo(registro, k, v)),
     }));
   });
+
+  /**
+   * En el PM la cantidad ES el avance, y sin su unidad el numero no dice nada
+   * (3.5 Ha no es 3.5 Jornal). La unidad sale de `meta`, no del payload, que
+   * sigue siendo el minimo que viaja; filas viejas sin `meta` quedan sin ella.
+   */
+  private campo(registro: RegistroColaVista, k: string, v: unknown): CampoDetalle {
+    if (k === 'cantidad' && registro.tipo === 'pm') {
+      const unidad = registro.meta?.unidadLabor;
+      const valor = this.formatearValor(v);
+      return { etiqueta: 'Avance', valor: unidad && valor !== '—' ? `${valor} ${unidad}` : valor };
+    }
+    return {
+      etiqueta: DetalleRegistroComponent.ETIQUETAS[k] ?? this.legible(k),
+      valor: this.formatearValor(v),
+    };
+  }
 
   private legible(clave: string): string {
     const s = clave.replace(/_/g, ' ');
