@@ -190,6 +190,62 @@ ok('12 quitar un saco renumera y no deja huecos',
 ok('13 el total baja al quitar el saco', (await totales()).includes('121.5'), await totales());
 
 // ------------------------------------------------------------------
+// 2b. El servidor lo rechaza: se corrige aqui mismo y se reenvia
+// ------------------------------------------------------------------
+// Con los sacos ya cargados se fuerza el rechazo corregible del servidor
+// ("hora_cierre anterior a la hora de la tarea AM"), que es el que de verdad
+// aparece en campo. Lo que se prueba es que la pantalla vuelve CON SUS SACOS:
+// volver a teclear veinte pesajes seria peor que el rechazo.
+await fetch(`${MOCK}/mock/rechazar_pm`, {
+  method: 'POST', body: JSON.stringify({ on: true, tipo: 'cosecha' }),
+});
+await flecha('siguiente').click();
+await t(700);
+await boton('Cerrar').click();
+await t(3500);
+const cRech = await p.evaluate(() => window['__lagricontrol'].sync.conteo());
+ok('23r la cosecha vuelve RECHAZADA', cRech.rechazados === 1, JSON.stringify(cRech));
+
+await p.goto(`${APP}/registros?vista=enviados`, { waitUntil: 'networkidle' });
+await t(2000);
+const tarjRech = p.locator('app-registros ion-item.tarjeta-registro', { hasText: 'Rechazado' });
+ok('24r la cosecha rechazada ofrece corregir',
+  (await tarjRech.locator('ion-button.corregir').count()) === 1,
+  `corregir=${await tarjRech.locator('ion-button.corregir').count()}`);
+await tarjRech.locator('ion-button.corregir').first().click();
+await t(3000);
+raiz = 'app-cosecha';
+const tras = await p.evaluate(() => {
+  const c = window['ng'].getComponent(document.querySelector('app-cosecha'));
+  return { n: c.elegidas().length, sacos: c.elegidas()[0]?.sacos?.length,
+           libras: c.totalPesoGeneral(), finca: c.finca()?.nombre,
+           supervisor: c.responsable()?.nombre, problemas: c.problemas() };
+});
+ok('25r la pantalla vuelve con la persona, sus sacos y el encabezado armado',
+  tras.n === 1 && tras.sacos === 3 && String(tras.libras) === '121.5' &&
+    String(tras.supervisor).includes('HOLGUIN') && tras.problemas.length === 0,
+  JSON.stringify(tras));
+ok('25r-bis el motivo del rechazo queda a la vista',
+  (await p.locator(`${raiz} .banner.correccion`).innerText()).includes('hora_cierre'),
+  await p.locator(`${raiz} .banner.correccion`).innerText().catch(() => 'sin banner'));
+// Se deja de rechazar y el mismo registro se reenvia: lo que sigue --el payload
+// campo por campo-- es el del reenvio.
+await fetch(`${MOCK}/mock/rechazar_pm`, {
+  method: 'POST', body: JSON.stringify({ on: false, tipo: 'cosecha' }),
+});
+const guidRechazado = (await lotes())
+  .flatMap((l) => l.records ?? [])
+  .filter((r) => r.tipo === 'cosecha')
+  .pop()?.guid;
+// La correccion deja la pantalla en el paso de las tareas; el flujo que sigue
+// avanza UN paso, asi que se lo deja donde estaba antes del rechazo.
+await p.evaluate(() => {
+  const c = window['ng'].getComponent(document.querySelector('app-cosecha'));
+  c.irA(c.indiceRevision() - 1);
+});
+await t(500);
+
+// ------------------------------------------------------------------
 // 3. Cerrar y verificar el payload
 // ------------------------------------------------------------------
 await flecha('siguiente').click();
@@ -225,6 +281,12 @@ ok('19 los totales del telefono cuadran con sus sacos',
   c.payload.total_sacos === 3 && c.payload.total_peso === 121.5,
   JSON.stringify({ ts: c.payload.total_sacos, tp: c.payload.total_peso }));
 
+ok('26r el reenvio usa el MISMO guid: el servidor sigue pudiendo deduplicar',
+  c.guid === guidRechazado, `rechazado=${guidRechazado} reenviado=${c.guid}`);
+ok('27r tras corregir no queda nada rechazado ni pendiente',
+  JSON.stringify(await p.evaluate(() => window['__lagricontrol'].sync.conteo()))
+    .includes('"rechazados":0'),
+  JSON.stringify(await p.evaluate(() => window['__lagricontrol'].sync.conteo())));
 ok('20 la hora de cierre viaja con offset',
   /[+-]\d{2}:\d{2}$/.test(String(c.payload.hora_cierre)), String(c.payload.hora_cierre));
 

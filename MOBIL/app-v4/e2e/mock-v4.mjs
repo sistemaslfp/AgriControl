@@ -15,6 +15,8 @@ let modo = 'ok';   // ok | html200 | rechaza | 501 | parcial | catalogo_dup
 // AM recibidos, las asignaciones cerradas), y para probar la correccion de un
 // rechazado hace falta rechazar el PM SIN perder el AM que cierra.
 let rechazarPm = false;
+// Que tipo rechaza el interruptor: 'pm' (por defecto) o 'cosecha'.
+let rechazarTipo = 'pm';
 let contador = 1000;
 let lotes = [];
 // Estado que hace que el mock se parezca al servidor de verdad: los AM que ya
@@ -61,7 +63,12 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/mock/rechazar_pm' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c));
-    return req.on('end', () => { rechazarPm = !!JSON.parse(b).on; json(200, { rechazarPm }); });
+    return req.on('end', () => {
+      const d = JSON.parse(b);
+      rechazarPm = !!d.on;
+      rechazarTipo = d.tipo === 'cosecha' ? 'cosecha' : 'pm';
+      json(200, { rechazarPm, rechazarTipo });
+    });
   }
   if (req.url === '/mock/lotes') return json(200, lotes);
 
@@ -212,7 +219,7 @@ const server = http.createServer((req, res) => {
         // caso, asi que no se toca `cerradas` -- por eso va antes del bloque
         // del PM y no adentro. Va por interruptor y no por modo para no perder
         // los AM ya recibidos.
-        if (rechazarPm && r.tipo === 'pm') {
+        if (rechazarPm && r.tipo === rechazarTipo) {
           rs.push({ guid: r.guid, status: 'rejected',
                     reason: 'hora_cierre anterior a la hora de la tarea AM' });
           continue;

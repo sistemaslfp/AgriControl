@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
   IonButton,
@@ -43,6 +43,7 @@ import {
 import { ClockService } from '../../core/clock/clock.service';
 import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
+import { RegistroColaVista } from '../../core/sync/sync.models';
 import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
 import {
@@ -78,6 +79,8 @@ export interface GrupoTareaCosecha {
   modulos: string;
   subtarea: string;
   soloLocal: boolean;
+  /** Hora a la que se abrio el AM, HH:MM. Null cuando no se sabe. */
+  horaApertura: string | null;
 }
 
 /**
@@ -137,6 +140,7 @@ export class CosechaPage implements OnInit {
   private readonly config = inject(AppConfigService);
   private readonly toast = inject(ToastController);
   private readonly router = inject(Router);
+  private readonly ruta = inject(ActivatedRoute);
 
   // --- Encabezado ---
   readonly fecha = signal('');
@@ -147,6 +151,17 @@ export class CosechaPage implements OnInit {
   // --- Asignaciones ---
   readonly disponibles = signal<AsignacionAmLocal[]>([]);
   readonly elegidas = signal<CierreCosecha[]>([]);
+
+  /**
+   * Registros RECHAZADOS que esta pantalla vino a corregir (query `corregir`).
+   * Mismo mecanismo que el PM: se conserva el guid para reenviar sin duplicar.
+   */
+  private readonly corrigiendo = signal<RegistroColaVista[]>([]);
+  readonly motivosCorreccion = computed(() => [
+    ...new Set(this.corrigiendo().map((r) => r.motivoRechazo ?? 'Rechazado por el servidor')),
+  ]);
+  readonly enCorreccion = computed(() => this.corrigiendo().length > 0);
+  private avisoCorreccionDado = false;
   readonly cargandoLista = signal(false);
   readonly listaDesdeServidor = signal(false);
   readonly errorLista = signal<string | null>(null);
@@ -280,15 +295,119 @@ export class CosechaPage implements OnInit {
     const ahora = this.fechas.ahoraLocal();
     this.fecha.set(ahora.slice(0, 10));
     this.horaCierre.set(ahora.slice(11, 16));
+    await this.prepararCorreccion();
     this.fincas = await this.catalogo.fincas();
+    // Corrigiendo no se aplica la finca por defecto: la lista tiene que venir
+    // sin filtrar para que la tarea del rechazado aparezca igual.
     const porDefecto = this.config.defaultFincaId();
     const f =
       (porDefecto !== null ? this.fincas.find((x) => x.id === porDefecto) : undefined) ??
       (this.fincas.length === 1 ? this.fincas[0] : undefined);
-    if (f) {
+    if (f && !this.enCorreccion()) {
       this.finca.set({ id: f.id, nombre: f.nombre });
     }
     await this.cargarLista();
+  }
+
+  /**
+   * Levanta los rechazados que llegan en la URL y deja la pantalla con su
+   * fecha y su hora de cierre. Tambien borra el cierre del espejo local: la
+   * cosecha rechazada no cerro nada, pero `pm_cierre_local` la daba por
+   * cerrada y la tarea no volvia a la lista sin servidor.
+   */
+  private async prepararCorreccion(): Promise<void> {
+    const param = this.ruta.snapshot.queryParamMap.get('corregir');
+    if (!param) {
+      return;
+    }
+    const regs: RegistroColaVista[] = [];
+    for (const guid of param.split(',').filter(Boolean)) {
+      const r = await this.cola.porGuid(guid);
+      if (r && r.tipo === 'cosecha' && r.estado === 'RECHAZADO') {
+        regs.push(r);
+        await this.asignaciones.olvidarPm(guid);
+      }
+    }
+    if (regs.length === 0) {
+      await this.aviso('Ese registro ya no está rechazado: se abre un pesaje nuevo.');
+      return;
+    }
+    this.corrigiendo.set(regs);
+    const cierre = String(regs[0].payload['hora_cierre'] ?? '');
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(cierre)) {
+      this.fecha.set(cierre.slice(0, 10));
+      this.horaCierre.set(cierre.slice(11, 16));
+    }
+  }
+
+  /**
+   * Deja elegidas las personas del rechazado con SUS SACOS ya cargados: lo que
+   * se corrige casi siempre es la hora, no el pesaje, y volver a teclear
+   * veinte sacos seria peor que el rechazo.
+   */
+  private async aplicarCorreccion(): Promise<void> {
+    const regs = this.corrigiendo();
+    if (regs.length === 0 || this.elegidas().length > 0) {
+      return;
+    }
+    const cierres: CierreCosecha[] = [];
+    for (const r of regs) {
+      const a = this.disponibles().find(
+        (x) =>
+          x.amGuid === String(r.payload['am_guid'] ?? '') &&
+          x.personalId === Number(r.payload['trabajador_id'] ?? 0),
+      );
+      if (!a) {
+        continue;
+      }
+      const crudos = Array.isArray(r.payload['sacos'])
+        ? (r.payload['sacos'] as Record<string, unknown>[])
+        : [];
+      const sacos: Saco[] = crudos.map((s, k) => ({
+        numero: k + 1,
+        libras: Number(s['libras'] ?? 0) || null,
+      }));
+      cierres.push({
+        asignacion: a,
+        sacos: sacos.length > 0 ? sacos : [{ numero: 1, libras: null }],
+        observaciones: String(r.payload['observaciones'] ?? ''),
+      });
+    }
+    if (cierres.length > 0) {
+      this.elegidas.set(cierres);
+      await this.encabezadoDeCorreccion(cierres[0], regs[0]);
+      this.irA(Math.min(this.paso(), this.totalPasos() - 1));
+      return;
+    }
+    if (!this.avisoCorreccionDado) {
+      this.avisoCorreccionDado = true;
+      await this.aviso(
+        'La tarea de la mañana de ese registro no está en esta lista: revisa la finca y la fecha.',
+      );
+    }
+  }
+
+  /** Finca y supervisor del rechazado, para no aterrizar con el encabezado vacio. */
+  private async encabezadoDeCorreccion(
+    c: CierreCosecha,
+    reg: RegistroColaVista,
+  ): Promise<void> {
+    const fincaId = reg.meta?.fincaId ?? c.asignacion.fincaId;
+    if (!this.finca() && fincaId != null) {
+      const f = this.fincas.find((x) => x.id === fincaId);
+      if (f) {
+        this.finca.set({ id: f.id, nombre: f.nombre });
+      }
+    }
+    if (!this.responsable()) {
+      const id = Number(reg.payload['responsable_id'] ?? 0);
+      const r = (await this.catalogo.responsables(this.finca()?.id ?? null)).find(
+        (x) => x.id === id,
+      );
+      if (r) {
+        this.responsable.set({ id: r.id, nombre: r.nombre });
+      }
+    }
   }
 
   // ------------------------------------------------------------------
@@ -357,6 +476,7 @@ export class CosechaPage implements OnInit {
     const vivas = new Set(lista.map((a) => `${a.amGuid}|${a.personalId}`));
     this.elegidas.set(this.elegidas().filter((c) => vivas.has(this.clave(c.asignacion))));
     this.cargandoLista.set(false);
+    await this.aplicarCorreccion();
   }
 
   clave(a: AsignacionAmLocal): string {
@@ -386,6 +506,7 @@ export class CosechaPage implements OnInit {
       modulos: asignaciones[0].modulos,
       subtarea: asignaciones[0].subtarea,
       soloLocal: asignaciones.every((a) => a.origen === 'local'),
+      horaApertura: asignaciones.find((a) => a.horaApertura)?.horaApertura ?? null,
     }));
   });
 
@@ -614,6 +735,7 @@ export class CosechaPage implements OnInit {
     }
     this.guardando.set(true);
     const guids: string[] = [];
+    let corregidos = 0;
     try {
       for (const c of this.elegidas()) {
         const a = c.asignacion;
@@ -645,8 +767,28 @@ export class CosechaPage implements OnInit {
           subtarea: a.subtarea,
           modulos: a.modulos,
           trabajador: a.trabajador,
+          fincaId: this.finca()?.id ?? null,
         };
-        const guid = await this.cola.enqueue('cosecha', payload, meta);
+        // Si esta persona viene de un rechazado, el payload corregido vuelve a
+        // la cola con el MISMO guid: el servidor no lo aplico, asi que ese guid
+        // sigue libre y la proteccion contra duplicados se mantiene.
+        const rechazado = this.corrigiendo().find(
+          (r) =>
+            String(r.payload['am_guid'] ?? '') === a.amGuid &&
+            Number(r.payload['trabajador_id'] ?? 0) === a.personalId,
+        );
+        let guid: string;
+        if (rechazado) {
+          const res = await this.cola.corregirRechazado(rechazado.guid, payload, meta);
+          if ('error' in res) {
+            await this.aviso(res.error);
+            continue;
+          }
+          guid = rechazado.guid;
+          corregidos += 1;
+        } else {
+          guid = await this.cola.enqueue('cosecha', payload, meta);
+        }
         guids.push(guid);
         // El mismo espejo local que el PM: una tarea cerrada no vuelve a la
         // lista aunque el envio siga pendiente.
@@ -662,6 +804,14 @@ export class CosechaPage implements OnInit {
       this.guardando.set(false);
     }
 
+    if (corregidos > 0) {
+      await this.cola.flush('correccion de rechazado', true);
+      await this.aviso(
+        `${corregidos} registro(s) corregido(s) y reenviado(s). Mira Registros para ver si entró.`,
+      );
+      await this.router.navigateByUrl('/registros?vista=enviados');
+      return;
+    }
     await this.aviso(
       `${guids.length} tarea(s) cerrada(s) con ${this.totalSacosGeneral()} saco(s) ` +
         `y ${this.totalPesoGeneral()} lb. Se envían solas cuando haya red.`,

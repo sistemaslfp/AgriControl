@@ -54,7 +54,10 @@ const MOTIVOS_SIN_CORRECCION = [
  * Pantalla que sabe retomar un rechazado de ese tipo. Los tipos que no estan
  * aqui todavia no tienen precarga: su tarjeta ofrece descartar y nada mas.
  */
-const RUTA_CORRECCION: Partial<Record<TipoRegistro, string>> = { pm: '/pm' };
+const RUTA_CORRECCION: Partial<Record<TipoRegistro, string>> = {
+  pm: '/pm',
+  cosecha: '/cosecha',
+};
 
 /** Las dos mitades de la pantalla. */
 export type Vista = 'pendientes' | 'enviados';
