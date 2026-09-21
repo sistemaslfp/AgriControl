@@ -129,6 +129,20 @@ export class FechaService {
    * `created_at` con `toISOString()`, o sea en UTC: cortar la cadena a mano
    * mostraba la hora corrida el offset del dispositivo (21:56 por 16:56).
    */
+  /**
+   * HH:MM de un `fecha_proceso` tal como lo manda el servidor
+   * ('2026-09-18 07:31:00' o ISO). `null` cuando no hay hora util: las filas
+   * migradas con origen 'mig-pm' traen 00:00:00, que no es una hora sino que
+   * no se sabe.
+   */
+  horaDeFechaProceso(valor: string | null | undefined): string | null {
+    const m = valor ? /[T ](\d{2}):(\d{2})/.exec(valor) : null;
+    if (!m) {
+      return null;
+    }
+    return m[1] === '00' && m[2] === '00' ? null : `${m[1]}:${m[2]}`;
+  }
+
   horaLocalDeIso(iso: string): string {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? iso.slice(11, 16) : this.aLocal(d).slice(11, 16);

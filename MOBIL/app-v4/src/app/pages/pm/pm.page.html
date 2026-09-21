@@ -133,7 +133,11 @@
               <strong>
                 {{ g.lote }}@if (g.modulos) { · Mód. {{ g.modulos }} }
               </strong>
-              <p>{{ g.subtarea }}</p>
+              <p>
+                {{ g.subtarea }}@if (g.horaApertura) {
+                  <span class="hora-apertura"> · abierta {{ g.horaApertura }}</span>
+                }
+              </p>
               <p [class.con-eleccion]="elegidasDe(g).length > 0">
                 {{ resumenPersonas(g) }}
               </p>
@@ -151,8 +155,20 @@
       </ion-list>
     }
 
+    @if (enCorreccion()) {
+      <div class="banner aviso correccion">
+        Estás corrigiendo un registro que el servidor rechazó. Se reenvía con el
+        mismo identificador, así que no se duplica.
+        <ul>
+          @for (m of motivosCorreccion(); track m) {
+            <li>{{ m }}</li>
+          }
+        </ul>
+      </div>
+    }
+
     <div class="banner info">
-      PM cierra todas las tareas a excepción de cosecha y poscosecha
+      PM cierra todas las tareas a excepción de cosecha
     </div>
 
     @if (problemasEncabezado().length > 0) {

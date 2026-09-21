@@ -325,6 +325,8 @@ export class CosechaPage implements OnInit {
           subtarea: a.subtarea,
           modulos: a.modulos ?? '',
           unidadLabor: a.unidad_labor,
+          horaApertura: this.fechas.horaDeFechaProceso(a.fecha_proceso),
+          fincaId: a.finca_id,
           origen: 'servidor' as const,
         }));
         this.listaDesdeServidor.set(true);

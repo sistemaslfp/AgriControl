@@ -20,6 +20,9 @@ const APP = 'http://localhost:8099';
 const MOCK = 'http://localhost:8098';
 const modo = (m) =>
   fetch(`${MOCK}/mock/modo`, { method: 'POST', body: JSON.stringify({ modo: m }) });
+/** Rechaza (o deja de rechazar) los PM sin resetear el estado del mock. */
+const rechazarPm = (on) =>
+  fetch(`${MOCK}/mock/rechazar_pm`, { method: 'POST', body: JSON.stringify({ on }) });
 const lotes = () => fetch(`${MOCK}/mock/lotes`).then((r) => r.json());
 
 let fallos = 0;
@@ -558,6 +561,108 @@ const c = await conteo();
 // Lote 5 no cuenta: lo bloqueo la regla de "una persona, un AM abierto".
 ok('36 todo lo capturado quedó confirmado por el servidor',
   c.enviados === 3 && c.pendientes === 0 && c.rechazados === 0, JSON.stringify(c));
+
+// ------------------------------------------------------------------
+// 7b. Un PM rechazado se corrige en la pantalla PM y se reenvia
+// ------------------------------------------------------------------
+// El rechazo elegido es el corregible de verdad: "hora_cierre anterior a la
+// hora de la tarea AM". Lo que se prueba es el ciclo entero -- rechazo,
+// tarjeta con boton, precarga, reenvio -- y que el guid NO cambia.
+await rechazarPm(true);
+raiz = 'app-pm';
+await p.goto(`${APP}/pm`, { waitUntil: 'networkidle' });
+await t(2500);
+// La pantalla se abre de cero: el encabezado se completa otra vez. Todavia no
+// hay valores por defecto guardados en Configuracion (eso es la seccion 8).
+await elegirUno('Responsable que cierra', 'HOLGUIN');
+await elegirUno('Finca', 'Bellita');
+await t(1200);
+await p.locator(`${raiz} ion-item.tarea-am`, { hasText: 'Mód. 02' }).click();
+await t(600);
+await p.locator('ion-modal ion-checkbox', { hasText: 'ALAVA' }).first().click();
+await t(300);
+await cerrarTocandoFuera();
+await t(700);
+await flecha('siguiente').click();
+await t(700);
+await p.evaluate(() => {
+  const c = window['ng'].getComponent(document.querySelector('app-pm'));
+  c.setCampo(0, 'cantidad', '2');
+});
+await t(400);
+await flecha('siguiente').click();
+await t(700);
+await boton('Cerrar 1 tarea').click();
+await t(3500);
+
+const cRech = await conteo();
+ok('39r el PM vuelve RECHAZADO', cRech.rechazados === 1, JSON.stringify(cRech));
+const guidRechazado = (await lotes())
+  .flatMap((l) => l.records ?? [])
+  .filter((r) => r.tipo === 'pm')
+  .pop()?.guid;
+
+raiz = 'app-registros';
+await p.goto(`${APP}/registros?vista=enviados`, { waitUntil: 'networkidle' });
+await t(2000);
+const tarjRech = p.locator(`${raiz} ion-item.tarjeta-registro`, { hasText: 'Rechazado' });
+ok('40r el rechazado ofrece corregir y descartar',
+  (await tarjRech.locator('ion-button.corregir').count()) === 1 &&
+    (await tarjRech.locator('ion-button.descartar').count()) === 1,
+  `corregir=${await tarjRech.locator('ion-button.corregir').count()}` +
+  ` descartar=${await tarjRech.locator('ion-button.descartar').count()}`);
+
+await tarjRech.locator('ion-button.corregir').first().click();
+await t(3000);
+raiz = 'app-pm';
+ok('41r corregir abre el PM con el motivo del rechazo a la vista',
+  (await p.locator(`${raiz} .banner.correccion`).innerText()).includes('hora_cierre'),
+  await p.locator(`${raiz} .banner.correccion`).innerText().catch(() => 'sin banner'));
+const estado = await p.evaluate(() => {
+  const c = window['ng'].getComponent(document.querySelector('app-pm'));
+  return { n: c.elegidas().length, cantidad: c.elegidas()[0]?.cantidad,
+           persona: c.elegidas()[0]?.asignacion?.trabajador, hora: c.horaCierre(),
+           finca: c.finca()?.nombre, responsable: c.responsable()?.nombre,
+           problemas: c.problemas() };
+});
+ok('42r la pantalla vuelve con la persona y el avance ya cargados',
+  estado.n === 1 && estado.cantidad === '2' && String(estado.persona).includes('ALAVA'),
+  JSON.stringify(estado));
+// Sin esto, quien venia a corregir una hora aterriza con el encabezado vacio
+// y el boton de cerrar deshabilitado.
+ok('42br el encabezado se rearma solo: finca, responsable y nada que reclamar',
+  String(estado.finca).length > 0 && String(estado.responsable).includes('HOLGUIN') &&
+    estado.problemas.length === 0,
+  JSON.stringify(estado));
+
+// Se corrige la hora --lo que el servidor reclamaba-- y se reenvia.
+await rechazarPm(false);
+await p.evaluate(() => {
+  const c = window['ng'].getComponent(document.querySelector('app-pm'));
+  c.setHoraCierre('18:30');
+});
+await t(400);
+await p.evaluate(() => {
+  const c = window['ng'].getComponent(document.querySelector('app-pm'));
+  c.irA(c.indiceRevision());
+});
+await t(600);
+await boton('Cerrar 1 tarea').click();
+await t(4000);
+
+const cOk = await conteo();
+ok('43r tras corregir no queda nada rechazado ni pendiente',
+  cOk.rechazados === 0 && cOk.pendientes === 0 && cOk.enviados === 4, JSON.stringify(cOk));
+const pmReenviado = (await lotes())
+  .flatMap((l) => l.records ?? [])
+  .filter((r) => r.tipo === 'pm')
+  .pop();
+ok('44r el reenvio usa el MISMO guid: el servidor sigue pudiendo deduplicar',
+  pmReenviado?.guid === guidRechazado,
+  `rechazado=${guidRechazado} reenviado=${pmReenviado?.guid}`);
+ok('45r el reenvio lleva la hora corregida',
+  String(pmReenviado?.payload?.hora_cierre ?? '').includes('18:30'),
+  String(pmReenviado?.payload?.hora_cierre));
 
 // ------------------------------------------------------------------
 // 8. Valores por defecto de Configuración

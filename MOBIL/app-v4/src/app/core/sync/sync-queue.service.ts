@@ -633,6 +633,104 @@ export class SyncQueueService {
     return salida;
   }
 
+  /** Un registro puntual, para la pantalla que lo va a corregir. */
+  async porGuid(guid: string): Promise<RegistroColaVista | null> {
+    await this.inicializado;
+    const filas = await this.listar(['PENDIENTE', 'ENVIANDO', 'ENVIADO', 'RECHAZADO']);
+    return filas.find((f) => f.guid === guid) ?? null;
+  }
+
+  /**
+   * Reemplaza el payload de un RECHAZADO y lo devuelve a la cola.
+   *
+   * Se reusa el MISMO guid a proposito: el servidor resuelve la idempotencia
+   * contra el guid ya APLICADO (`cierre_guid` en `lfp_am`, etc.), y un
+   * rechazado nunca se aplico. Con guid nuevo se perderia esa proteccion y
+   * dos correcciones seguidas podrian entrar dos veces.
+   *
+   * El estado se revalida dentro del propio UPDATE, igual que en el descarte:
+   * entre que la pantalla dibujo la lista y el usuario guardo, el registro
+   * pudo haber cambiado.
+   */
+  async corregirRechazado(
+    guid: string,
+    payload: unknown,
+    meta?: RegistroMeta,
+  ): Promise<{ ok: true } | { error: string }> {
+    await this.inicializado;
+    const db = await this.database.abrir();
+
+    const q = await db.query(
+      `SELECT tipo, payload, motivo_rechazo FROM sync_queue
+        WHERE guid = ? AND estado = 'RECHAZADO' LIMIT 1;`,
+      [guid],
+    );
+    const fila = (q.values ?? [])[0] as Record<string, unknown> | undefined;
+    if (!fila) {
+      return { error: 'Ese registro ya no esta rechazado.' };
+    }
+
+    // El asiento guarda lo que se descarta --payload viejo y motivo--, que es
+    // lo unico que despues no se puede reconstruir.
+    await this.auditar(
+      'CORRECCION_RECHAZADO',
+      guid,
+      `tipo=${String(fila['tipo'])} motivo=${String(fila['motivo_rechazo'])}` +
+        ` payload_anterior=${String(fila['payload'])}`,
+    );
+
+    const r = await db.run(
+      `UPDATE sync_queue
+          SET payload = ?, meta = ?, estado = 'PENDIENTE', motivo_rechazo = NULL,
+              ultimo_error = NULL, intentos = 0, acked_at = NULL, flags = NULL
+        WHERE guid = ? AND estado = 'RECHAZADO';`,
+      [JSON.stringify(payload), meta ? JSON.stringify(meta) : null, guid],
+    );
+    if ((r.changes?.changes ?? 0) === 0) {
+      return { error: 'Ese registro ya no esta rechazado.' };
+    }
+    await this.database.persistir();
+    await this.refrescarConteo();
+    return { ok: true };
+  }
+
+  /**
+   * Descarta un RECHAZADO. El servidor no lo aplico, asi que sacarlo de la
+   * cola no deja nada a medias; queda el asiento y la marca en `lfp_flag`.
+   */
+  async descartarRechazado(guid: string): Promise<{ ok: true } | { error: string }> {
+    await this.inicializado;
+    const db = await this.database.abrir();
+
+    const q = await db.query(
+      `SELECT tipo, payload, motivo_rechazo FROM sync_queue
+        WHERE guid = ? AND estado = 'RECHAZADO' LIMIT 1;`,
+      [guid],
+    );
+    const fila = (q.values ?? [])[0] as Record<string, unknown> | undefined;
+    if (!fila) {
+      return { error: 'Ese registro ya no esta rechazado.' };
+    }
+
+    await this.auditar(
+      'DESCARTE_RECHAZADO',
+      guid,
+      `tipo=${String(fila['tipo'])} motivo=${String(fila['motivo_rechazo'])}` +
+        ` payload=${String(fila['payload'])}`,
+    );
+
+    const r = await db.run(
+      `DELETE FROM sync_queue WHERE guid = ? AND estado = 'RECHAZADO';`,
+      [guid],
+    );
+    if ((r.changes?.changes ?? 0) === 0) {
+      return { error: 'Ese registro ya no esta rechazado.' };
+    }
+    await this.database.persistir();
+    await this.refrescarConteo();
+    return { ok: true };
+  }
+
   /**
    * Descarta un registro que NUNCA llego al servidor.
    *

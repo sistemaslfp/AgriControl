@@ -288,8 +288,15 @@ ok('19b el motivo no trae ids ni jerga',
   !/\bsubtarea \d+\b/.test(soloMotivo) && !soloMotivo.includes('I1') &&
     !soloMotivo.includes('_id'),
   soloMotivo);
-ok('20 un RECHAZADO tampoco ofrece descartar',
-  (await p.locator(`${raiz} ion-item.tarjeta-registro ion-button.descartar`).count()) === 0);
+// Kevin, 2026-09-21: un rechazado SI se puede sacar de la cola. El servidor no
+// lo aplico, asi que descartarlo no deja nada a medias --y si el motivo no se
+// arregla editando, es lo unico que se puede hacer con el.
+ok('20 un RECHAZADO ofrece descartar',
+  (await rechazada.first().locator('ion-button.descartar').count()) === 1);
+// Este rechazo es de un AM, y la precarga por ahora solo existe en PM: sin
+// pantalla a donde ir, no se ofrece corregir.
+ok('20c un rechazo de un tipo sin pantalla de correccion no ofrece corregir',
+  (await rechazada.first().locator('ion-button.corregir').count()) === 0);
 
 // Un rechazado cuenta del lado de Enviados --es donde esta-- pero se dice
 // aparte: es el unico estado que necesita que alguien haga algo, y esconderlo

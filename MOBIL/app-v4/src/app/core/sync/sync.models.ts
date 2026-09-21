@@ -43,6 +43,12 @@ export interface RegistroMeta {
   trabajador?: string;
   /** Unidad de labor de la subtarea (Ha, Jornal, Planta...): da sentido al avance del PM. */
   unidadLabor?: string | null;
+  /**
+   * Finca del encabezado con que se capturo. La pantalla que retoma un
+   * rechazado la necesita para rearmar su encabezado, y es el unico lugar
+   * donde esta cuando la asignacion salio del espejo local.
+   */
+  fincaId?: number | null;
   /** Partida de postcosecha. `null` hasta que el ACK de pc_proceso la trae. */
   lotCode?: string | null;
   /** Etapa de postcosecha (pc_etapa / pc_calidad_sec). */

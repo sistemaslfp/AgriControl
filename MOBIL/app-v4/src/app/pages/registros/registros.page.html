@@ -151,7 +151,24 @@
                  tocando la tarjeta. -->
           </ion-label>
 
-          @if (t.estado === 'PENDIENTE') {
+          <!--
+            Un rechazado necesita que alguien haga algo: corregirlo en la
+            pantalla de su modulo, o sacarlo de la cola. Un pendiente solo se
+            puede descartar; un enviado, nada.
+          -->
+          @if (corregible(t)) {
+            <ion-button
+              slot="end"
+              fill="clear"
+              color="primary"
+              class="corregir"
+              (click)="$event.stopPropagation(); corregir(t)"
+              [attr.aria-label]="'Corregir ' + t.lote + ' ' + t.labor"
+            >
+              <ion-icon slot="icon-only" name="create-outline"></ion-icon>
+            </ion-button>
+          }
+          @if (t.estado === 'PENDIENTE' || t.estado === 'RECHAZADO') {
             <ion-button
               slot="end"
               fill="clear"

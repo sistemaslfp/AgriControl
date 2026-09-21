@@ -11,6 +11,10 @@
 import http from 'node:http';
 
 let modo = 'ok';   // ok | html200 | rechaza | 501 | parcial | catalogo_dup
+// Interruptor aparte del modo: cambiar de modo RESETEA el estado del mock (los
+// AM recibidos, las asignaciones cerradas), y para probar la correccion de un
+// rechazado hace falta rechazar el PM SIN perder el AM que cierra.
+let rechazarPm = false;
 let contador = 1000;
 let lotes = [];
 // Estado que hace que el mock se parezca al servidor de verdad: los AM que ya
@@ -54,6 +58,10 @@ const server = http.createServer((req, res) => {
       amRecibidos = new Map(); cerradas = new Set();
       json(200, { modo });
     });
+  }
+  if (req.url === '/mock/rechazar_pm' && req.method === 'POST') {
+    let b = ''; req.on('data', (c) => (b += c));
+    return req.on('end', () => { rechazarPm = !!JSON.parse(b).on; json(200, { rechazarPm }); });
   }
   if (req.url === '/mock/lotes') return json(200, lotes);
 
@@ -199,6 +207,16 @@ const server = http.createServer((req, res) => {
       }
       let rs = [];
       for (const [i, r] of records.entries()) {
+        // Rechazo tipico y CORREGIBLE de un PM: el cierre quedo antes de la
+        // hora del AM. El servidor real no marca la tarea como cerrada en ese
+        // caso, asi que no se toca `cerradas` -- por eso va antes del bloque
+        // del PM y no adentro. Va por interruptor y no por modo para no perder
+        // los AM ya recibidos.
+        if (rechazarPm && r.tipo === 'pm') {
+          rs.push({ guid: r.guid, status: 'rejected',
+                    reason: 'hora_cierre anterior a la hora de la tarea AM' });
+          continue;
+        }
         if (modo === 'rechaza' && i === 0) {
           // El texto imita al del servidor real: nombres, sin ids ni jerga.
           // Verificado con curl contra V4.php el 2026-09-02.

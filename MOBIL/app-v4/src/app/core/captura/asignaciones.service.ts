@@ -58,6 +58,17 @@ export interface AsignacionAmLocal {
   /** "3, 4" o '' si el lote no trabaja por módulos. */
   modulos: string;
   unidadLabor: string | null;
+  /**
+   * HH:MM en que se abrio el AM. Del servidor sale de `fecha_proceso`; del
+   * espejo local, del momento en que se capturo. `null` cuando no hay hora
+   * util (las filas migradas traen 00:00:00).
+   */
+  horaApertura: string | null;
+  /**
+   * Finca del AM. Solo la trae el servidor: el espejo local no guarda finca,
+   * porque la lista local nunca se filtro por ella.
+   */
+  fincaId: number | null;
   origen: 'servidor' | 'local';
 }
 
@@ -129,6 +140,19 @@ export class AsignacionesService {
        VALUES (?, ?, ?, ?, ?, ?);`,
       [guid, trabajadorId, fecha, loteId, subtareaId, new Date().toISOString()],
     );
+    await this.database.persistir();
+  }
+
+  /**
+   * Deshace el cierre local de un PM.
+   *
+   * Un PM rechazado NO cerro nada en el servidor, pero el espejo local si lo
+   * daba por cerrado: sin esto, la tarea desaparecia de la lista del PM y no
+   * habia forma de volver a cerrarla sin red.
+   */
+  async olvidarPm(guid: string): Promise<void> {
+    const db = await this.database.abrir();
+    await db.run(`DELETE FROM pm_cierre_local WHERE guid = ?;`, [guid]);
     await this.database.persistir();
   }
 
@@ -206,7 +230,7 @@ export class AsignacionesService {
     const db = await this.database.abrir();
     const r = await db.query(
       `SELECT a.guid, a.personal_id, a.fecha, a.lote_id, a.subtarea_id, a.modulos,
-              a.captura_guid
+              a.captura_guid, a.created_at
          FROM am_persona_local a
         WHERE a.fecha = ?
           AND NOT EXISTS (
@@ -247,6 +271,8 @@ export class AsignacionesService {
         subtarea: sub?.nombre ?? `Subtarea ${subtareaId}`,
         modulos: ids.map((x) => nombresMod.get(x) ?? String(x)).join(', '),
         unidadLabor: sub?.unidadLaborNombre ?? null,
+        horaApertura: this.fechas.horaLocalDeIso(String(f['created_at'])),
+        fincaId: null,
         origen: 'local',
       });
     }

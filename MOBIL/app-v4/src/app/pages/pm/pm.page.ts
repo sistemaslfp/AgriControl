@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
   IonButton,
@@ -41,6 +41,7 @@ import {
 import { ClockService } from '../../core/clock/clock.service';
 import { FechaService } from '../../core/captura/fecha.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
+import { RegistroColaVista } from '../../core/sync/sync.models';
 import { BarraPasosComponent, SwipePasosDirective } from '../../shared/pasos';
 import { SelectorComponent } from '../../shared/selector.component';
 import {
@@ -98,6 +99,8 @@ export interface GrupoTareaAm {
   modulos: string;
   subtarea: string;
   soloLocal: boolean;
+  /** Hora a la que se abrio el AM, HH:MM. Null cuando no se sabe. */
+  horaApertura: string | null;
 }
 
 @Component({
@@ -141,6 +144,7 @@ export class PmPage implements OnInit {
   private readonly config = inject(AppConfigService);
   private readonly toast = inject(ToastController);
   private readonly router = inject(Router);
+  private readonly ruta = inject(ActivatedRoute);
 
   // --- Encabezado ---
   readonly fecha = signal(''); // YYYY-MM-DD
@@ -157,6 +161,21 @@ export class PmPage implements OnInit {
 
   readonly paso = signal(0);
   readonly guardando = signal(false);
+
+  /**
+   * Registros RECHAZADOS que esta pantalla vino a corregir (query `corregir`).
+   *
+   * Se conserva el guid: al guardar, el payload corregido vuelve a la cola
+   * CON EL MISMO guid, que es lo que mantiene la idempotencia del servidor
+   * (un rechazado nunca se aplico, asi que su guid sigue libre).
+   */
+  private readonly corrigiendo = signal<RegistroColaVista[]>([]);
+  readonly motivosCorreccion = computed(() => [
+    ...new Set(this.corrigiendo().map((r) => r.motivoRechazo ?? 'Rechazado por el servidor')),
+  ]);
+  readonly enCorreccion = computed(() => this.corrigiendo().length > 0);
+  /** Se avisa una sola vez si la tarea del rechazado no esta en la lista. */
+  private avisoCorreccionDado = false;
 
   /** encabezado + una por asignación elegida + revisión */
   readonly totalPasos = computed(() => this.elegidas().length + 2);
@@ -274,16 +293,124 @@ export class PmPage implements OnInit {
     const ahora = this.fechas.ahoraLocal();
     this.fecha.set(ahora.slice(0, 10));
     this.horaCierre.set(ahora.slice(11, 16));
+    await this.prepararCorreccion();
     this.fincas = await this.catalogo.fincas();
     // Finca por defecto de Configuración; si hay una sola, tampoco se pregunta.
+    // Corrigiendo NO se aplica la finca por defecto: la lista tiene que venir
+    // sin filtrar para que la tarea del rechazado aparezca aunque sea de la
+    // otra finca. La finca sale despues de la propia asignacion.
     const porDefecto = this.config.defaultFincaId();
     const f =
       (porDefecto !== null ? this.fincas.find((x) => x.id === porDefecto) : undefined) ??
       (this.fincas.length === 1 ? this.fincas[0] : undefined);
-    if (f) {
+    if (f && !this.enCorreccion()) {
       this.finca.set({ id: f.id, nombre: f.nombre });
     }
     await this.cargarLista();
+  }
+
+  /**
+   * Levanta los rechazados que llegan en la URL y deja la pantalla con su
+   * fecha y su hora de cierre, que es lo que casi siempre hay que corregir.
+   *
+   * Tambien BORRA el cierre del espejo local: el PM rechazado no cerro nada,
+   * pero `pm_cierre_local` lo daba por cerrado y la tarea desaparecia de la
+   * lista cuando no hay servidor a mano.
+   */
+  private async prepararCorreccion(): Promise<void> {
+    const param = this.ruta.snapshot.queryParamMap.get('corregir');
+    if (!param) {
+      return;
+    }
+    const regs: RegistroColaVista[] = [];
+    for (const guid of param.split(',').filter(Boolean)) {
+      const r = await this.cola.porGuid(guid);
+      if (r && r.tipo === 'pm' && r.estado === 'RECHAZADO') {
+        regs.push(r);
+        await this.asignaciones.olvidarPm(guid);
+      }
+    }
+    if (regs.length === 0) {
+      await this.aviso('Ese registro ya no está rechazado: se abre un cierre nuevo.');
+      return;
+    }
+    this.corrigiendo.set(regs);
+
+    const cierre = String(regs[0].payload['hora_cierre'] ?? '');
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(cierre)) {
+      this.fecha.set(cierre.slice(0, 10));
+      this.horaCierre.set(cierre.slice(11, 16));
+    }
+  }
+
+  /**
+   * Deja elegidas las personas del rechazado, con su avance y su comentario.
+   *
+   * Corre despues de CADA `cargarLista()` --no solo al abrir-- porque la tarea
+   * puede aparecer recien cuando el usuario cambia la finca o la fecha.
+   */
+  private async aplicarCorreccion(): Promise<void> {
+    const regs = this.corrigiendo();
+    if (regs.length === 0 || this.elegidas().length > 0) {
+      return;
+    }
+    const cierres: CierrePm[] = [];
+    for (const r of regs) {
+      const a = this.disponibles().find(
+        (x) =>
+          x.amGuid === String(r.payload['am_guid'] ?? '') &&
+          x.personalId === Number(r.payload['trabajador_id'] ?? 0),
+      );
+      if (a) {
+        cierres.push({
+          asignacion: a,
+          cantidad: String(r.payload['cantidad'] ?? ''),
+          comentario: String(r.payload['comentario'] ?? ''),
+        });
+      }
+    }
+    if (cierres.length > 0) {
+      this.elegidas.set(cierres);
+      await this.encabezadoDeCorreccion(cierres[0], regs[0]);
+      this.irA(Math.min(this.paso(), this.totalPasos() - 1));
+      return;
+    }
+    if (!this.avisoCorreccionDado) {
+      this.avisoCorreccionDado = true;
+      await this.aviso(
+        'La tarea de la mañana de ese registro no está en esta lista: revisa la finca y la fecha.',
+      );
+    }
+  }
+
+  /**
+   * Finca y responsable del rechazado. Sin esto la pantalla aterriza con el
+   * encabezado vacio y el boton de cerrar deshabilitado, y quien venia a
+   * arreglar una hora tiene que volver a elegir las dos cosas.
+   */
+  private async encabezadoDeCorreccion(
+    c: CierrePm,
+    reg: RegistroColaVista,
+  ): Promise<void> {
+    // La finca sale de `meta` --lo que el encabezado tenia al capturar-- y, si
+    // la fila es vieja y no la trae, de la asignacion del servidor. El espejo
+    // local no guarda finca, asi que sin `meta` no hay de donde sacarla.
+    const fincaId = reg.meta?.fincaId ?? c.asignacion.fincaId;
+    if (!this.finca() && fincaId != null) {
+      const f = this.fincas.find((x) => x.id === fincaId);
+      if (f) {
+        this.finca.set({ id: f.id, nombre: f.nombre });
+      }
+    }
+    if (!this.responsable()) {
+      const id = Number(reg.payload['responsable_id'] ?? 0);
+      const r = (await this.catalogo.responsables(this.finca()?.id ?? null)).find(
+        (x) => x.id === id,
+      );
+      if (r) {
+        this.responsable.set({ id: r.id, nombre: r.nombre });
+      }
+    }
   }
 
   // ------------------------------------------------------------------
@@ -325,6 +452,8 @@ export class PmPage implements OnInit {
           subtarea: a.subtarea,
           modulos: a.modulos ?? '',
           unidadLabor: a.unidad_labor,
+          horaApertura: this.fechas.horaDeFechaProceso(a.fecha_proceso),
+          fincaId: a.finca_id,
           origen: 'servidor' as const,
         }));
         this.listaDesdeServidor.set(true);
@@ -367,6 +496,7 @@ export class PmPage implements OnInit {
     const vivas = new Set(lista.map((a) => `${a.amGuid}|${a.personalId}`));
     this.elegidas.set(this.elegidas().filter((c) => vivas.has(this.clave(c.asignacion))));
     this.cargandoLista.set(false);
+    await this.aplicarCorreccion();
   }
 
   clave(a: AsignacionAmLocal): string {
@@ -426,6 +556,7 @@ export class PmPage implements OnInit {
       modulos: asignaciones[0].modulos,
       subtarea: asignaciones[0].subtarea,
       soloLocal: asignaciones.every((a) => a.origen === 'local'),
+      horaApertura: asignaciones.find((a) => a.horaApertura)?.horaApertura ?? null,
     }));
   });
 
@@ -631,6 +762,7 @@ export class PmPage implements OnInit {
     }
     this.guardando.set(true);
     const guids: string[] = [];
+    let corregidos = 0;
     try {
       for (const c of this.elegidas()) {
         const a = c.asignacion;
@@ -657,8 +789,28 @@ export class PmPage implements OnInit {
           modulos: a.modulos,
           trabajador: a.trabajador,
           unidadLabor: a.unidadLabor,
+          fincaId: this.finca()?.id ?? null,
         };
-        const guid = await this.cola.enqueue('pm', payload, meta);
+        // Si esta persona viene de un rechazado, su payload corregido vuelve
+        // a la cola con el MISMO guid; si el supervisor sumo a alguien mas
+        // mientras corregia, esa persona se encola normal.
+        const rechazado = this.corrigiendo().find(
+          (r) =>
+            String(r.payload['am_guid'] ?? '') === a.amGuid &&
+            Number(r.payload['trabajador_id'] ?? 0) === a.personalId,
+        );
+        let guid: string;
+        if (rechazado) {
+          const res = await this.cola.corregirRechazado(rechazado.guid, payload, meta);
+          if ('error' in res) {
+            await this.aviso(res.error);
+            continue;
+          }
+          guid = rechazado.guid;
+          corregidos += 1;
+        } else {
+          guid = await this.cola.enqueue('pm', payload, meta);
+        }
         guids.push(guid);
         await this.asignaciones.registrarPm(
           guid,
@@ -672,6 +824,16 @@ export class PmPage implements OnInit {
       this.guardando.set(false);
     }
 
+    if (corregidos > 0) {
+      // El reenvio se intenta de una: quien corrigio esta mirando la pantalla
+      // y lo que quiere saber es si esta vez entro.
+      await this.cola.flush('correccion de rechazado', true);
+      await this.aviso(
+        `${corregidos} registro(s) corregido(s) y reenviado(s). Mira Registros para ver si entró.`,
+      );
+      await this.router.navigateByUrl('/registros?vista=enviados');
+      return;
+    }
     await this.aviso(
       `${guids.length} tarea(s) cerrada(s) en el equipo. Se envían solas cuando haya red.`,
     );

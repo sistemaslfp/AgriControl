@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   AlertController,
   IonBackButton,
@@ -24,6 +24,7 @@ import {
   alertCircleOutline,
   checkmarkCircleOutline,
   cloudUploadOutline,
+  createOutline,
   refreshOutline,
   timeOutline,
   trashOutline,
@@ -36,6 +37,24 @@ import {
 } from '../../shared/detalle-registro.component';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 import { EstadoRegistro, RegistroColaVista, TipoRegistro } from '../../core/sync/sync.models';
+
+/**
+ * Motivos de rechazo que NO se arreglan editando: hablan del estado del
+ * servidor, no del payload. Volver a mandar lo mismo con otra hora o con otra
+ * cantidad da el mismo rechazo, asi que la tarjeta solo ofrece descartar.
+ */
+const MOTIVOS_SIN_CORRECCION = [
+  /ya fue cerrada/i,
+  /se cierra desde la pantalla de cosecha/i,
+  /no se paga por peso/i,
+  /ya no existe: volve a traer/i,
+];
+
+/**
+ * Pantalla que sabe retomar un rechazado de ese tipo. Los tipos que no estan
+ * aqui todavia no tienen precarga: su tarjeta ofrece descartar y nada mas.
+ */
+const RUTA_CORRECCION: Partial<Record<TipoRegistro, string>> = { pm: '/pm' };
 
 /** Las dos mitades de la pantalla. */
 export type Vista = 'pendientes' | 'enviados';
@@ -101,6 +120,7 @@ export class RegistrosPage implements OnInit {
   private readonly cola = inject(SyncQueueService);
   private readonly catalogo = inject(CatalogQueryService);
   private readonly ruta = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly alertas = inject(AlertController);
 
   readonly vista = signal<Vista>('pendientes');
@@ -245,6 +265,7 @@ export class RegistrosPage implements OnInit {
       alertCircleOutline,
       checkmarkCircleOutline,
       cloudUploadOutline,
+      createOutline,
       refreshOutline,
       timeOutline,
       trashOutline,
@@ -314,6 +335,34 @@ export class RegistrosPage implements OnInit {
   }
 
   /**
+   * ¿Esta tarjeta se puede retomar en la pantalla de su modulo?
+   *
+   * Dos condiciones: que el tipo tenga pantalla con precarga, y que el motivo
+   * no sea uno de los que hablan del servidor y no del payload.
+   */
+  corregible(t: TarjetaRegistros): boolean {
+    if (t.estado !== 'RECHAZADO' || !RUTA_CORRECCION[t.tipo]) {
+      return false;
+    }
+    const motivo = t.motivo ?? '';
+    return !MOTIVOS_SIN_CORRECCION.some((re) => re.test(motivo));
+  }
+
+  /**
+   * Abre la pantalla del modulo con los datos del rechazado ya cargados. Los
+   * guids viajan en la URL porque la pantalla destino se monta de cero.
+   */
+  async corregir(t: TarjetaRegistros): Promise<void> {
+    const destino = RUTA_CORRECCION[t.tipo];
+    if (!destino) {
+      return;
+    }
+    await this.router.navigate([destino], {
+      queryParams: { corregir: t.registros.map((r) => r.guid).join(',') },
+    });
+  }
+
+  /**
    * Descarta un PENDIENTE que nunca llego al servidor.
    *
    * Se pide confirmacion nombrando la tarea, no solo "¿borrar?": el guid no le
@@ -321,12 +370,16 @@ export class RegistrosPage implements OnInit {
    */
   async descartar(t: TarjetaRegistros): Promise<void> {
     const n = t.registros.length;
+    const rechazado = t.estado === 'RECHAZADO';
     const alerta = await this.alertas.create({
       header: 'Descartar registro',
       message:
         `Se va a descartar ${n === 1 ? 'el registro' : `los ${n} registros`} de ` +
-        `${t.lote} — ${t.labor}. Nunca llegaron al servidor, así que ` +
-        `no quedan cargados en ningún lado. No se puede deshacer.`,
+        `${t.lote} — ${t.labor}. ` +
+        (rechazado
+          ? 'El servidor los rechazó, así que no quedaron cargados allá. '
+          : 'Nunca llegaron al servidor, así que no quedan cargados en ningún lado. ') +
+        'No se puede deshacer.',
       buttons: [
         { text: 'Cancelar', role: 'cancel' },
         { text: 'Descartar', role: 'destructive' },
@@ -340,7 +393,9 @@ export class RegistrosPage implements OnInit {
 
     const fallos: string[] = [];
     for (const r of t.registros) {
-      const res = await this.cola.descartarPendiente(r.guid);
+      const res = rechazado
+        ? await this.cola.descartarRechazado(r.guid)
+        : await this.cola.descartarPendiente(r.guid);
       if ('error' in res) {
         fallos.push(res.error);
       }
