@@ -106,6 +106,17 @@
           <ion-spinner name="crescent" slot="end" class="spinner-boton"></ion-spinner>
         }
       </ion-item>
+      <ion-item lines="none">
+        <ion-checkbox
+          class="ver-todo-pendiente"
+          [checked]="todoPendiente()"
+          (ionChange)="setTodoPendiente($any($event.detail).checked)"
+          labelPlacement="end"
+          justify="start"
+        >
+          Mostrar pendientes antiguos
+        </ion-checkbox>
+      </ion-item>
     </ion-list>
 
     <ion-modal [keepContentsMounted]="true">

@@ -1,7 +1,8 @@
 import { Component, OnInit, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import {
+  AlertController,
   IonBadge,
   IonButton,
   IonButtons,
@@ -34,6 +35,11 @@ import { BootstrapService } from '../../core/bootstrap/bootstrap.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { SyncQueueService } from '../../core/sync/sync-queue.service';
 
+/**
+ * PIN de acceso a Configuracion.
+ */
+const PIN_CONFIGURACION = '1987';
+
 interface CeldaMenu {
   titulo: string;
   icono: string;
@@ -52,7 +58,6 @@ interface CeldaMenu {
   styleUrls: ['./menu.page.scss'],
   imports: [
     DatePipe,
-    RouterLink,
     IonBadge,
     IonButton,
     IonButtons,
@@ -74,6 +79,7 @@ export class MenuPage implements OnInit {
   private readonly bootstrap = inject(BootstrapService);
   private readonly toast = inject(ToastController);
   private readonly router = inject(Router);
+  private readonly alerta = inject(AlertController);
 
   /** Sin celdas vacías de relleno: solo las ocho reales (corrección 03-pantallas). */
   readonly celdas: CeldaMenu[] = [
@@ -176,6 +182,33 @@ export class MenuPage implements OnInit {
         'No se pudieron actualizar los maestros. Los catálogos locales quedan como estaban. ' +
           `Detalle: ${e instanceof Error ? e.message : 'error de red'}`,
       );
+    }
+  }
+
+  /** Pide el PIN antes de abrir Configuracion (el engranaje ya no navega directo). */
+  async abrirConfiguracion(): Promise<void> {
+    const a = await this.alerta.create({
+      header: 'PIN de configuración',
+      inputs: [
+        {
+          name: 'pin',
+          type: 'password',
+          placeholder: '4 dígitos',
+          attributes: { inputmode: 'numeric', maxlength: 4 },
+        },
+      ],
+      buttons: [
+        { text: 'Cancelar', role: 'cancel' },
+        { text: 'Entrar', role: 'confirm' },
+      ],
+    });
+    await a.present();
+    const { role, data } = await a.onDidDismiss();
+    if (role !== 'confirm') return;
+    if (data?.values?.pin === PIN_CONFIGURACION) {
+      await this.router.navigateByUrl('/configuracion');
+    } else {
+      await this.aviso('PIN incorrecto.');
     }
   }
 

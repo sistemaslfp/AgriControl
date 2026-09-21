@@ -169,9 +169,13 @@ const server = http.createServer((req, res) => {
 
   if (req.url.startsWith('/v4/postcosecha_pendientes')) {
     const tomadas = new Set([...partidas.values()].flatMap((p) => p.payload.cosecha_ids ?? []));
+    // `desde` recorta la ventana igual que V4.php: la pantalla pide por
+    // defecto los ultimos 30 dias y solo trae lo viejo si se lo piden.
+    const desde = new URL(req.url, 'http://x').searchParams.get('desde');
     return json(200, {
       server_time: new Date().toISOString(),
       dias: diasPendientes
+        .filter((d) => !desde || d.fecha >= desde)
         .map((d) => ({ ...d, cosecha_ids: d.cosecha_ids.filter((i) => !tomadas.has(i)) }))
         .filter((d) => d.cosecha_ids.length > 0),
     });

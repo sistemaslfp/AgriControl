@@ -116,6 +116,23 @@ ok('04 el peso del lote arranca en cero y es de solo lectura',
     (await inputDe('peso-lote').getAttribute('readonly')) !== null,
   await inputDe('peso-lote').inputValue());
 
+// Los dias sembrados en el mock son de agosto, o sea mas viejos que la
+// ventana de 30 dias con que abre la pantalla (Kevin, 2026-09-21): sin marcar
+// "ver todo" no tienen que aparecer.
+ok('04b por defecto solo se ofrece lo pendiente de los ultimos 30 dias',
+  (await p.locator(`${raiz} .elegir-dias`).innerText()).includes('Sin elegir') &&
+    (await p.locator(`${raiz} ion-content`).innerText()).includes('últimos 30 días'),
+  (await p.locator(`${raiz} ion-content`).innerText()).replace(/\n/g, ' ').slice(0, 140));
+await campo('Seleccionar lotes').click();
+await t(700);
+ok('04c con la ventana por defecto el selector no ofrece los dias viejos',
+  (await p.locator('ion-modal ion-checkbox').count()) === 0,
+  `casillas=${await p.locator('ion-modal ion-checkbox').count()}`);
+await cerrarTocandoFuera();
+await t(400);
+await p.locator(`${raiz} ion-checkbox.ver-todo-pendiente`).click();
+await t(1500);
+
 await campo('Seleccionar lotes').click();
 await t(700);
 const casillas = p.locator('ion-modal ion-checkbox');

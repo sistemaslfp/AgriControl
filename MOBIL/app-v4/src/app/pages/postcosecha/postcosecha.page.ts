@@ -3,6 +3,7 @@ import {
   IonBackButton,
   IonButton,
   IonButtons,
+  IonCheckbox,
   IonContent,
   IonDatetime,
   IonDatetimeButton,
@@ -168,6 +169,7 @@ const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null, granos: null, v
     IonBackButton,
     IonButton,
     IonButtons,
+  IonCheckbox,
     IonContent,
     IonDatetime,
     IonDatetimeButton,
@@ -186,6 +188,8 @@ const SIN_HUMEDAD: FormHumedad = { h1: null, h2: null, h3: null, granos: null, v
   ],
 })
 export class PostcosechaPage implements OnInit {
+  /** Ventana por defecto de los dias de cosecha pendientes (Kevin, 2026-09-21). */
+  static readonly VENTANA_PENDIENTES_DIAS = 30;
   private readonly catalogo = inject(CatalogQueryService);
   private readonly fechas = inject(FechaService);
   private readonly bootstrap = inject(BootstrapService);
@@ -215,6 +219,15 @@ export class PostcosechaPage implements OnInit {
   readonly pesoMallas = signal<number | null>(null);
   readonly comentario = signal('');
   readonly dias = signal<DiaPendienteApi[]>([]);
+  /**
+   * Por defecto la lista de dias pendientes llega recortada a los ultimos
+   * VENTANA_PENDIENTES_DIAS dias (Kevin, 2026-09-21): lo viejo que quedo sin
+   * procesar es la excepcion, y tenerlo siempre a la vista convierte el
+   * selector en una lista imposible de recorrer en el telefono. El recorte lo
+   * hace el SERVIDOR con `desde`, no la pantalla: asi no se baja lo que no se
+   * va a mostrar.
+   */
+  readonly todoPendiente = signal(false);
   readonly diasElegidos = signal<string[]>([]);
   readonly cargandoDias = signal(false);
   readonly errorDias = signal<string | null>(null);
@@ -490,6 +503,38 @@ export class PostcosechaPage implements OnInit {
     await this.cargarDias();
   }
 
+  /** La fecha desde la que se piden los dias, o undefined si se pide todo. */
+  private desdeDePendientes(): string | undefined {
+    if (this.todoPendiente()) {
+      return undefined;
+    }
+    const d = new Date(this.fechas.ahoraLocal().slice(0, 10) + 'T00:00:00');
+    d.setDate(d.getDate() - PostcosechaPage.VENTANA_PENDIENTES_DIAS);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  /**
+   * Cambia la ventana y vuelve a pedir la lista.
+   *
+   * Al volver a los 30 dias se sueltan los dias elegidos que ya no se ven: si
+   * no, la partida viajaria con cosechas que el usuario ya no tiene en
+   * pantalla y el peso no cuadraria con lo que muestra.
+   */
+  async setTodoPendiente(valor: boolean): Promise<void> {
+    if (valor === this.todoPendiente()) {
+      return;
+    }
+    this.todoPendiente.set(valor);
+    await this.cargarDias();
+    const visibles = new Set(this.dias().map((d) => d.fecha));
+    const antes = this.diasElegidos().length;
+    this.diasElegidos.set(this.diasElegidos().filter((f) => visibles.has(f)));
+    if (this.diasElegidos().length < antes) {
+      await this.aviso('Se quitaron los días que quedaron fuera de la ventana.');
+    }
+  }
+
   async cargarDias(): Promise<void> {
     this.cargandoDias.set(true);
     this.errorDias.set(null);
@@ -500,10 +545,15 @@ export class PostcosechaPage implements OnInit {
       return;
     }
     try {
-      const r = await this.api.postcosechaPendientes();
+      const r = await this.api.postcosechaPendientes(this.desdeDePendientes());
       this.dias.set(r.dias);
       if (r.dias.length === 0) {
-        this.errorDias.set('No hay cosechas pendientes de procesar.');
+        this.errorDias.set(
+          this.todoPendiente()
+            ? 'No hay cosechas pendientes de procesar.'
+            : `No hay cosechas pendientes de los últimos ${PostcosechaPage.VENTANA_PENDIENTES_DIAS}` +
+              ' días. Marca "Ver todo lo pendiente" si esperabas alguna más antigua.',
+        );
       }
     } catch {
       // A diferencia del resto de la app, esta lista NO se puede resolver
