@@ -1,3 +1,5 @@
+<p class="mb-3"><a href="<?php echo site_url($this->ion_auth->is_admin() ? 'auth' : '/'); ?>" class="btn btn-secondary"><i class="fa fa-arrow-left"></i> <?php echo $this->ion_auth->is_admin() ? 'Volver a usuarios' : 'Volver al inicio'; ?></a></p>
+
 <h1><?php echo lang('edit_user_heading');?></h1>
 <p><?php echo lang('edit_user_subheading');?></p>
 

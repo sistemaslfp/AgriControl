@@ -7,6 +7,8 @@
     }
 </STYLE>
 
+<p class="mb-3"><a href="<?php echo site_url('Operations/PM/PaymentAdjustment/listAdjustments'); ?>" class="btn btn-secondary"><i class="fa fa-arrow-left"></i> Volver al listado de ajustes</a></p>
+
 <h3>Reporte de Pago <span class="payment-adjustmen-filter-value">Hacienda: <?= $farm_name ?></span> <span class="payment-adjustmen-filter-value">Año: <?= $selected_year ?></span> <span class="payment-adjustmen-filter-value">Semana: <?= $selected_week ?> </span> <span class="payment-adjustmen-filter-value">Estado: <?= $status_name ?> </span></h3>
 <hr />
 <form id="report-form" action="<?= site_url('Operations/PM/PaymentAdjustment/updateDeductions') ?>" method="post">

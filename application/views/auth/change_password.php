@@ -1,3 +1,5 @@
+<p class="mb-3"><a href="<?php echo site_url('/'); ?>" class="btn btn-secondary"><i class="fa fa-arrow-left"></i> Volver al inicio</a></p>
+
 <h1><?php echo lang('change_password_heading');?></h1>
 
 <div id="infoMessage"><?php echo $message;?></div>

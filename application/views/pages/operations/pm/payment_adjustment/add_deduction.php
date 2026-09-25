@@ -6,6 +6,8 @@
         margin: 5px;
     }
 </STYLE>
+<p class="mb-3"><a href="<?php echo site_url('Operations/PM/PaymentAdjustment'); ?>" class="btn btn-secondary"><i class="fa fa-arrow-left"></i> Volver a ajustes de pago</a></p>
+
 <h3>Reporte de Pago <span class="payment-adjustmen-filter-value">Hacienda: <?= $farm_name ?></span> <span class="payment-adjustmen-filter-value">Año: <?= $selected_year ?></span> <span class="payment-adjustmen-filter-value">Semana: <?= $selected_week ?> </span> <span class="payment-adjustmen-filter-value">Estado: <?= $status_name ?> </span></h3>
 <hr />
 
