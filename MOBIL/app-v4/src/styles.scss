@@ -1,5 +1,18 @@
 /* Estilos globales. Los CSS de Ionic se cargan desde angular.json. */
 
+/* Android 15+ dibuja la app debajo de la barra de navegacion del sistema
+   (edge-to-edge) cuando el WebView es 140 o mas nuevo. Ionic solo reserva ese
+   alto en un ion-footer con ion-toolbar: en una pantalla sin footer el ultimo
+   boton (p. ej. "Iniciar presecado") quedaba tapado por los botones de Android.
+   Los modales flotantes no se tocan: no llegan al borde inferior. */
+ion-router-outlet > .ion-page:not(:has(> ion-footer)) > ion-content {
+  --padding-bottom: var(--ion-safe-area-bottom, 0px);
+}
+
+ion-router-outlet > .ion-page:not(:has(> ion-footer)) > ion-content.ion-padding {
+  --padding-bottom: calc(var(--ion-padding, 16px) + var(--ion-safe-area-bottom, 0px));
+}
+
 /* Los formularios se usan en campo, con sol: subir contraste de labels. */
 ion-label {
   font-weight: 500;

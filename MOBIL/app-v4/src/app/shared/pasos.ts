@@ -65,7 +65,8 @@ import { chevronBackOutline, chevronForwardOutline } from 'ionicons/icons';
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 2px 4px;
+        /* Sin ion-toolbar, Ionic no le agrega el alto de la barra de navegacion de Android. */
+        padding: 2px 4px calc(2px + var(--ion-safe-area-bottom, 0px));
         background: var(--ion-toolbar-background, var(--ion-background-color));
         border-top: 1px solid var(--ion-color-step-150, #e0e0e0);
       }
