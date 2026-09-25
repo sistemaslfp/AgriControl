@@ -5,6 +5,17 @@ const config: CapacitorConfig = {
   appId: 'ec.lifprodecsa.lagricontrol',
   appName: 'LAgricontrol',
   webDir: 'www',
+  android: {
+    buildOptions: {
+      // jarsigner (el default de `cap build`) firma solo con el esquema v1, y
+      // con targetSdk >= 30 Android rechaza el APK: "el paquete no es valido".
+      // apksigner agrega v2/v3. Las contrasenas NO van aca: se pasan al compilar.
+      signingType: 'apksigner',
+      releaseType: 'APK',
+      keystorePath: 'C:\\claves\\lagricontrol.jks',
+      keystoreAlias: 'lagricontrol',
+    },
+  },
   plugins: {
     CapacitorSQLite: {
       iosDatabaseLocation: 'Library/CapacitorDatabase',
