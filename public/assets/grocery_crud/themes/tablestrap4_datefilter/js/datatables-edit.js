@@ -61,7 +61,7 @@ $(function() {
                             } else {
                                 new PNotify({
                                     title: '¡Algo ha salido mal!',
-                                    text: data.error_message,
+                                    text: data.error_message || message_update_error,
                                     type: 'error'
                                 });
                             }
@@ -69,7 +69,7 @@ $(function() {
                         error: function() {
                             new PNotify({
                                 title: '¡Algo ha salido mal!',
-                                text: data.error_message,
+                                text: message_update_error,
                                 type: 'error'
                             });
                         }

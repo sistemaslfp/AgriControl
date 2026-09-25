@@ -111,6 +111,7 @@ class Riego extends Public_controller
 			$crud->callback_edit_field('tiempo_riego_min', array($this, '_campoTiempo'));
 			$crud->callback_before_insert(array($this, 'riegoAntesDeInsertar'));
 			$crud->callback_before_update(array($this, 'riegoAntesDeActualizar'));
+			alerta_validar($crud, array($this, '_riegoMotivo'));
 
 			$output = $crud->render();
 
@@ -164,12 +165,23 @@ class Riego extends Public_controller
 		return $this->_riegoNormalizar($post_array);
 	}
 
-	private function _riegoNormalizar($post_array)
+	// Motivo por el que no se puede guardar, o null. La validacion lo muestra.
+	public function _riegoMotivo($post_array, $primary_key = null)
 	{
-		$fecha = strtotime(str_replace('T', ' ', (string) $post_array['fecha_proceso']));
+		$fechaTexto = isset($post_array['fecha_proceso']) ? trim((string) $post_array['fecha_proceso']) : '';
 
-		if (!preg_match('/^(\d{1,2}):(\d{2})$/', (string) $post_array['tiempo_riego_min'], $t) || $fecha === false) {
-			return false;
+		if ($fechaTexto === '' || strtotime(str_replace('T', ' ', $fechaTexto)) === false) {
+			return 'Falta la fecha del riego.';
+		}
+
+		$tiempo = isset($post_array['tiempo_riego_min']) ? (string) $post_array['tiempo_riego_min'] : '';
+
+		if (!preg_match('/^(\d{1,2}):(\d{2})$/', $tiempo, $t) || (int) $t[2] > 59) {
+			return 'El tiempo de riego debe ir como horas:minutos, por ejemplo 01:30.';
+		}
+
+		if (empty($post_array['finca_id']) || empty($post_array['lote_id'])) {
+			return 'Faltan la finca o el lote.';
 		}
 
 		$lote = $this->db->where('id', (int) $post_array['lote_id'])
@@ -177,7 +189,7 @@ class Riego extends Public_controller
 			->count_all_results('z_lote');
 
 		if ($lote == 0) {
-			return false;
+			return 'El lote elegido no pertenece a la finca elegida.';
 		}
 
 		if (!empty($post_array['modulo_id'])) {
@@ -186,9 +198,21 @@ class Riego extends Public_controller
 				->count_all_results('z_modulo');
 
 			if ($modulo == 0) {
-				return false;
+				return 'El modulo elegido no pertenece al lote elegido.';
 			}
 		}
+
+		return null;
+	}
+
+	private function _riegoNormalizar($post_array)
+	{
+		if ($this->_riegoMotivo($post_array) !== null) {
+			return false;
+		}
+
+		$fecha = strtotime(str_replace('T', ' ', (string) $post_array['fecha_proceso']));
+		preg_match('/^(\d{1,2}):(\d{2})$/', (string) $post_array['tiempo_riego_min'], $t);
 
 		$post_array['fecha_proceso'] = date('Y-m-d H:i:s', $fecha);
 		$post_array['tiempo_riego_min'] = (int) $t[1] * 60 + (int) $t[2];

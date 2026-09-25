@@ -83,8 +83,8 @@ class PaymentAdjustment extends Public_Controller
 
         // Verificar si se recibieron pagos
         if (empty($payments) || !is_array($payments)) {
-            $this->session->set_flashdata('error', 'No se recibieron datos de pago válidos.');
-            redirect('pages/errors/payment_error');
+            alerta_flash('error', 'No se recibieron datos de pago validos.');
+            redirect('Operations/PM/PaymentAdjustment');
             return;
         }
 
@@ -142,8 +142,8 @@ class PaymentAdjustment extends Public_Controller
             log_message('error', 'Error en la transacción: ' . $e->getMessage() . ' Datos del pago: ' . print_r($currentRecord, true));
             // TODO: Redirigir correctamente
             // Mostrar un mensaje de error adecuado al usuario
-            $this->session->set_flashdata('error', 'Ha ocurrido un error en la transacción: ' . $e->getMessage());
-            redirect('pages/errors/payment_error');
+            alerta_flash('error', 'No se guardaron los ajustes: ' . $e->getMessage());
+            redirect('Operations/PM/PaymentAdjustment');
         }
     }
 

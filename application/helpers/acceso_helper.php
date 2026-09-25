@@ -124,7 +124,7 @@ if (!function_exists('acceso_crud')) {
 		foreach ($ids as $id) {
 			$n = $CI->db->where($tabla . '.' . $pk, $id)->where($sql, null, false)->count_all_results($tabla);
 			if ($n == 0) {
-				show_error('No tiene acceso a este registro.', 403);
+				alerta_crud_error($crud, 'Este registro es de otra hacienda: no tiene acceso a el.');
 			}
 		}
 	}
@@ -171,7 +171,7 @@ if (!function_exists('acceso_validar_lote')) {
 		$lote = isset($_POST[$campo]) ? (int) $_POST[$campo] : 0;
 
 		if ($CI->db->where('id', $lote)->where('finca_id', $finca)->count_all_results('z_lote') == 0) {
-			show_error('El lote no pertenece a su hacienda.', 403);
+			alerta_crud_error($crud, $lote ? 'El lote elegido no pertenece a su hacienda.' : 'Falta elegir el lote.');
 		}
 	}
 }

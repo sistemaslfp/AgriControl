@@ -12,8 +12,9 @@ class MY_Controller extends CI_Controller {
 		  redirect('auth/login');
 		}
 
-		$this->load->helper('acceso');
+		$this->load->helper(array('acceso', 'alertas'));
 		acceso_forzar_parametros();
+		alerta_bd_en_escritura();
 
 		$this->_init();
 		

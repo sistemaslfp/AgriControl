@@ -229,6 +229,7 @@ class Postharvest extends Public_controller
         $crud->callback_edit_field('peso_final', array($this, '_pesoFinalCampo'));
         $crud->callback_read_field('peso_final', array($this, '_pesoFinalCampo'));
         $crud->callback_before_update(array($this, 'resultadoAntesDeActualizar'));
+        alerta_validar($crud, array($this, '_resultadoMotivo'));
 
         $output = $crud->render();
 
@@ -377,6 +378,7 @@ class Postharvest extends Public_controller
         $crud->callback_edit_field('inicio', array($this, '_campoInicio'));
         $crud->callback_edit_field('fin', array($this, '_campoFin'));
         $crud->callback_before_update(array($this, 'etapaAntesDeActualizar'));
+        alerta_validar($crud, array($this, '_etapaMotivo'));
 
         $output = $crud->render();
 
@@ -400,14 +402,53 @@ class Postharvest extends Public_controller
     }
 
     // Misma regla que V4.php para una etapa: inicio y fin obligatorios, y fin no antes que inicio.
+    public function _etapaMotivo($post_array, $primary_key = null)
+    {
+        $inicio = $this->_fechaDe($post_array, 'inicio');
+        $fin = $this->_fechaDe($post_array, 'fin');
+
+        if ($inicio === false) {
+            return 'Falta la fecha de inicio.';
+        }
+        if ($fin === false) {
+            return 'Falta la fecha de fin.';
+        }
+        if ($fin < $inicio) {
+            return 'La fecha de fin es anterior a la de inicio.';
+        }
+
+        return null;
+    }
+
+    public function _resultadoMotivo($post_array, $primary_key = null)
+    {
+        $peso = isset($post_array['peso_final']) ? trim((string) $post_array['peso_final']) : '';
+
+        if ($this->_fechaDe($post_array, 'inicio') === false) {
+            return 'Falta la fecha de pesaje.';
+        }
+        if ($peso !== '' && !is_numeric($peso)) {
+            return 'El peso final debe ser un numero, por ejemplo 1250.5.';
+        }
+
+        return null;
+    }
+
+    private function _fechaDe($post_array, $campo)
+    {
+        $valor = isset($post_array[$campo]) ? trim((string) $post_array[$campo]) : '';
+
+        return $valor === '' ? false : strtotime(str_replace('T', ' ', $valor));
+    }
+
     public function etapaAntesDeActualizar($post_array, $primary_key)
     {
-        $inicio = strtotime(str_replace('T', ' ', (string) $post_array['inicio']));
-        $fin = strtotime(str_replace('T', ' ', (string) $post_array['fin']));
-
-        if ($inicio === false || $fin === false || $fin < $inicio) {
+        if ($this->_etapaMotivo($post_array) !== null) {
             return false;
         }
+
+        $inicio = $this->_fechaDe($post_array, 'inicio');
+        $fin = $this->_fechaDe($post_array, 'fin');
 
         $post_array['inicio'] = date('Y-m-d H:i:s', $inicio);
         $post_array['fin'] = date('Y-m-d H:i:s', $fin);
@@ -417,12 +458,12 @@ class Postharvest extends Public_controller
 
     public function resultadoAntesDeActualizar($post_array, $primary_key)
     {
-        $inicio = strtotime(str_replace('T', ' ', (string) $post_array['inicio']));
-        $peso = isset($post_array['peso_final']) ? trim((string) $post_array['peso_final']) : '';
-
-        if ($inicio === false || ($peso !== '' && !is_numeric($peso))) {
+        if ($this->_resultadoMotivo($post_array) !== null) {
             return false;
         }
+
+        $inicio = $this->_fechaDe($post_array, 'inicio');
+        $peso = isset($post_array['peso_final']) ? trim((string) $post_array['peso_final']) : '';
 
         $etapa = $this->db->select('pc_proceso_id')->where('id', $primary_key)->where('etapa', 'resultado')->get('pc_etapa')->row();
 

@@ -14,7 +14,7 @@ class Auth extends CI_Controller
 		parent::__construct();
 		$this->load->database();
 		$this->load->library(['ion_auth', 'form_validation']);
-		$this->load->helper(['url', 'language', 'acceso']);
+		$this->load->helper(['url', 'language', 'acceso', 'alertas']);
 
 		$this->form_validation->set_error_delimiters($this->config->item('error_start_delimiter', 'ion_auth'), $this->config->item('error_end_delimiter', 'ion_auth'));
 
@@ -708,8 +708,7 @@ class Auth extends CI_Controller
 				}
 				else
 				{
-					// redirect them back to the admin page if admin, or to the base url if non admin
-					$this->session->set_flashdata('message', $this->ion_auth->errors());
+					alerta_flash('error', strip_tags($this->ion_auth->errors()));
 					$this->redirectUser();
 
 				}

@@ -79,10 +79,36 @@
     .right_col .gc-scroll { max-height: 70vh; overflow: auto; margin-bottom: 0; }
     /* important: el CSS de DataTables se carga despues y pone position:relative en los th ordenables */
     .right_col .gc-scroll thead th { position: sticky !important; top: 0; z-index: 2; background: #fff; box-shadow: inset 0 -2px 0 #dee2e6; }
+    /* Mensajes de error y exito. #infoMessage es el de Ion Auth: sin estilo pasaba
+       desapercibido y el formulario parecia recargarse sin decir nada. */
+    .alerta-web, #infoMessage:not(:empty) { border-radius: 4px; padding: 10px 15px; margin: 10px 0 15px; font-size: 14px; border: 1px solid #ebccd1; background: #f2dede; color: #a94442; }
+    .alerta-web.exito, #infoMessage.exito:not(:empty) { border-color: #d6e9c6; background: #dff0d8; color: #3c763d; }
+    .alerta-web p, #infoMessage p { margin: 0; }
+    .alerta-web p + p, #infoMessage p + p { margin-top: 4px; }
   </style>
   <script>
     $(document).ready(function() {
       $('.ui-pnotify-text').remove();
+    });
+
+    // Grocery CRUD no maneja la respuesta cuando el servidor devuelve una pagina de
+    // error en vez de JSON: el formulario quedaba quieto sin decir nada.
+    // En 'load' y no antes: las pantallas que no llaman unset_jquery() cargan un
+    // segundo jQuery, y un handler colgado del primero no ve sus peticiones.
+    window.addEventListener('load', function () {
+    jQuery(document).ajaxError(function (evento, xhr, ajustes) {
+      if (!/\/(insert|insert_validation|update_validation|delete|delete_multiple)(\/|\?|$)/.test(ajustes.url || '')) {
+        return;
+      }
+      var texto = 'El servidor no pudo completar la accion (codigo ' + xhr.status + '). ' +
+        'Revise si el cambio se guardo antes de repetirlo; si vuelve a pasar, avise al administrador.';
+      if (window.PNotify) {
+        PNotify.removeAll();
+        new PNotify({ title: '¡Algo ha salido mal!', text: texto, type: 'error' });
+      } else {
+        alert(texto);
+      }
+    });
     });
   </script>
 
@@ -246,6 +272,13 @@
 
       <!-- page content -->
       <div class="right_col" role="main">
+        <?php $CI =& get_instance(); ?>
+        <?php if ($CI->session->flashdata('alerta_error')) { ?>
+          <div class="alerta-web"><?= htmlspecialchars($CI->session->flashdata('alerta_error'), ENT_QUOTES, 'UTF-8') ?></div>
+        <?php } ?>
+        <?php if ($CI->session->flashdata('alerta_exito')) { ?>
+          <div class="alerta-web exito"><?= htmlspecialchars($CI->session->flashdata('alerta_exito'), ENT_QUOTES, 'UTF-8') ?></div>
+        <?php } ?>
         <?php echo $output; ?>
       </div>
       <!-- /page content -->

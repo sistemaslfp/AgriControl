@@ -72,7 +72,7 @@ $(function() {
                             } else {
                                 new PNotify({
                                     title: '¡Algo ha salido mal!',
-                                    text: message_insert_error,
+                                    text: data.error_message || message_insert_error,
                                     type: 'error'
                                 });
                             }

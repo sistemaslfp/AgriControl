@@ -181,6 +181,7 @@ class PM extends Public_controller
 
             acceso_exigir('edita');
             $this->_pmRestringirFinca($crud);
+            alerta_validar($crud, array($this, '_pmMotivo'));
 
             $state = $crud->getState();
 
@@ -385,6 +386,7 @@ class PM extends Public_controller
 
             acceso_exigir('edita');
             $this->_pmRestringirFinca($crud);
+            alerta_validar($crud, array($this, '_pmMotivo'));
 
             if (!acceso_puede('maestras')) {
                 $crud->unset_add();
@@ -517,23 +519,46 @@ class PM extends Public_controller
         return '<input type="datetime-local" name="hora_cierre" value="' . $valor . '" />';
     }
 
-    public function pmAntesDeInsertar($post_array)
+    // Devuelve el motivo por el que no se puede guardar, o null. Lo usan la
+    // validacion (para mostrarlo) y los callbacks (como ultima barrera).
+    public function _pmMotivo($post_array, $primary_key = null)
     {
-        $inicio = $this->_datetimeSql(isset($post_array['fecha_inicio']) ? $post_array['fecha_inicio'] : '');
-        $cierre = $this->_datetimeSql(isset($post_array['hora_cierre']) ? $post_array['hora_cierre'] : '');
-
-        if ($inicio === null || $cierre === null || $cierre < $inicio) {
-            return false;
+        if ($primary_key === null) {
+            $inicio = $this->_datetimeSql(isset($post_array['fecha_inicio']) ? $post_array['fecha_inicio'] : '');
+            if ($inicio === null) {
+                return 'Falta la fecha y hora de inicio.';
+            }
+        } else {
+            $fila = $this->db->select('fecha_proceso, cierre_guid')->where('id', $primary_key)->get('lfp_am')->row();
+            if (!$fila || $fila->cierre_guid === null) {
+                return 'Este registro no tiene cierre: no se puede editar como PM.';
+            }
+            $inicio = $this->_inicioEditado($post_array, $fila->fecha_proceso);
         }
 
-        if (!$this->_loteYModulosValidos($post_array)) {
+        $cierre = $this->_datetimeSql(isset($post_array['hora_cierre']) ? $post_array['hora_cierre'] : '');
+
+        if ($cierre === null) {
+            return 'Falta la fecha y hora de cierre.';
+        }
+
+        if ($cierre < $inicio) {
+            return 'El cierre (' . substr($cierre, 0, 16) . ') es anterior al inicio (' . substr($inicio, 0, 16) . ').';
+        }
+
+        return $this->_loteYModulosMotivo($post_array);
+    }
+
+    public function pmAntesDeInsertar($post_array)
+    {
+        if ($this->_pmMotivo($post_array) !== null) {
             return false;
         }
 
         $ahora = date('Y-m-d H:i:s');
 
-        $post_array['fecha_proceso'] = $inicio;
-        $post_array['hora_cierre'] = $cierre;
+        $post_array['fecha_proceso'] = $this->_datetimeSql($post_array['fecha_inicio']);
+        $post_array['hora_cierre'] = $this->_datetimeSql($post_array['hora_cierre']);
         $post_array['modulos'] = $this->_modulosCsv(isset($post_array['modulos']) ? $post_array['modulos'] : array());
         $post_array['guid'] = $this->generateUUID();
         $post_array['cierre_guid'] = $this->generateUUID();
@@ -550,42 +575,46 @@ class PM extends Public_controller
 
     public function pmAntesDeActualizar($post_array, $primary_key)
     {
-        $fila = $this->db->select('fecha_proceso, cierre_guid')->where('id', $primary_key)->get('lfp_am')->row();
-
-        if (!$fila || $fila->cierre_guid === null) {
+        if ($this->_pmMotivo($post_array, $primary_key) !== null) {
             return false;
         }
 
-        $hora = isset($post_array['hora_inicio']) && preg_match('/^\d{2}:\d{2}$/', $post_array['hora_inicio'])
-            ? $post_array['hora_inicio']
-            : date('H:i', strtotime($fila->fecha_proceso));
-        $inicio = date('Y-m-d', strtotime($fila->fecha_proceso)) . ' ' . $hora . ':00';
-        $cierre = $this->_datetimeSql(isset($post_array['hora_cierre']) ? $post_array['hora_cierre'] : '');
+        $fila = $this->db->select('fecha_proceso')->where('id', $primary_key)->get('lfp_am')->row();
 
-        if ($cierre === null || $cierre < $inicio) {
-            return false;
-        }
-
-        if (!$this->_loteYModulosValidos($post_array)) {
-            return false;
-        }
-
-        $post_array['fecha_proceso'] = $inicio;
-        $post_array['hora_cierre'] = $cierre;
+        $post_array['fecha_proceso'] = $this->_inicioEditado($post_array, $fila->fecha_proceso);
+        $post_array['hora_cierre'] = $this->_datetimeSql($post_array['hora_cierre']);
         $post_array['modulos'] = $this->_modulosCsv(isset($post_array['modulos']) ? $post_array['modulos'] : array());
         unset($post_array['hora_inicio']);
 
         return $post_array;
     }
 
-    private function _loteYModulosValidos($post_array)
+    // Al editar solo se cambia la hora de inicio; el dia es el del registro.
+    private function _inicioEditado($post_array, $fechaProceso)
     {
+        $hora = isset($post_array['hora_inicio']) && preg_match('/^\d{2}:\d{2}$/', $post_array['hora_inicio'])
+            ? $post_array['hora_inicio']
+            : date('H:i', strtotime($fechaProceso));
+
+        return date('Y-m-d', strtotime($fechaProceso)) . ' ' . $hora . ':00';
+    }
+
+    private function _loteYModulosMotivo($post_array)
+    {
+        if (empty($post_array['finca_id'])) {
+            return 'Falta elegir la finca.';
+        }
+
+        if (empty($post_array['lote_id'])) {
+            return 'Falta elegir el lote.';
+        }
+
         $lote = $this->db->where('id', (int) $post_array['lote_id'])
             ->where('finca_id', (int) $post_array['finca_id'])
             ->get('z_lote')->row();
 
         if (!$lote) {
-            return false;
+            return 'El lote elegido no pertenece a la finca elegida.';
         }
 
         $modulos = isset($post_array['modulos']) && is_array($post_array['modulos']) ? $post_array['modulos'] : array();
@@ -593,14 +622,13 @@ class PM extends Public_controller
         foreach ($modulos as $moduloId) {
             $ok = $this->db->where('id', (int) $moduloId)->where('lote_id', (int) $lote->id)->count_all_results('z_modulo');
             if ($ok == 0) {
-                return false;
+                return 'Uno de los modulos elegidos no pertenece al lote ' . $lote->lote . '.';
             }
         }
 
-        return true;
+        return null;
     }
 
-    // lfp_am.modulos es la CSV ordenada y sin repetidos que tambien escribe V4.php.
     private function _modulosCsv($modulos)
     {
         if (!is_array($modulos)) {
