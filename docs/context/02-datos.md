@@ -1,101 +1,132 @@
 # 02 — Modelo de datos
 
-Schema: **`lfp_prodapp`** sobre **MariaDB 10.4.18**. 41 tablas y 22 vistas.
+Schema **`lfp_prodapp`** sobre **MariaDB 10.4.18**. Conviven dos generaciones:
 
-El dump vive en `docs/db/init/01-schema.sql` (no versionado: trae datos reales).
-**Ese archivo es la fuente de verdad del esquema**; la tabla de inventario de
-abajo se extrajo del código y sirve solo para orientarse rápido.
+| Generación | Tablas | Estado |
+|---|---|---|
+| **v3** | `z_*`, `tbl_*`, vistas `vw_*`/`vwpm_*` | catálogos `z_*` **vivos**; transaccionales `z_*` **congelados** (histórico ya migrado) |
+| **V4** | `lfp_*`, `pc_*`, vistas `vw_lfp_*` | **vigente**: lo escribe la app y lo lee la web |
 
-## Cómo obtener el esquema real (hazlo una vez)
+## Fuentes de verdad del esquema
 
-Hay acceso completo a la BD vía MySQL Workbench. Extraer el DDL y versionarlo
-elimina la única fuente grande de incertidumbre de este repo:
+- **v3**: `docs/db/init/01-schema.sql` — dump de producción (41 tablas,
+  22 vistas, con datos). **No versionado**.
+- **V4**: `docs/db/migrations/`, en orden. Idempotentes, sin `DELIMITER`
+  (corren en MySQL Workbench):
 
-```bash
-# Solo estructura, sin datos. Incluye vistas, triggers y rutinas.
-mysqldump -h HOST -u USUARIO -p --no-data --routines --triggers \
-          --skip-add-drop-table lfp_prodapp > docs/db/schema.sql
-```
+| Archivo | Qué hace |
+|---|---|
+| `01-catalogos.sql` | `z_finca.estado`, `z_ulabor.estado`, `z_lote.tiene_modulos` |
+| `02-tablas-v4.sql` | crea `lfp_*`, `pc_*`, `lfp_flag`, `mig_descarte` |
+| `03-migracion-historico.sql` | migra **todo** el histórico v3 a V4; lo que no entra va a `mig_descarte` |
+| `04-vistas-v4.sql` | vistas `vw_lfp_*` (mismo contrato de columnas que su equivalente v3) |
+| `05-ajustes-pago-v4.sql` | repunta los ajustes de pago a `lfp_am` y crea `vw_lfp_ajuste_pago` |
+| `06-usuarios-hacienda.sql` | `users.finca_id`, grupos 2/3 renombrados y grupo 4 |
 
-Alternativa por GUI: Workbench → *Server* → *Data Export* → marcar `lfp_prodapp`
-→ *Dump Structure Only* → *Export to Self-Contained File*.
-
-Guardar en `docs/db/schema.sql` y anotar aquí la fecha del volcado. Cuando
-exista, **ese archivo manda sobre esta tabla de inventario**.
+`_historico/` es la historia de desarrollo (tablas `reg_*` intermedias):
+**no se corre**. Una migración aplicada en producción no se reescribe.
 
 ## Convención de nombres
 
-- `z_*` → tablas maestras/transaccionales legacy.
-- `tbl_*` → tablas nuevas del módulo de pagos.
-- `vw_*` / `vwpm_*` → **vistas SQL** (solo lectura; Grocery CRUD las usa con
-  `set_primary_key()` forzado).
+- `z_*` → catálogos y transaccionales v3.
+- `tbl_*` → módulo de pagos (v3, reusado por V4 en ajustes).
+- `lfp_*` → registros V4. `pc_*` → postcosecha V4.
+- `vw_lfp_*` → vistas V4. `vw_*` / `vwpm_*` sin `lfp` → vistas v3.
 
-## Catálogos
+## Catálogos (vivos, compartidos por v3 y V4)
 
-| Tabla | Contenido | Modelo |
+| Tabla | Contenido | Notas |
 |---|---|---|
-| `z_finca` | Fincas (nombre, ha) | `Fincas_model` |
-| `z_lote` | Lotes por finca | `Lotes_model` |
-| `z_modulo` | Módulos por lote | `Modulos_model` |
-| `z_cultivo` | Cultivos | `Cultivos_model` |
-| `z_tarea` | Tareas | `Tareas_model` |
-| `z_subtarea` | Subtareas | `Subtareas_model` |
-| `z_ulabor` | Unidades de labor | `Unidad_labor_model` |
-| `z_tipo_pago` | Tipos de pago | (usado en `Subtarea.php`) |
-| `z_tarifas_historia` | Historial de tarifas | `Historiatarifas.php` |
-| `z_personal` | Trabajadores | `Personal_model` |
-| `z_personal_roles` | Roles del personal | `Personal.php::roles()` |
-| `z_personal_estado` | Estados del personal | `PersonnelStatus_model` |
-| `tbl_pm_cost_groups` | Grupos de costo | `PmCostGroup.php` |
+| `z_finca` | Haciendas (Bellita = 1, Pacaritambo) | `estado` desde migración 01 |
+| `z_lote` | Lotes por finca | `estado`, `tiene_modulos` |
+| `z_modulo` | Módulos por lote | se inactivan, no se borran |
+| `z_cultivo`, `z_tarea` | Cultivos, tareas | solo admin global |
+| `z_subtarea` | Subtareas: `tarifa`, `unidad_labor_id`, `tipo_pago_id`, `id_finca` | la **unidad** decide PM vs Cosecha |
+| `z_ulabor` | Unidades de labor (Libra = 4) | |
+| `z_tipo_pago` | Area Ejecutada / Jornal / Avance | informativo: no entra en el pago |
+| `z_tarifas_historia` | Historial de tarifas | |
+| `z_personal` | Trabajadores | **`eregistro` = vigencia** (`A`/`I`); `estado` = tipo de contrato |
+| `z_personal_roles`, `z_personal_estado` | Roles y tipos de contrato | |
+| `tbl_pm_cost_groups`, `tbl_pm_payment_conversionrate` | Grupos de costo, factor de conversión | |
 
-## Transaccionales
+## Registros V4
 
-| Tabla | Contenido | Modelo |
+| Tabla | Una fila = | Claves |
 |---|---|---|
-| `z_tabla_pm` | Registros PM (producción/pago). Tabla más consultada del sistema | `Pm_model`, `Payment_model` |
-| `z_riego` | Riegos | `Riego_model` |
-| `z_cosecha_cacao` | Cosecha de cacao | `Cosechacacao_model` |
-| `tbl_pm_payment_daily_adjustment` | Ajustes diarios de pago | `PmPaymentDailyAdjustment.php` |
-| `tbl_pm_payment_conversionrate` | Tasas de conversión de tarifa | `Payment_model::get_conversion_rate` |
+| `lfp_am` | **una persona en una tarea**: programación de la mañana (AM) **y** su cierre (PM) en la misma fila | `guid` único; `cierre_guid` único; abierta si `cierre_guid IS NULL` |
+| `lfp_cosecha` | el cierre de un AM de cosecha | `lfp_am_id` único; su `guid` = `lfp_am.cierre_guid` |
+| `lfp_cosecha_saco` | un saco de una cosecha (`numero`, `libras`) | `(cosecha_id, numero)` |
+| `lfp_riego` | una línea de bitácora de riego (lote, módulo, minutos, volumen) | `guid`. **No cuelga de `lfp_am`** |
+| `lfp_flag` | un rechazo, duplicado o error de `/v4/sync` (`origen`, `codigo`, `payload`) | la escribe `V4.php` |
+| `mig_descarte` | una fila v3 que no se migró o se migró marcada | `motivo`, `payload` |
 
-Los registros AM se leen vía vistas; la escritura pasa por `Am_model::create_am` / `close_am`.
+Columnas clave de `lfp_am`: `fecha_proceso`, `finca_id`, `responsable_id`,
+`cultivo_id`, `lote_id`, `modulos` (**CSV de ids** ordenado, `3,8,25`),
+`subtarea_id`, `personal_id`, `captura_guid` (agrupa las N personas de un
+mismo formulario), `justificacion_retro`, `origen`; y el cierre: `cantidad`,
+`hora_cierre`, `comentario_cierre`, `justificacion_retro_cierre`,
+`responsable_cierre_id`, `cierre_guid`, `cierre_origen` (`pm`/`cosecha`),
+más marcas de dispositivo (`device_alias`, `*_at_device`, `*_offset`).
 
-## Postcosecha
+**Año y semana no se guardan**: se derivan con `WEEK(fecha,3)` /
+`YEARWEEK(fecha,3)` (ISO). **El pago = `lfp_am.cantidad × z_subtarea.tarifa`**
+(`vw_lfp_reporte_pago`). En cosecha, `cantidad` = suma de libras.
 
-`z_postharvest_predrying`, `z_postharvest_fermentation`, `z_postharvest_sundrying`,
-`z_postharvest_machinedrying`, `z_postharvest_result`,
-`z_postharvest_fermentationquality`, `z_postharvest_dryingquality`.
-Modelo único: `Postharvest_model` (un `create*FromAPI` por etapa + `save_image`).
+## Postcosecha V4
 
-## Vistas SQL
+`pc_proceso` (la partida: `lot_code` asignado por el servidor vía
+`pc_lot_code_seq`, pesos), `pc_proceso_cosecha` (qué cosechas entran; cada
+cosecha una sola vez), `pc_etapa` (una por etapa, `inicio`/`fin`),
+`pc_calidad_fermentacion` (una por partida), `pc_calidad_secado` (una por
+etapa de secado), `pc_foto`.
+
+## Vistas V4
 
 | Vista | Uso |
 |---|---|
-| `vw_reporte_am_base` | Reporte AM (`AM::index`) |
-| `vw_reporte_pm` | Reporte PM (`PM::index`) |
-| `vw_pm_rpt_eventuales` | Reporte de eventuales |
-| `vw_pm_temporaryworkers`, `vw_pm_temporaryworkers_reports`, `vw_temporaryworkers_pivot` | Eventuales / pivote |
-| `vwpm_paymentadjustment_fullreport` | Reporte completo de ajustes de pago |
-| `vw_harvest_pending_lots` | Lotes pendientes de postcosecha |
-| `vw_postharvest_rpt_001` | Reporte de postcosecha |
-| `vw_postharvest_photos_fermentation`, `vw_postharvest_photos_sundrying` | Fotos por etapa |
+| `vw_lfp_reporte_am_base`, `vw_lfp_reporte_am` | reporte de labores y pivot (`AM.php`, `Reporteam_model`) |
+| `vw_lfp_reporte_pm` | reporte de pago (`PM::reportePagos`, `Pm_model`) |
+| `vw_lfp_reporte_pago` | cálculo de pago (`cantidad × tarifa`) |
+| `vw_lfp_cosecha`, `vw_lfp_cosecha_saco`, `vw_lfp_cosecha_resumen` | cosecha (`Cosechacacao.php`) |
+| `vw_lfp_harvest_pending_lots` | cosechas pendientes de postcosecha |
+| `vw_lfp_postharvest_rpt`, `vw_lfp_postharvest_fotos` | postcosecha (`Postharvest.php`) |
+| `vw_lfp_ajuste_pago` | base de los ajustes de pago (`Payment_model`) |
+| `vw_lfp_flag` | lectura de `lfp_flag` (hoy no la usa ninguna pantalla) |
+
+Las vistas con JOIN son **de solo lectura**: las pantallas que editan apuntan a
+`lfp_am`, `lfp_riego` o `pc_*`.
+
+## v3 congelado (no apuntar pantallas nuevas aquí)
+
+`z_tabla_am`, `z_tabla_pm`, `z_cosecha_cacao`, `z_riego`, `z_postharvest_*`,
+`z_reportepm` y sus vistas (`vw_reporte_*`, `vw_pm_temporaryworkers*`,
+`vw_postharvest_*`, `vwpm_*`). Solo los escriben los endpoints legacy
+`V1`/`V2`/`V3` (modelos `Am_model`, `Pm_model::create_pm`,
+`Cosechacacao_model`, `Riego_model`, `Postharvest_model`).
+
+## Ajustes de pago
+
+`tbl_pm_payment_daily_adjustment.pm_id` apunta a **`lfp_am.id`** desde la
+migración 05 (antes a `z_tabla_pm.id`). También
+`tbl_pm_payment_weekly_deductions` y `tbl_pm_payment_paymenthistory`.
 
 ## Autenticación (Ion Auth)
 
-Tablas estándar de Ion Auth definidas en `application/config/ion_auth.php`
-(`users`, `groups`, `users_groups`, `login_attempts`).
-También se requiere la tabla **`ci_sessions`** (`config.php` usa
-`sess_driver = 'database'`, `sess_save_path = 'ci_sessions'`). Sin ella no hay
-login posible.
+Tablas `users`, `groups`, `users_groups`, `login_attempts` y **`ci_sessions`**
+(`sess_driver = 'database'`; sin ella no hay login).
+`users.finca_id` (FK a `z_finca`, NULL = todas) desde la migración 06.
 
-**Grupos usados en código:** `1` = admin, `2` = supervisor. El resto = solo lectura
-o sin acceso, según el controlador.
+| Grupo | Nombre | Puede |
+|---|---|---|
+| 1 | admin | todo, global; único que crea usuarios |
+| 2 | Supervisor | edita registros de su hacienda, sin maestras |
+| 3 | Operador | solo lectura de su hacienda |
+| 4 | Admin hacienda | edita registros y maestras de su hacienda (Personal, Subtareas, Lotes, Módulos) |
 
 ## Patrón común en modelos
 
 ```php
 $this->db->select(...)->from('tabla')->where(...);
-return $this->db->get()->result();      // o ->result_array()
+return $this->db->get()->result();
 ```
-Casi todos los modelos tienen `db_table_exists()` y `get_all()`.
 `Grocery_crud_model` y `Ion_auth_model` son de librería: **no los toques**.

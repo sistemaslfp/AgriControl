@@ -1,0 +1,26 @@
+APP:
+
+**Desarrollo vista en web** (Mobil/app-v4)
+npx run start 
+
+**Desarrollo App Mobil** (Mobil/app-v4)
+npx ng build -c development   
+npx cap sync Android
+
+(Mobil/app-v4/android)
+./gradlew assembleDebug     //Aquí se crea la apk
+
+**Produccion** (Mobil/app-v4)
+npx ng build -c production   
+npx cap sync Android
+//Crear la clave para la firma de la app
+keytool -genkey -v -keystore C:\claves\lagricontrol.jks -alias lagricontrol -keyalg RSA -keysize 2048 -validity 10000  
+npx cap build android --androidreleasetype APK --keystorepath C:\claves\lagricontrol.jks --keystorealias lagricontrol --keystorepass CLAVE --keystorealiaspass CLAVE
+
+
+
+==================================================
+Web, DB hasta la fecha:
+administrador/password
+
+

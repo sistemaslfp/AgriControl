@@ -62,11 +62,11 @@ activa:
 
 | Carpeta / archivo | Contenido |
 |---|---|
-| `application/controllers/*.php` | Pantallas Grocery CRUD, módulos de `Operations/PM/`, controladores de la API (`V1/V2/V3.php`) |
+| `application/controllers/*.php` | Pantallas Grocery CRUD, módulos de `Operations/PM/`, API vigente (`V4.php` y su copia `API/V4.php`) y legacy (`V1/V2/V3.php`) |
 | `application/models/*.php` | Queries (Query Builder de CI) |
 | `application/views/**` | Wrappers de Grocery CRUD (`views/Crud/`) y el layout (`views/themes/admin/`) |
 | `application/core/*.php` | `MY_Controller.php`, `Public_Controller`, `Auth_Controller`, si cambiaron |
-| `application/helpers/*.php` | Helpers propios |
+| `application/helpers/*.php` | Helpers propios (`acceso_helper`, `alertas_helper`, …) |
 | `application/hooks/*.php` | Si el proyecto usa hooks de CI |
 | `application/libraries/*.php` | Librerías propias (no confundir con `application/third_party/`, que es de terceros) |
 | `application/language/*.php` | Si cambió texto de interfaz |
@@ -126,7 +126,7 @@ no hay script que automatice esto — es manual hasta que se decida armar uno.
 
 - **Dónde viven:** `docs/db/migrations/*.sql`, en orden numérico
   (`01-catalogos.sql`, `02-tablas-v4.sql`, `03-migracion-historico.sql`,
-  `04-vistas-v4.sql`, `05-ajustes-pago-v4.sql`). Los archivos intermedios ya
+  `04-vistas-v4.sql`, `05-ajustes-pago-v4.sql`, `06-usuarios-hacienda.sql`). Los archivos intermedios ya
   superados están en `docs/db/migrations/_historico/` como referencia — **no
   se vuelven a correr**, la carpeta existe para explicar cómo se llegó al
   estado actual, no como pasos pendientes.
@@ -176,8 +176,8 @@ no hay script que automatice esto — es manual hasta que se decida armar uno.
 7. Verificar:
    - Abrir la URL base del sitio y confirmar que redirige a `auth/login`.
    - Iniciar sesión con un usuario real.
-   - Probar al menos un endpoint de la API vigente (`.../v3/...` o `.../v4/...`
-     según lo que esté activo).
+   - Probar la API vigente: `GET .../v4/hora` (no toca la base) y
+     `GET .../v4/catalogos` (sí la toca).
    - Revisar `application/logs/` (logs de CodeIgniter) y el log de errores de
      Apache de XAMPP buscando algo nuevo desde el reinicio.
 8. Si algo falla y no se resuelve rápido, seguir el rollback (sección 7) en

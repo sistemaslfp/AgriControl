@@ -2,7 +2,7 @@
 
 ## Esqueleto de un controlador CRUD nuevo
 
-Copia `application/controllers/Finca.php`. Estructura obligatoria:
+Copia `application/controllers/Lote.php` (catálogo con hacienda). Estructura:
 
 ```php
 <?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
@@ -11,31 +11,28 @@ class MiEntidad extends Public_controller {
 
     public function __construct()
     {
-        parent::__construct();
-        $this->load->library('ion_auth');
-        if (!$this->ion_auth->logged_in()) { redirect('auth/login'); }
+        parent::__construct();          // login, helpers acceso/alertas, template
         $this->load->database();
         $this->load->helper('url');
         $this->load->library('grocery_CRUD');
-        $this->_init();
     }
-
-    private function _init() { }
 
     public function index()
     {
+        acceso_exigir('maestras');      // o 'edita' / 'admin_global'
         try {
             $crud = new grocery_CRUD();
             $crud->set_theme('tablestrap4');
             $crud->set_table('z_mi_tabla');
             $crud->set_subject('Mi Entidad');
             $crud->unset_read();
-            $crud->unset_jquery();     // el layout ya carga jQuery
+            $crud->unset_jquery();      // el layout ya carga jQuery
             $crud->unset_clone();
 
-            $group = $this->ion_auth->get_users_groups()->row()->id;
-            if ($group != 1) { $crud->unset_delete(); }
-            if ($group != 1 && $group != 2) { redirect('/', 'refresh'); }
+            $crud->set_relation('finca_id', 'z_finca', 'nombre');
+            acceso_crud_finca($crud, 'z_mi_tabla', 'finca_id');   // filtra por hacienda
+
+            if (!acceso_puede('admin_global')) { $crud->unset_delete(); }
 
             $crud->display_as('campo', 'Etiqueta');
             $crud->columns('campo1', 'campo2');
@@ -51,46 +48,83 @@ class MiEntidad extends Public_controller {
 
 Puntos que **no** son opcionales:
 - `defined('BASEPATH')` en la primera línea de todo `.php` de `application/`.
+- **Permiso con `acceso_exigir()`** y **hacienda con `acceso_crud*()`**. Un
+  selector oculto o un menú oculto no protegen nada: se puede escribir el id o
+  `?id_finca=` en la URL.
+- Tabla sin columna de finca propia: condición SQL con `{t}` y `{f}`, p. ej.
+  `acceso_crud($crud, 'z_modulo', '{t}.lote_id IN (SELECT id FROM z_lote WHERE finca_id = {f})')`
+  y `acceso_validar_lote($crud, 'lote_id')` para rechazar un lote ajeno en el POST.
+  En vistas cuya PK no es `id`, pasar la columna como 4.º argumento.
 - `unset_jquery()` — si no, jQuery se carga dos veces y rompe los widgets.
 - `try/catch` con `show_error()` alrededor del `render()`.
-- Chequeo de grupo antes de exponer delete/edit.
+- Validaciones de negocio con
+  `alerta_validar($crud, array($this, '_miMotivo'))`, donde
+  `_miMotivo($post, $pk)` devuelve el texto del problema o `null`. Corre en la
+  fase de validación, así el usuario ve el motivo. Nunca un `return false`
+  mudo en un `callback_before_*`.
+- Pantallas de registros: apuntar a `lfp_*`/`pc_*` para editar y a `vw_lfp_*`
+  para listar. **Nunca a `z_tabla_*`**.
+
+La lógica vieja `$group != 1 && $group != 2` sigue en varios archivos; en
+código nuevo usa `acceso_puede()`.
+
+## Vistas hechas a mano
+
+- Cargan dentro del layout: no llevan `<html>` ni `<head>`.
+- Si son un formulario o un detalle, llevan arriba un botón
+  `← Volver a …` (`btn btn-secondary`, `fa fa-arrow-left`) a la sección
+  general. Grocery CRUD ya trae el suyo.
+- Mensajes al usuario con `alerta_flash('exito'|'error', $msg)` +
+  `redirect()`.
 
 ## Grocery CRUD — recetas usadas en este repo
 
 | Necesidad | Cómo |
 |---|---|
-| Tabla sin PK / vista SQL | `$crud->set_primary_key('col')` |
+| Vista SQL | `$crud->set_primary_key('col')` + `unset_add/edit/delete` |
+| Filtro por rango de fechas | `set_theme('tablestrap4_datefilter')` |
 | Multiselect desde otra tabla | `$crud->field_type('modulos','multiselect',$array)` |
-| Normalizar antes de guardar | `callback_before_insert` / `_update` → método `ino_to_upper($post_array)` |
+| Normalizar antes de guardar | `callback_before_insert` / `_update` |
 | Columna calculada | `callback_column('col', array($this,'_callback_column_x'))` |
 | Detectar exportación | `$state = $crud->getState(); if ($state=='export'\|\|$state=='print')` |
-| Filtros propios | leer `$this->input->get('x')` o `$this->uri->segment(n)` y aplicar `$crud->where()` |
+| Filtros propios | `$this->input->get('x')` y `$crud->where()` (la finca ya viene forzada) |
 
-Las vistas `Crud/farm-date_filter.php` y `Crud/date-range_filter.php` esperan
+`Crud/farm-date_filter.php` y `Crud/date-range_filter.php` esperan
 `$output->data['listadoFincas']` para pintar el combo.
+
+## Base de datos
+
+- `$autoload['libraries']` está vacío: cargar la base explícitamente.
+- mysqli devuelve strings: castear si el dato sale como JSON.
+- Semana ISO: `WEEK(fecha,3)` en SQL, `format('o')`/`format('W')` en PHP.
+- Migración nueva: archivo `docs/db/migrations/0N-nombre.sql`, idempotente,
+  sin `DELIMITER` ni `BEGIN…END` (Workbench no los acepta) y con `WHERE` en
+  los `UPDATE` (Workbench usa `SQL_SAFE_UPDATES`).
 
 ## Modelos
 
 - Un modelo por entidad: `Xxx_model.php`, clase `Xxx_model extends CI_Model`.
-- Query Builder de CI, **no SQL crudo** salvo pivotes (ver `Reporteam_model`,
+- Query Builder de CI, **no SQL crudo** salvo pivotes (`Reporteam_model`,
   `Payment_model`).
-- Cargar con `$this->load->model('xxx_model')` (minúsculas) dentro del método
-  que lo usa, no en el constructor global.
+- Cargar con `$this->load->model('xxx_model')` dentro del método que lo usa.
 
-## Nombres
+## Nombres y textos
 
-- Archivos de controlador y modelo: **PascalCase** (`Payment_model.php`).
-- Métodos y variables: `snake_case` en código viejo, `camelCase` en el módulo
-  de pagos y postcosecha. **Sigue el estilo del archivo que estás tocando**, no
-  impongas uno global.
-- Etiquetas de UI en español con acentos (`'Cédula'`, `'Módulos'`).
+- Controladores y modelos en **PascalCase** (`Payment_model.php`).
+- `snake_case` en código viejo, `camelCase` en pagos y postcosecha: **sigue el
+  estilo del archivo que tocas**.
+- Interfaz en español neutro, con acentos (`'Cédula'`, `'Módulos'`). Se dice
+  "registro", no "parte".
+- Comentarios solo para el **porqué** no obvio; nada de narrar el código.
 
-## Helpers disponibles
+## Helpers
 
 | Helper | Funciones |
 |---|---|
-| `datetime_validation_helper` | `isTimeValid`, `isValidDate`, `isValidPickerTime` |
+| `acceso_helper` | `acceso_usuario`, `acceso_finca`, `acceso_puede`, `acceso_exigir`, `acceso_forzar_parametros`, `acceso_crud`, `acceso_crud_finca`, `acceso_lotes_sql`, `acceso_validar_lote` |
+| `alertas_helper` | `alerta_crud_error`, `alerta_validar`, `alerta_flash`, `alerta_bd_en_escritura` |
+| `datetime_validation_helper` | `isTimeValid`, `isValidDate`, `isValidPickerTime` (V3) |
 | `getdate_helper` | `getCurrentDateTime` |
 | `payment_reports_helper` | `editButton` |
 
-`autoload.php` está **vacío**: todo se carga explícitamente.
+`acceso` y `alertas` los carga `MY_Controller`; el resto se carga a mano.

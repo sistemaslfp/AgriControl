@@ -1,50 +1,49 @@
 # 07 — Levantar el proyecto en local (Windows + Docker)
 
-**Este repo es una app web PHP. No contiene código Android ni compila ningún
-`.apk`.** La app móvil es un proyecto aparte que solo consume la API `V3`.
+Este repo contiene la **web + API** y, en `MOBIL/app-v4`, la app móvil V4
+(Ionic/Angular), que se compila aparte. Esta guía es solo para la web.
+Para producción (XAMPP) ver `docs/deploy/actualizacion-produccion.md`.
 
-Stack elegido: Docker Compose con Apache + PHP 7.4 y **MariaDB 10.4**, contra
-una copia local de la BD. Los archivos ya están en el repo (`docker/`, `docker-compose.yml`).
+Stack: Docker Compose con Apache + **PHP 7.3** y **MariaDB 10.4**, contra una
+copia local de la BD (`docker-compose.yml`, `docker/php/`).
 
-## Por qué PHP 7.4 y no 8.x
+## Por qué PHP 7.3
 
-Grocery CRUD 1.x y CodeIgniter 3.1.11 usan constructores estilo PHP 4 y
-`each()` en algunas rutas. En PHP 8 revientan con fatal error. No subas de
-versión "para modernizar": ese cambio es un proyecto, no un ajuste.
+Producción corre **PHP 7.3.27 en XAMPP** (decisión del 2026-09-15: desarrollar
+en la misma versión). La imagen `php:7.3-apache` es 7.3.33, mismo comportamiento.
+
+- CI 3.1.11 y Grocery CRUD 1.6.1 **sí arrancan en PHP 8.x** (probado en 8.4),
+  pero en 8.1 la sesión de CI emite `E_DEPRECATED` que rompen el login. Si algún
+  día se sube producción a 8.x, el arreglo es actualizar `system/` a CI 3.1.13,
+  no callar los avisos. Ver comentario en `docker/php/Dockerfile`.
+- `opcache` está activado en el contenedor: el bind mount de Windows hace lento
+  cada `include`.
 
 ## Por qué MariaDB 10.4 y no MySQL
 
-El servidor real reporta `5.5.5-10.4.18-MariaDB` (visible en la cabecera del
-dump). MariaDB y MySQL divergieron: importar un dump de MariaDB 10.4 en MySQL 8
-falla o cambia el comportamiento silenciosamente. El contenedor local usa la
-misma versión que producción.
+El servidor reporta `5.5.5-10.4.18-MariaDB`. Importar ese dump en MySQL 8
+falla o cambia el comportamiento en silencio. El contenedor usa la misma versión.
 
 ## Por qué el servicio de BD se llama `mysql_dev_container`
 
-`application/config/database.php` tiene ese hostname **hardcodeado**. Nombrando
-así el servicio en Compose, Docker lo resuelve por DNS interno y el archivo de
-config no se toca. Si lo renombras, tendrás que editar `database.php` y ese
-cambio se te va a colar en un commit.
+`application/config/database.php` tiene ese hostname **hardcodeado**. Si lo
+renombras, tendrás que editar `database.php` y el cambio se cuela en un commit.
 
 ## Pasos
 
 ### 1. Requisitos
-- Docker Desktop con backend WSL2.
-- Git.
+- Docker Desktop con backend WSL2, Git.
 - El repo en una ruta **sin espacios ni acentos**.
 
-### 2. Traer el esquema de la BD
-Sigue `docs/db/README.md`. El directorio `docs/db/init/` se ejecuta en orden
-alfabético dentro del contenedor:
+### 2. Traer la BD
+`docs/db/init/` se monta en `/docker-entrypoint-initdb.d` y se ejecuta en orden
+alfabético **solo la primera vez** que se crea el volumen:
 
 | Archivo | Qué es | ¿Se versiona? |
 |---|---|---|
-| `00-definer-user.sql` | Crea el usuario `bellita`, DEFINER de las 22 vistas | Sí |
-| `01-schema.sql` | Dump de Workbench (estructura + datos) | **No** — datos reales |
+| `00-definer-user.sql` | Crea el usuario `bellita`, DEFINER de las vistas v3 | Sí |
+| `01-schema.sql` | Dump de producción (estructura + datos, **solo v3**) | **No** — datos reales |
 | `02-ci_sessions.sql` | Red de seguridad para la tabla de sesiones | Sí |
-
-> Si arrancas sin el dump, Apache levanta pero **cualquier pantalla explota**
-> al primer query. La BD no es opcional.
 
 ### 3. Arrancar
 ```bash
@@ -53,13 +52,16 @@ docker compose up -d
 docker compose logs -f mysql_dev_container   # espera "ready for connections"
 ```
 
-### 4. Dependencias de Composer
+### 4. Aplicar el esquema V4 (obligatorio)
+El dump no trae `lfp_*` ni `pc_*`: sin esto **todas las pantallas de
+registros fallan**. Correr en orden, desde Workbench (`127.0.0.1:3307`) o:
 ```bash
-docker compose exec web bash -c "curl -sS https://getcomposer.org/installer | php && php composer.phar install"
+for f in docs/db/migrations/0*.sql; do
+  docker compose exec -T mysql_dev_container mysql -uroot -proot_password lfp_prodapp < "$f"
+done
 ```
-> Composer aquí solo instala `phpdotenv`, que **el código nunca usa**
-> (ver `99-riesgos.md`). Si el paso falla, la app igual funciona. No pierdas
-> tiempo con esto.
+`01` → `06`. `_historico/` **no** se corre. `03` migra todo el histórico y
+tarda.
 
 ### 5. Permisos de escritura
 ```bash
@@ -67,16 +69,15 @@ docker compose exec web chown -R www-data:www-data application/logs application/
 ```
 
 ### 6. Abrir
-`http://localhost:8080/` → debe redirigir a `auth/login`.
-
-- Web: `http://localhost:8080/`
-- API: `http://localhost:8080/v3/fincas`
-- MySQL desde Workbench: `127.0.0.1:3307`, usuario `root`, password `root_password`
+- Web: `http://localhost:8080/` → redirige a `auth/login`
+  (desde otra máquina de la red, la IP del host; HTTP plano, sin TLS).
+- API: `http://localhost:8080/v4/hora`
+- BD desde Workbench: `127.0.0.1:3307`, `root` / `root_password`.
 
 ### 7. Usuario para entrar
-El dump actual incluye datos de `users`, `groups` y `users_groups`, así que
-sirven las credenciales reales del sistema. Ion Auth guarda hashes: no se puede
-"inventar" una contraseña; si nadie recuerda una, hay que reescribir el hash.
+El dump trae `users`, `groups` y `users_groups` reales. Ion Auth guarda
+hashes: si nadie recuerda una contraseña, hay que reescribir el hash. Tras la
+migración 06, el usuario necesita `finca_id` correcto para ver su hacienda.
 
 ## Diagnóstico rápido
 
@@ -85,24 +86,24 @@ sirven las credenciales reales del sistema. Ion Auth guarda hashes: no se puede
 | 404 en toda URL menos la raíz | `mod_rewrite` o `AllowOverride All` — revisa `docker/php/vhost.conf` |
 | Página en blanco | fatal de PHP → `docker compose logs web` y `application/logs/` |
 | Redirect infinito en `auth/login` | falta la tabla `ci_sessions` |
-| `ERROR 1449 ... definer does not exist` al abrir reportes | no corrió `00-definer-user.sql` (usuario `bellita`) |
+| `Table 'lfp_prodapp.lfp_am' doesn't exist` / `vw_lfp_*` | no corriste las migraciones del paso 4 |
+| `ERROR 1449 ... definer does not exist` | no corrió `00-definer-user.sql` (usuario `bellita`) |
 | Errores raros al importar el dump | levantaste MySQL en vez de MariaDB 10.4 |
-| `Unable to connect to your database server` | MySQL aún iniciando, o `MYSQL_ROOT_PASSWORD` ≠ `database.php` |
-| CSS/JS rotos, rutas raras | `base_url` mal: verifica `APP_BASE_URL` en `docker-compose.yml` |
-| Fatal `each()` / constructor | levantaste con PHP 8 en vez de 7.4 |
-| Cambio en el código no se refleja | el bind mount `.:/var/www/html` se cayó → `docker compose restart web` |
+| `Unable to connect to your database server` | MariaDB aún iniciando, o `MYSQL_ROOT_PASSWORD` ≠ `database.php` |
+| CSS/JS rotos, rutas raras | `base_url` mal: revisa `APP_BASE_URL` en `docker-compose.yml` |
+| Login roto con avisos `Deprecated` | el contenedor quedó en PHP 8.x: reconstruye con `docker compose build` |
+| Un usuario no ve datos | su `users.finca_id` apunta a otra hacienda, o su grupo es 3 (solo lectura) |
+| Cambio en el código no se refleja | bind mount caído → `docker compose restart web` |
 
 ## Reset total
 ```bash
 docker compose down -v   # borra el volumen; los .sql de init se reejecutan
-docker compose up -d
+docker compose up -d     # y luego el paso 4 otra vez
 ```
 
 ## Lo que NO configuran estos archivos
 
-- **No tocan** `application/config/database.php` ni `config.php`. El único
-  override es `application/config/development/config.php`, que solo actúa si
-  existe la variable `APP_BASE_URL`.
-- **No arreglan** ninguno de los puntos de seguridad de `99-riesgos.md`.
-  `ENVIRONMENT` sigue en `development`, la API sigue sin auth y CSRF sigue
-  apagado. Eso es decisión de producto, no de entorno.
+- **No tocan** `database.php` ni `config.php`. El único override es
+  `application/config/development/config.php`, que actúa solo si existe
+  `APP_BASE_URL` (fija `base_url` y baja el log a nivel 1).
+- **No arreglan** los puntos de seguridad de `99-riesgos.md`.

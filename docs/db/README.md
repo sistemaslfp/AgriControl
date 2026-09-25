@@ -36,7 +36,14 @@ El servidor es **MariaDB 10.4.18**, no MySQL. El `docker-compose.yml` usa
 El dump trae 41 tablas, 22 vistas y datos. Las vistas tienen
 `DEFINER=\`bellita\`@\`%\``; por eso existe `00-definer-user.sql`.
 
-## 4. Reglas
+## 4. Esquema V4 — no viene en el dump
+
+El dump actual (host 192.168.2.67) es **solo v3**: no trae `lfp_*`, `pc_*` ni
+`vw_lfp_*`. Después de importarlo hay que correr, en orden,
+`docs/db/migrations/01-catalogos.sql` … `06-usuarios-hacienda.sql`
+(ver `docs/context/07-entorno.md` §4). `migrations/_historico/` no se corre.
+
+## 5. Reglas
 
 - Los `.sql` de `init/` se ejecutan **solo la primera vez** que se crea el
   volumen `mysql_data`. Para reimportar: `docker compose down -v && docker compose up -d`.
