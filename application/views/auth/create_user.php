@@ -5,20 +5,10 @@
 
 <?php echo form_open("auth/create_user");?>
 
-      <p>
-            <?php echo lang('create_user_fname_label', 'first_name');?> <br />
-            <?php echo form_input($first_name);?>
-      </p>
-
-      <p>
-            <?php echo lang('create_user_lname_label', 'last_name');?> <br />
-            <?php echo form_input($last_name);?>
-      </p>
-      
       <?php
       if($identity_column!=='email') {
           echo '<p>';
-          echo lang('create_user_identity_label', 'identity');
+          echo '<label for="identity">Usuario</label>';
           echo '<br />';
           echo form_error('identity');
           echo form_input($identity);
@@ -27,8 +17,14 @@
       ?>
 
       <p>
-            <?php echo lang('create_user_company_label', 'company');?> <br />
-            <?php echo form_input($company);?>
+            <label for="grupo">Rol</label> <br />
+            <?php echo form_dropdown('grupo', $grupos, $grupo_actual, 'id="grupo"');?>
+      </p>
+
+      <p>
+            <label for="finca_id">Hacienda</label> <br />
+            <?php echo form_dropdown('finca_id', $fincas, $finca_actual, 'id="finca_id"');?>
+            <br /><small>El rol admin siempre es global. El admin de hacienda necesita una hacienda.</small>
       </p>
 
       <p>

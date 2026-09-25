@@ -22,6 +22,8 @@ class PaymentAdjustment extends Public_Controller
         $this->load->library('grocery_CRUD');
         $this->load->model('fincas_model');
 
+        acceso_exigir('edita');
+
         $this->_init();
     }
 
@@ -97,6 +99,10 @@ class PaymentAdjustment extends Public_Controller
                 // Validar que pm_id esté presente y que bonus_discount no sea cero
                 if (!isset($payment['pm_id'])) {
                     throw new Exception('Falta el campo "pm_id" en uno de los pagos.');
+                }
+
+                if (acceso_finca() !== null) {
+                    $payment['farm_id'] = acceso_finca();
                 }
 
                 // Asignar farmId y selectedWeek solo una vez, ya que se asume que son iguales para todos los registros
@@ -305,6 +311,7 @@ class PaymentAdjustment extends Public_Controller
 
         // Ajustar las columnas para reflejar los cambios
         $crud->columns('nombre', 'pm_year', 'pm_week', 'descripcion_estado');
+        acceso_crud($crud, $currentTable, '{t}.farm_id = {f}');
 
         // Agregar botón de acción
         $crud->add_action('Ver Reporte', '', '', 'eye', array($this, 'viewDetailsButton'));
@@ -534,6 +541,7 @@ class PaymentAdjustment extends Public_Controller
     {
         $crud = new grocery_CRUD();
 
+        acceso_exigir('admin_global');
         $crud->set_table('tbl_pm_payment_conversionrate');
         $crud->set_subject('Conversion Rate');
         $crud->set_theme('tablestrap4');

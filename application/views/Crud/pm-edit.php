@@ -17,18 +17,21 @@
         <span>Filtros Reporte:</span>
         <form action="" method="get" id="amForm">
             <div style="float:left; display: inline; width:40%; padding-right: 20px;">
-                <select name="finca" id="finca" style="width: 100%; float: left; min-height: 35px; padding: 6px 12px">
+                <?php $fincasFiltro = isset($data['listadoFincas']) ? $data['listadoFincas'] : array(); ?>
+                <?php if (count($fincasFiltro) != 1): ?>
+                <select name="id_finca" id="id_finca" style="width: 100%; float: left; min-height: 35px; padding: 6px 12px">
                     <?php
-                    $listadoFincas = $data['listadoFincas'];
-                    if (isset($_GET["finca"])) {
-                        $IdFinca = $_GET["finca"];
-                    }
-                    foreach ($listadoFincas as $key => $value) {
+                    $IdFinca = isset($_GET["id_finca"]) ? $_GET["id_finca"] : 0;
+                    foreach ($fincasFiltro as $key => $value) {
                         $selectedAtt = $key == $IdFinca ? "selected" : "";
                         echo '<option value="' . $key . '" ' . $selectedAtt . '>' . $value . '</option>';
                     }
                     ?>
                 </select>
+                <?php else: ?>
+                <input type="hidden" name="id_finca" id="id_finca" value="<?= key($fincasFiltro) ?>">
+                <strong style="line-height: 35px">Hacienda: <?= htmlspecialchars(current($fincasFiltro), ENT_QUOTES, 'UTF-8') ?></strong>
+                <?php endif; ?>
             </div>
             <div style="float:left; display: inline; width:10%">
                 <div>

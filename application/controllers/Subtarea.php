@@ -46,9 +46,7 @@ class Subtarea extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('maestras');
 
             $crud->display_as('nombre_subtarea', 'Subtarea')
             ->display_as('tarea_id', 'Tarea')
@@ -77,6 +75,7 @@ class Subtarea extends Public_controller {
 
             $crud->set_relation('tipo_pago_id', 'z_tipo_pago', 'descripcion');
             $crud->set_relation('cost_group_id', 'tbl_pm_cost_groups', 'cost_group_name');
+            acceso_crud_finca($crud, 'z_subtarea', 'id_finca');
 
             $crud->set_field_upload('documento_soporte','assets/uploads/files');
 
@@ -108,9 +107,7 @@ class Subtarea extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('admin_global');
 
             $crud->set_theme('tablestrap4');
             $crud->set_table('z_tipo_pago');
@@ -152,9 +149,7 @@ class Subtarea extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('admin_global');
 
 
             $crud->display_as('ulabor_nombre', 'Unidad Labor');

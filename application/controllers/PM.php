@@ -145,6 +145,8 @@ class PM extends Public_controller
 
             $crud->field_type('modulo', 'multiselect', $modulos_multiselect);
 
+            acceso_crud($crud, $currentTable, '{t}.id_finca = {f}', 'cedula');
+
             $output = $crud->render();
 
             $data['listadoFincas'] = $this->fincas_model->getFincasCombobox();
@@ -177,11 +179,8 @@ class PM extends Public_controller
 
             $crud->required_fields('finca_id', 'lote_id', 'personal_id', 'cantidad', 'cultivo_id', 'subtarea_id', 'hora_cierre');
 
-            $group = $this->ion_auth->get_users_groups()->row()->id;
-
-            if ($group != 1 && $group != 2) {
-                redirect('/', 'refresh');
-            }
+            acceso_exigir('edita');
+            $this->_pmRestringirFinca($crud);
 
             $state = $crud->getState();
 
@@ -384,13 +383,10 @@ class PM extends Public_controller
 
             $state = $crud->getState();
 
-            $group = $this->ion_auth->get_users_groups()->row()->id;
+            acceso_exigir('edita');
+            $this->_pmRestringirFinca($crud);
 
-            if ($group != 1 && $group != 2) {
-                redirect('/', 'refresh');
-            }
-
-            if ($group != 1) {
+            if (!acceso_puede('maestras')) {
                 $crud->unset_add();
             }
 
@@ -452,6 +448,16 @@ class PM extends Public_controller
         return site_url('PM/editarPM/read/' . $row->id);
     }
 
+    private function _pmRestringirFinca($crud)
+    {
+        if (acceso_finca() === null) {
+            return;
+        }
+
+        acceso_crud_finca($crud, 'lfp_am', 'finca_id');
+        $crud->set_relation('lote_id', 'vw_util_finca_lotes', '{nombre_finca} - Lote {lote}', 'id IN (' . acceso_lotes_sql() . ')');
+    }
+
     private function _pmCamposComunes($crud, $relacionCierre = true)
     {
         $crud->display_as('fecha_proceso', 'Fecha')
@@ -479,6 +485,10 @@ class PM extends Public_controller
         $crud->set_relation('subtarea_id', 'z_subtarea', 'nombre_subtarea');
 
         $this->db->select('id_modulo, modulo, nombre_finca, lote');
+        if (acceso_finca() !== null) {
+            $acceso = acceso_usuario();
+            $this->db->where('nombre_finca', $acceso['finca_nombre']);
+        }
         $results = $this->db->get('vw_util_fincas_lotes_modulos')->result();
         $modulos_multiselect = array();
 

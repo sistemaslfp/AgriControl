@@ -101,6 +101,10 @@ class Payment_model extends CI_Model
         // Obtener semanas desde la vista
         $this->db->select('id, nombre as farm');
         $this->db->from('z_finca');
+        $this->load->helper('acceso');
+        if (acceso_finca() !== null) {
+            $this->db->where('id', acceso_finca());
+        }
         $query = $this->db->get();
         return $query->result();
     }
@@ -443,6 +447,10 @@ class Payment_model extends CI_Model
     {
         $this->db->select('farm_name, pm_year, pm_week, SUM(bonus_discount) as total_bonus_discount, AVG(deduction) as average_deduction');
         $this->db->group_by(['farm_name', 'pm_year', 'pm_week']);
+        $this->load->helper('acceso');
+        if (acceso_finca() !== null) {
+            $this->db->where('farm_id', acceso_finca());
+        }
         // $this->db->having('SUM(bonus_discount) > 0 OR AVG(deduction) > 0');
         $query = $this->db->get('vw_lfp_ajuste_pago');
 

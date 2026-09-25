@@ -70,6 +70,8 @@ class Historiatarifas extends Public_controller {
 
             $crud->callback_before_update(array($this,'grabar_historial_callback'));
 
+            acceso_crud($crud, 'z_tarifas_historia', '{t}.subtarea_id IN (SELECT id FROM z_subtarea WHERE id_finca = {f})');
+
             $output = $crud->render();
 
             

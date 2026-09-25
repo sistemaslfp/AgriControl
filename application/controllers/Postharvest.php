@@ -147,6 +147,14 @@ class Postharvest extends Public_controller
             $finca = $this->input->get('id_finca');
         }
 
+        if (acceso_finca() !== null) {
+            $finca = acceso_finca();
+            acceso_crud($crud, 'vw_lfp_postharvest_rpt', 'EXISTS (SELECT 1 FROM pc_proceso_cosecha pcc'
+                . ' JOIN lfp_cosecha c ON c.id = pcc.cosecha_id'
+                . ' JOIN lfp_am a ON a.id = c.lfp_am_id'
+                . ' WHERE pcc.pc_proceso_id = {t}.id AND a.finca_id = {f})');
+        }
+
         $inicio = 'COALESCE(fi_presecado, fecha_pesaje)';
 
         if ($desde && strtotime($desde) !== false) {
@@ -240,6 +248,7 @@ class Postharvest extends Public_controller
 
         $crud->set_theme('tablestrap4_datefilter');
         $crud->set_table('pc_calidad_fermentacion');
+        $this->_restringirProceso($crud, 'pc_calidad_fermentacion');
         $crud->set_subject('Calidad Fermentado');
         $crud->unset_jquery();
         $crud->unset_add();
@@ -282,6 +291,7 @@ class Postharvest extends Public_controller
 
         $crud->set_theme('tablestrap4_datefilter');
         $crud->set_table('pc_calidad_secado');
+        $this->_restringirProceso($crud, 'pc_calidad_secado');
         $crud->set_subject('Calidad Secado');
         $crud->unset_add();
         $crud->unset_delete();
@@ -321,6 +331,15 @@ class Postharvest extends Public_controller
         $this->load->view('Crud/farm-date_filter', (array) $output);
     }
 
+    // pc_proceso no tiene finca: la hereda de las cosechas que agrupa.
+    private function _restringirProceso($crud, $tabla)
+    {
+        acceso_crud($crud, $tabla, 'EXISTS (SELECT 1 FROM pc_proceso_cosecha pcc'
+            . ' JOIN lfp_cosecha c ON c.id = pcc.cosecha_id'
+            . ' JOIN lfp_am a ON a.id = c.lfp_am_id'
+            . ' WHERE pcc.pc_proceso_id = {t}.pc_proceso_id AND a.finca_id = {f})');
+    }
+
     private function _crudEtapa($etapa, $titulo)
     {
         $crud = new grocery_CRUD();
@@ -332,6 +351,7 @@ class Postharvest extends Public_controller
         $crud->unset_add();
         $crud->unset_delete();
         $crud->where('etapa', $etapa);
+        $this->_restringirProceso($crud, 'pc_etapa');
 
         return $crud;
     }

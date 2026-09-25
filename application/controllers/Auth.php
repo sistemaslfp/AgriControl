@@ -14,7 +14,7 @@ class Auth extends CI_Controller
 		parent::__construct();
 		$this->load->database();
 		$this->load->library(['ion_auth', 'form_validation']);
-		$this->load->helper(['url', 'language']);
+		$this->load->helper(['url', 'language', 'acceso']);
 
 		$this->form_validation->set_error_delimiters($this->config->item('error_start_delimiter', 'ion_auth'), $this->config->item('error_end_delimiter', 'ion_auth'));
 
@@ -36,6 +36,7 @@ class Auth extends CI_Controller
 		}
 
 		$data_template['grupo'] = $grupo_id;
+		$data_template['acceso'] = acceso_usuario();
 
 
 		$this->output->set_template('admin/index', $data_template);
@@ -75,9 +76,12 @@ class Auth extends CI_Controller
 			//USAGE NOTE - you can do more complicated queries like this
 			//$this->data['users'] = $this->ion_auth->where('field', 'value')->users()->result();
 			
+			$fincas = $this->_opcionesFinca();
+
 			foreach ($this->data['users'] as $k => $user)
 			{
 				$this->data['users'][$k]->groups = $this->ion_auth->get_users_groups($user->id)->result();
+				$this->data['users'][$k]->hacienda = (isset($user->finca_id) && isset($fincas[$user->finca_id])) ? $fincas[$user->finca_id] : $fincas[''];
 			}
 
 			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'index', $this->data);
@@ -508,8 +512,8 @@ class Auth extends CI_Controller
 		$this->data['identity_column'] = $identity_column;
 
 		// validate form input
-		$this->form_validation->set_rules('first_name', $this->lang->line('create_user_validation_fname_label'), 'trim|required');
-		$this->form_validation->set_rules('last_name', $this->lang->line('create_user_validation_lname_label'), 'trim|required');
+		$this->form_validation->set_rules('grupo', 'Rol', 'required|integer');
+		$this->form_validation->set_rules('finca_id', 'Hacienda', 'trim');
 		if ($identity_column !== 'email')
 		{
 			$this->form_validation->set_rules('identity', $this->lang->line('create_user_validation_identity_label'), 'trim|required|is_unique[' . $tables['users'] . '.' . $identity_column . ']');
@@ -524,20 +528,27 @@ class Auth extends CI_Controller
 		$this->form_validation->set_rules('password', $this->lang->line('create_user_validation_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|matches[password_confirm]');
 		$this->form_validation->set_rules('password_confirm', $this->lang->line('create_user_validation_password_confirm_label'), 'required');
 
+		$rol = NULL;
 		if ($this->form_validation->run() === TRUE)
 		{
 			$email = strtolower($this->input->post('email'));
 			$identity = ($identity_column === 'email') ? $email : $this->input->post('identity');
 			$password = $this->input->post('password');
 
-			$additional_data = [
-				'first_name' => $this->input->post('first_name'),
-				'last_name' => $this->input->post('last_name'),
-				'company' => $this->input->post('company'),
-				'phone' => $this->input->post('phone'),
-			];
+			$rol = $this->_rolYFinca($this->input->post('grupo'), $this->input->post('finca_id'));
+
+			if (is_array($rol))
+			{
+				$fincas = $this->_opcionesFinca();
+				$additional_data = [
+					'first_name' => $identity,
+					'last_name' => $fincas[(string) $rol['finca_id']],
+					'phone' => $this->input->post('phone'),
+					'finca_id' => $rol['finca_id'],
+				];
+			}
 		}
-		if ($this->form_validation->run() === TRUE && $this->ion_auth->register($identity, $password, $email, $additional_data))
+		if (is_array($rol) && $this->ion_auth->register($identity, $password, $email, $additional_data, [$rol['grupo']]))
 		{
 			// check to see if we are creating the user
 			// redirect them back to the admin page
@@ -548,20 +559,12 @@ class Auth extends CI_Controller
 		{
 			// display the create user form
 			// set the flash data error message if there is one
-			$this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+			$this->data['message'] = (validation_errors() ? validation_errors() : (is_string($rol) ? '<p>' . $rol . '</p>' : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message'))));
 
-			$this->data['first_name'] = [
-				'name' => 'first_name',
-				'id' => 'first_name',
-				'type' => 'text',
-				'value' => $this->form_validation->set_value('first_name'),
-			];
-			$this->data['last_name'] = [
-				'name' => 'last_name',
-				'id' => 'last_name',
-				'type' => 'text',
-				'value' => $this->form_validation->set_value('last_name'),
-			];
+			$this->data['grupos'] = $this->_opcionesGrupo();
+			$this->data['grupo_actual'] = $this->form_validation->set_value('grupo');
+			$this->data['fincas'] = $this->_opcionesFinca();
+			$this->data['finca_actual'] = $this->form_validation->set_value('finca_id');
 			$this->data['identity'] = [
 				'name' => 'identity',
 				'id' => 'identity',
@@ -635,10 +638,13 @@ class Auth extends CI_Controller
 	
 
 		// validate form input
-		$this->form_validation->set_rules('first_name', $this->lang->line('edit_user_validation_fname_label'), 'trim|required');
-		$this->form_validation->set_rules('last_name', $this->lang->line('edit_user_validation_lname_label'), 'trim|required');
 		$this->form_validation->set_rules('phone', $this->lang->line('edit_user_validation_phone_label'), 'trim');
-		$this->form_validation->set_rules('company', $this->lang->line('edit_user_validation_company_label'), 'trim');
+		if ($this->ion_auth->is_admin())
+		{
+			$this->form_validation->set_rules('grupo', 'Rol', 'required|integer');
+			$this->form_validation->set_rules('finca_id', 'Hacienda', 'trim');
+		}
+		$errorRol = NULL;
 
 		if (isset($_POST) && !empty($_POST))
 		{
@@ -655,14 +661,29 @@ class Auth extends CI_Controller
 				$this->form_validation->set_rules('password_confirm', $this->lang->line('edit_user_validation_password_confirm_label'), 'required');
 			}
 
-			if ($this->form_validation->run() === TRUE)
+			$rol = NULL;
+			if ($this->form_validation->run() === TRUE && $this->ion_auth->is_admin())
+			{
+				$rol = $this->_rolYFinca($this->input->post('grupo'), $this->input->post('finca_id'));
+				if (is_string($rol))
+				{
+					$errorRol = $rol;
+				}
+			}
+
+			if ($this->form_validation->run() === TRUE && $errorRol === NULL)
 			{
 				$data = [
-					'first_name' => $this->input->post('first_name'),
-					'last_name' => $this->input->post('last_name'),
-					'company' => $this->input->post('company'),
 					'phone' => $this->input->post('phone'),
 				];
+
+				// Solo el admin cambia rol y hacienda; un usuario editando su propia ficha no.
+				if (is_array($rol))
+				{
+					$fincas = $this->_opcionesFinca();
+					$data['finca_id'] = $rol['finca_id'];
+					$data['last_name'] = $fincas[(string) $rol['finca_id']];
+				}
 
 				// update the password if it was posted
 				if ($this->input->post('password'))
@@ -670,21 +691,11 @@ class Auth extends CI_Controller
 					$data['password'] = $this->input->post('password');
 				}
 
-				// Only allow updating groups if user is admin
-				if ($this->ion_auth->is_admin())
+				// Un solo rol por usuario: el menu y los permisos leen el primer grupo.
+				if (is_array($rol))
 				{
-					// Update the groups user belongs to
 					$this->ion_auth->remove_from_group('', $id);
-					
-					$groupData = $this->input->post('groups');
-					if (isset($groupData) && !empty($groupData))
-					{
-						foreach ($groupData as $grp)
-						{
-							$this->ion_auth->add_to_group($grp, $id);
-						}
-
-					}
+					$this->ion_auth->add_to_group($rol['grupo'], $id);
 				}
 
 				// check to see if we are updating the user
@@ -710,31 +721,16 @@ class Auth extends CI_Controller
 		$this->data['csrf'] = $this->_get_csrf_nonce();
 
 		// set the flash data error message if there is one
-		$this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+		$this->data['message'] = (validation_errors() ? validation_errors() : ($errorRol !== NULL ? '<p>' . $errorRol . '</p>' : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message'))));
 
 		// pass the user to the view
 		$this->data['user'] = $user;
 		$this->data['groups'] = $groups;
 		$this->data['currentGroups'] = $currentGroups;
-
-		$this->data['first_name'] = [
-			'name'  => 'first_name',
-			'id'    => 'first_name',
-			'type'  => 'text',
-			'value' => $this->form_validation->set_value('first_name', $user->first_name),
-		];
-		$this->data['last_name'] = [
-			'name'  => 'last_name',
-			'id'    => 'last_name',
-			'type'  => 'text',
-			'value' => $this->form_validation->set_value('last_name', $user->last_name),
-		];
-		$this->data['company'] = [
-			'name'  => 'company',
-			'id'    => 'company',
-			'type'  => 'text',
-			'value' => $this->form_validation->set_value('company', $user->company),
-		];
+		$this->data['grupos'] = $this->_opcionesGrupo();
+		$this->data['grupo_actual'] = $this->form_validation->set_value('grupo', $currentGroups ? $currentGroups[0]['id'] : '');
+		$this->data['fincas'] = $this->_opcionesFinca();
+		$this->data['finca_actual'] = $this->form_validation->set_value('finca_id', isset($user->finca_id) ? $user->finca_id : '');
 		$this->data['phone'] = [
 			'name'  => 'phone',
 			'id'    => 'phone',
@@ -881,6 +877,54 @@ class Auth extends CI_Controller
 	/**
 	 * @return array A CSRF key-value pair
 	 */
+	// '' = todas las haciendas (usuario global).
+	private function _opcionesFinca()
+	{
+		$fincas = ['' => 'Todas (global)'];
+		foreach ($this->db->order_by('id')->get('z_finca')->result() as $finca)
+		{
+			$fincas[$finca->id] = $finca->nombre;
+		}
+		return $fincas;
+	}
+
+	private function _opcionesGrupo()
+	{
+		$grupos = [];
+		foreach ($this->ion_auth->groups()->result() as $grupo)
+		{
+			$grupos[$grupo->id] = $grupo->name;
+		}
+		return $grupos;
+	}
+
+	// Devuelve ['grupo' => id, 'finca_id' => id|NULL] o el texto del error.
+	private function _rolYFinca($grupo, $finca)
+	{
+		$grupo = (int) $grupo;
+		$finca = ($finca === NULL || $finca === '') ? NULL : (int) $finca;
+		$fincas = $this->_opcionesFinca();
+
+		if (!array_key_exists($grupo, $this->_opcionesGrupo()))
+		{
+			return 'Seleccione un rol valido.';
+		}
+		if ($finca !== NULL && !isset($fincas[$finca]))
+		{
+			return 'Seleccione una hacienda valida.';
+		}
+		if ($grupo == 1)
+		{
+			$finca = NULL;
+		}
+		if ($grupo == 4 && $finca === NULL)
+		{
+			return 'El administrador de hacienda necesita una hacienda asignada.';
+		}
+
+		return ['grupo' => $grupo, 'finca_id' => $finca];
+	}
+
 	public function _get_csrf_nonce()
 	{
 		$this->load->helper('string');

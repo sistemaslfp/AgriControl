@@ -83,8 +83,10 @@ Detalle completo y diagnóstico: `docs/context/07-entorno.md`.
 
 - Grocery CRUD **exige** que la tabla tenga PK; para vistas SQL se fuerza con
   `$crud->set_primary_key('col')` (ver `AM.php`).
-- Los permisos se resuelven a mano con `$this->ion_auth->get_users_groups()->row()->id`
-  comparando `1` (admin) y `2` (supervisor). No hay capa de ACL unificada.
+- Permisos y hacienda: `application/helpers/acceso_helper.php` (lo carga `MY_Controller`).
+  Grupos 1 admin global, 2 Supervisor, 3 Operador (lectura), 4 Admin hacienda;
+  `users.finca_id` NULL = todas. En un CRUD nuevo usar `acceso_exigir()` y
+  `acceso_crud()`/`acceso_crud_finca()`; ocultar el selector no filtra nada.
 - Hay **acentos mal codificados** en comentarios de varios controladores
   (mojibake). No los "arregles" masivamente: ensucia el diff.
 - **La API vigente es `application/controllers/V3.php`** (decisión del equipo,

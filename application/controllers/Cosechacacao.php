@@ -111,6 +111,8 @@ class Cosechacacao extends Public_controller
 				}
 			}
 
+			acceso_crud($crud, 'vw_lfp_cosecha', '{t}.finca_id = {f}');
+
 			$output = $crud->render();
 
 			$data['listadoFincas'] = $this->fincas_model->getFincasCombobox();
@@ -150,6 +152,7 @@ class Cosechacacao extends Public_controller
 
 			$crud->callback_column('fecha', array($this, '_soloFecha'));
 			$crud->where('cosecha_id', (int) $this->input->get('cosecha_id'));
+			acceso_crud($crud, 'vw_lfp_cosecha_saco', '{t}.lfp_am_id IN (SELECT id FROM lfp_am WHERE finca_id = {f})');
 			$crud->order_by('numero', 'asc');
 
 			$output = $crud->render();
@@ -279,6 +282,7 @@ class Cosechacacao extends Public_controller
 
 			// $crud->callback_column('jornales', array($this, '_sumWageColumn_callback'));
 
+			acceso_crud($crud, $currentTable, '{t}.finca = {f}');
 
 			$output = $crud->render();
 

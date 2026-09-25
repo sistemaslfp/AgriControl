@@ -52,8 +52,6 @@ class Modulo extends Public_controller {
 
 			$crud->set_relation('lote_id','z_lote', 'lote');
 			
-			$group = $this->ion_auth->get_users_groups()->row()->id;
-
 			// BORRAR UN MODULO NO SE PERMITE, NI SIQUIERA AL ADMIN.
 			//
 			// Antes solo se le quitaba al grupo != 1, y el resultado esta en
@@ -67,10 +65,13 @@ class Modulo extends Public_controller {
 			// /v4/catalogos y de los selectores de la app, pero los registros
 			// historicos siguen apuntando a algo.
 			$crud->unset_delete();
-			unset($group);
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
+			acceso_exigir('maestras');
+
+			if (acceso_finca() !== null) {
+				acceso_crud($crud, 'z_modulo', '{t}.lote_id IN (SELECT id FROM z_lote WHERE finca_id = {f})');
+				$crud->set_relation('lote_id', 'z_lote', 'lote', array('finca_id' => acceso_finca()));
+				acceso_validar_lote($crud, 'lote_id');
 			}
 
 			

@@ -13,7 +13,16 @@ class Reporteam_model  extends CI_Model  {
     	return $this->db->table_exists($table_name);
     }
 
+    // La vista solo trae el nombre de la finca en mayusculas, no el id.
+    private function _filtrarFinca() {
+        $this->load->helper('acceso');
+        if (acceso_finca() !== null) {
+            $this->db->where('finca = (SELECT UCASE(nombre) FROM z_finca WHERE id = ' . (int) acceso_finca() . ')', null, false);
+        }
+    }
+
     function get_am_view($anno, $semana) {
+        $this->_filtrarFinca();
         $this->db->select('*');
         $this->db->where('semana', $semana);
         $this->db->where('anno', $anno);
@@ -24,6 +33,7 @@ class Reporteam_model  extends CI_Model  {
     }
 
     function get_annos() {
+        $this->_filtrarFinca();
         $this->db->select('anno');
         $this->db->distinct();
         $this->db->order_by('anno', 'ASC');
@@ -32,6 +42,7 @@ class Reporteam_model  extends CI_Model  {
     }
 
     function get_semanas() {
+        $this->_filtrarFinca();
         $this->db->select('semana');
         $this->db->distinct();
         $this->db->order_by('semana', 'ASC');

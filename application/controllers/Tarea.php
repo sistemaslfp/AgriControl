@@ -42,9 +42,7 @@ class Tarea extends Public_controller {
 					$crud->unset_delete();
 				}
 	
-				if ($group != 1 && $group != 2) {
-					redirect('/', 'refresh');
-				}
+				acceso_exigir('admin_global');
 	
 				$crud->set_theme('tablestrap4');
 				$crud->set_table('z_tarea');

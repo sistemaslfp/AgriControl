@@ -51,13 +51,57 @@ No saltarse ningún punto, incluso para cambios chicos:
    dump de estructura y datos de `lfp_prodapp` puede pesar varias decenas de
    MB (el dump de referencia en `docs/db/init/01-schema.sql` pesa ~25 MB).
 
-## 3. Archivos que NO se deben pisar al copiar código nuevo
+## 3. Qué copiar y qué no tocar al actualizar
 
-Esta es la parte que responde directamente "qué copiar y pegar antes de
-seguir": la actualización trae código nuevo, pero los siguientes archivos y
-carpetas son **locales a esta máquina** y deben preservarse o revisarse a
-mano después de copiar, nunca reemplazarse en bloque por la versión del
-paquete de actualización:
+### 3.1 Qué SÍ se copia — el código de la mejora
+
+Lo que normalmente trae una actualización de este proyecto (features nuevas,
+correcciones, ajustes de pantallas) son cambios dentro de `application/`. En
+el caso típico, esto es lo que se copia de la carpeta nueva a la carpeta
+activa:
+
+| Carpeta / archivo | Contenido |
+|---|---|
+| `application/controllers/*.php` | Pantallas Grocery CRUD, módulos de `Operations/PM/`, controladores de la API (`V1/V2/V3.php`) |
+| `application/models/*.php` | Queries (Query Builder de CI) |
+| `application/views/**` | Wrappers de Grocery CRUD (`views/Crud/`) y el layout (`views/themes/admin/`) |
+| `application/core/*.php` | `MY_Controller.php`, `Public_Controller`, `Auth_Controller`, si cambiaron |
+| `application/helpers/*.php` | Helpers propios |
+| `application/hooks/*.php` | Si el proyecto usa hooks de CI |
+| `application/libraries/*.php` | Librerías propias (no confundir con `application/third_party/`, que es de terceros) |
+| `application/language/*.php` | Si cambió texto de interfaz |
+| `application/config/*.php` **excepto** `database.php` | El resto de la config (rutas, autoload, `ion_auth.php`, etc.) normalmente sí se actualiza — sólo `database.php` queda fuera por tener las credenciales reales (sección 3.2) |
+| `public/assets/**` propio del proyecto | CSS/JS/imágenes de la app (no lo que viene empaquetado con Grocery CRUD, salvo que se esté actualizando esa librería — ver abajo) |
+
+**Casos raros — sólo si la actualización lo dice explícitamente**, porque
+`CLAUDE.md` los marca como "nunca editar" salvo pedido explícito:
+
+- `system/` — sólo si se decide subir de versión CodeIgniter (no es el caso
+  normal; regla dura #3 de `CLAUDE.md`).
+- `vendor/`, `application/vendor/`, `application/third_party/` — sólo si se
+  está actualizando una librería de terceros puntual (Grocery CRUD, Ion Auth).
+  Si no es ese el cambio, esta carpeta **no se toca**.
+- `public/index.php` — sólo si cambió lógica del punto de entrada en sí (no la
+  línea de `ENVIRONMENT`, que es local — sección 3.2). Si sólo cambia esa
+  línea entre versiones del repo, no se copia: se ajusta a mano.
+- `composer.json` / `composer.lock` — sólo si se agregó o cambió una
+  dependencia real. Hoy Composer sólo instala `phpdotenv`, que el código nunca
+  usa (`docs/context/07-entorno.md`), así que en la práctica este archivo casi
+  nunca necesita tocarse en producción.
+
+**Cómo saber exactamente qué archivos trae la actualización**, ya que hoy no
+hay script de deploy ni tabla de versiones: si la carpeta activa es un repo
+git, comparar contra el commit anotado en el paso 3 de la sección 2
+(`git diff --name-only <commit-anterior> <commit-nuevo>`) da la lista exacta.
+Si no es un repo git, la única forma confiable es comparar carpeta contra
+carpeta (por fecha de modificación o por checksum) antes de copiar a ciegas.
+
+### 3.2 Qué NO se debe pisar
+
+Esta es la otra mitad: aunque la tabla de arriba diga "sí se copia", los
+siguientes archivos y carpetas son **locales a esta máquina** y deben
+preservarse o revisarse a mano después de copiar, nunca reemplazarse en
+bloque por la versión del paquete de actualización:
 
 | Archivo / carpeta | Por qué no se pisa |
 |---|---|

@@ -60,9 +60,7 @@ class Riego extends Public_controller
 				->display_as('volumen_riego', 'Volumen riego')
 				->display_as('observaciones', 'Observaciones');
 
-			$group = $this->ion_auth->get_users_groups()->row()->id;
-
-			if ($group != 1 && $group != 2) {
+			if (!acceso_puede('edita')) {
 				$crud->unset_edit();
 			}
 
@@ -99,6 +97,12 @@ class Riego extends Public_controller
 			$crud->set_relation('finca_id', 'z_finca', 'nombre');
 			$crud->set_relation('modulo_id', 'z_modulo', 'modulo');
 			$crud->set_relation('lote_id', 'z_lote', 'lote');
+
+			if (acceso_finca() !== null) {
+				acceso_crud_finca($crud, 'lfp_riego', 'finca_id');
+				$crud->set_relation('lote_id', 'z_lote', 'lote', array('finca_id' => acceso_finca()));
+				$crud->set_relation('modulo_id', 'z_modulo', 'modulo', 'lote_id IN (' . acceso_lotes_sql() . ')');
+			}
 
 			$crud->callback_column('tiempo_riego_min', array($this, 'minutosADecimal'));
 			$crud->callback_add_field('fecha_proceso', array($this, '_campoFecha'));

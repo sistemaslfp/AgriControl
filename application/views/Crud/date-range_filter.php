@@ -15,9 +15,11 @@
     	    <span>Filtros Reporte:</span>
     		<form action="" method="get" id="amForm">
     		    <div style="float:left; display: inline; width:40%; padding-right: 20px;">
+                    <?php $fincasFiltro = isset($data['listadoFincas']) ? $data['listadoFincas'] : array(); ?>
+<?php if (count($fincasFiltro) != 1): ?>
                     <select name="id_finca" id="id_finca" style="width: 100%; float: left; min-height: 35px; padding: 6px 12px">
                         <?php 
-                        $listadoFincas = $data['listadoFincas'];
+                        $listadoFincas = $fincasFiltro;
                         $IdFinca = 0;
                         if (isset($_GET["id_finca"])){   
                             $IdFinca = $_GET["id_finca"];
@@ -27,7 +29,11 @@
                             echo '<option value="'.$key.'" '.$selectedAtt.'>'.$value.'</option>';
                         }
                         ?>
-                    </select>		        
+                    </select>
+                    <?php else: ?>
+                    <input type="hidden" name="id_finca" id="id_finca" value="<?= key($fincasFiltro) ?>">
+                    <strong style="line-height: 35px">Hacienda: <?= htmlspecialchars(current($fincasFiltro), ENT_QUOTES, 'UTF-8') ?></strong>
+                    <?php endif; ?>		        
     		    </div>
                 <div style="float:left; display: inline; width:10%">
                     <div>

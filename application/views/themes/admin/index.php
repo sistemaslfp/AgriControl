@@ -110,6 +110,7 @@
             <div class="profile_info">
               <span>Bienvenido,</span>
               <h2><?= $data_template['username'] ?></h2>
+              <span><?= $data_template['acceso']['finca_nombre'] !== null ? htmlspecialchars($data_template['acceso']['finca_nombre'], ENT_QUOTES, 'UTF-8') : 'Todas las haciendas' ?></span>
             </div>
           </div>
           <!-- /menu profile quick info -->
@@ -124,7 +125,7 @@
                 <li><a><i class="fa fa-dashboard"></i> Tablero de control <span class="fa fa-chevron-down"></span></a>
                   <ul class="nav child_menu">
                     <li><a href="<?php echo site_url('PM/reportePagos') ?>">Reporte de pago</a></li>
-                    <?php if ($data_template['grupo'] < 3) { ?>
+                    <?php if ($data_template['acceso']['edita']) { ?>
                       <li><a href="<?php echo site_url('PM/editarPM') ?>">-- 📝 Editar reportes de pago</a></li>
                       <li><a href="<?php echo site_url('Operations/PM/PaymentAdjustment') ?>">-- 💲 Registrar Ajustes de pago</a></li>
                       <li><a href="<?php echo site_url('Operations/PM/PaymentAdjustment/listAdjustments') ?>">-- 📄 Ver Ajustes de pago</a></li>
@@ -141,32 +142,38 @@
                 </li>
               </ul>
             </div>
-            <?php if ($data_template['grupo'] < 3) { ?>
+            <?php if ($data_template['acceso']['maestras']) { $global = $data_template['acceso']['admin_global']; ?>
               <div class="menu_section">
                 <h3>Maestros</h3>
                 <ul class="nav side-menu">
                   <li><a><i class="fa fa-table"></i> Tablas maestras <span class="fa fa-chevron-down"></span></a>
                     <ul class="nav child_menu">
                       <li><a href="<?php echo site_url('Personal') ?>">Personal </a></li>
+                      <?php if ($global) { ?>
                       <li><a href="<?php echo site_url('Personal/roles') ?>">---Roles </a></li>
                       <li><a href="<?php echo site_url('Personal/estado') ?>">---Estado </a></li>
                       <li><a href="<?php echo site_url('Tarea') ?>">Tareas </a></li>
+                      <?php } ?>
                       <li><a href="<?php echo site_url('Subtarea') ?>">Subtareas </a></li>
+                      <?php if ($global) { ?>
                       <li><a href="<?php echo site_url('PmCostGroup') ?>">---Grupos de costo</a></li>
                       <li><a href="<?php echo site_url('Subtarea/tipoPago') ?>">---Tipo de Pago</a></li>
                       <li><a href="<?php echo site_url('Subtarea/unidadlabor') ?>">---Unidades de labor</a></li>
                       <li><a href="<?php echo site_url('Finca') ?>">Fincas</a></li>
+                      <?php } ?>
                       <li><a href="<?php echo site_url('Lote') ?>">Lotes</a></li>
                       <li><a href="<?php echo site_url('Modulo') ?>">M&oacute;dulos</a></li>
+                      <?php if ($global) { ?>
                       <li><a href="<?php echo site_url('Cultivos') ?>">Cultivos</a></li>
                       <li><a href="<?php echo site_url('Operations/PM/PaymentAdjustment/rateConversion') ?>">Factor Conversión Pagos</a></li>
+                      <?php } ?>
                     </ul>
                   </li>
                 </ul>
               </div>
             <?php } ?>
 
-            <?php if ($data_template['grupo'] == 1) { ?>
+            <?php if ($data_template['acceso']['admin_global']) { ?>
               <div class="menu_section">
                 <h3>Administrador</h3>
                 <ul class="nav side-menu">

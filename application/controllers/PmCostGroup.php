@@ -26,6 +26,7 @@ class PmCostGroup extends Public_controller {
 
         //$crud->set_theme('tablestrap4_datefilter');
         $crud->set_theme('tablestrap4_datefilter');
+        acceso_exigir('admin_global');
         $crud->set_table('tbl_pm_cost_groups');
         $crud->set_subject('Cost Group');
         // $crud->unset_jquery();  

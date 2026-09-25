@@ -53,6 +53,7 @@ class Lote extends Public_controller
 			);
 
 			$crud->set_relation('finca_id', 'z_finca', 'nombre');
+			acceso_crud_finca($crud, 'z_lote', 'finca_id');
 
 			$crud->order_by('lote');
 
@@ -63,9 +64,7 @@ class Lote extends Public_controller
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('maestras');
 
 			//$crud->callback_before_insert(array($this,'ino_to_upper'));
 

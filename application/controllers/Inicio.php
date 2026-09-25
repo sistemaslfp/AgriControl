@@ -26,7 +26,7 @@ class Inicio extends Public_controller {
 	public function index()
 	{
 		// $this->load->view('Blog/home');
-		if ($this->agent->is_mobile()) {
+		if ($this->agent->is_mobile() && acceso_puede('maestras')) {
 		    redirect('Personal'); 
 		} else {
 		    redirect('PM/reportePagos'); 

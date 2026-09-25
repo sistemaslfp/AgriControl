@@ -97,6 +97,8 @@ class AM extends Public_controller {
 
         }
 
+        acceso_crud($crud, 'vw_lfp_reporte_am_base', '{t}.id_finca = {f}', 'operario');
+
         $output = $crud->render();
 
         $data_view['title'] = 'Reporte AM';

@@ -24,6 +24,8 @@ class Payment extends Public_Controller
         $this->load->library('grocery_CRUD');
         $this->load->model('fincas_model');
 
+        acceso_exigir('edita');
+
         $this->_init();
     }
 

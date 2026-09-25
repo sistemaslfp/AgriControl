@@ -12,6 +12,9 @@ class MY_Controller extends CI_Controller {
 		  redirect('auth/login');
 		}
 
+		$this->load->helper('acceso');
+		acceso_forzar_parametros();
+
 		$this->_init();
 		
 	}
@@ -21,6 +24,7 @@ class MY_Controller extends CI_Controller {
 	    
 		$data_template['username'] = $this->session->userdata('username');
         $data_template['grupo'] = $this->ion_auth->get_users_groups()->row()->id;
+        $data_template['acceso'] = acceso_usuario();
 
 		$this->output->set_template('admin/index', $data_template);
 
@@ -67,6 +71,7 @@ class Public_Controller extends MY_Controller {
              */
     		$data_template['username'] = $this->session->userdata('username');
             $data_template['grupo'] = $this->ion_auth->get_users_groups()->row()->id;             
+            $data_template['acceso'] = acceso_usuario();
             $this->output->set_template('admin/index_mobile', $data_template);
         }
         

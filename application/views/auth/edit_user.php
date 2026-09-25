@@ -6,18 +6,8 @@
 <?php echo form_open(uri_string());?>
 
       <p>
-            <?php echo lang('edit_user_fname_label', 'first_name');?> <br />
-            <?php echo form_input($first_name);?>
-      </p>
-
-      <p>
-            <?php echo lang('edit_user_lname_label', 'last_name');?> <br />
-            <?php echo form_input($last_name);?>
-      </p>
-
-      <p>
-            <?php echo lang('edit_user_company_label', 'company');?> <br />
-            <?php echo form_input($company);?>
+            <label>Usuario</label> <br />
+            <strong><?php echo htmlspecialchars($user->username, ENT_QUOTES, 'UTF-8');?></strong>
       </p>
 
       <p>
@@ -37,13 +27,16 @@
 
       <?php if ($this->ion_auth->is_admin()): ?>
 
-          <h3><?php echo lang('edit_user_groups_heading');?></h3>
-          <?php foreach ($groups as $group):?>
-              <label class="checkbox">
-              <input type="checkbox" name="groups[]" value="<?php echo $group['id'];?>" <?php echo (in_array($group, $currentGroups)) ? 'checked="checked"' : null; ?>>
-              <?php echo htmlspecialchars($group['name'],ENT_QUOTES,'UTF-8');?>
-              </label>
-          <?php endforeach?>
+      <p>
+            <label for="grupo">Rol</label> <br />
+            <?php echo form_dropdown('grupo', $grupos, $grupo_actual, 'id="grupo"');?>
+      </p>
+
+      <p>
+            <label for="finca_id">Hacienda</label> <br />
+            <?php echo form_dropdown('finca_id', $fincas, $finca_actual, 'id="finca_id"');?>
+            <br /><small>El rol admin siempre es global. El admin de hacienda necesita una hacienda.</small>
+      </p>
 
       <?php endif ?>
 

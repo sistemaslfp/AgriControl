@@ -49,9 +49,7 @@ class Cultivos extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('admin_global');
 
 
 			$crud->field_type('estado','dropdown',

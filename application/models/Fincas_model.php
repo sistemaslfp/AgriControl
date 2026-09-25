@@ -20,13 +20,21 @@ class Fincas_model  extends CI_Model  {
         return $fincas;
     }
     
+    // Usuario de una sola hacienda: el combo trae solo esa y las vistas ocultan el selector.
     function getFincasCombobox()
     {
+        $this->load->helper('acceso');
+        $propia = acceso_finca();
+
+        if ($propia !== null) {
+            $this->db->where('id', $propia);
+        }
+
         $query = $this->db->get('z_finca');
         $result = $query->result();
 
-        $finca_id = array('0');
-        $finca_nombre = array('-TODAS LAS FINCAS-');
+        $finca_id = $propia !== null ? array() : array('0');
+        $finca_nombre = $propia !== null ? array() : array('-TODAS LAS FINCAS-');
         
         for ($i = 0; $i < count($result); $i++)
         {

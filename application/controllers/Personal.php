@@ -48,9 +48,7 @@ class Personal extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('maestras');
 
 			$crud->order_by('nombre');
 			
@@ -79,6 +77,7 @@ class Personal extends Public_controller {
 
 			$crud->set_relation('rol', 'z_personal_roles', 'rol_descripcion');
 			$crud->set_relation('id_finca', 'z_finca', 'nombre');
+			acceso_crud_finca($crud, 'z_personal', 'id_finca');
 
 			$crud->field_type('rol_app','dropdown',
 			array('1' => 'Operario', '2' => 'Supervisor','0' => 'No aparece en app móvil'));
@@ -110,9 +109,7 @@ class Personal extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('admin_global');
 
 			$crud->set_theme('tablestrap4');
 			$crud->set_table('z_personal_roles');
@@ -143,9 +140,7 @@ class Personal extends Public_controller {
 				$crud->unset_delete();
 			}
 
-			if ($group != 1 && $group != 2) {
-				redirect('/', 'refresh');
-			}
+			acceso_exigir('admin_global');
 
 			$crud->set_theme('tablestrap4');
 			$crud->set_table('z_personal_estado');
