@@ -96,3 +96,16 @@
   width: 18px;
   height: 18px;
 }
+
+.modulos-persona .falta {
+  color: var(--ion-color-warning-shade, #b8860b);
+}
+
+.modulo-saco {
+  margin-inline-start: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.por-modulo span + span::before {
+  content: ' · ';
+}

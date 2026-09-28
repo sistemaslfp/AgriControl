@@ -102,6 +102,7 @@ const server = http.createServer((req, res) => {
           cultivo: 'CACAO',
           subtarea: SUBTAREAS[am.payload.subtarea_id] ?? 'Subtarea',
           modulos: (am.payload.modulo_ids ?? []).map((x) => MODULOS[x] ?? x).join(', ') || null,
+          modulo_ids: (am.payload.modulo_ids ?? []).join(',') || null,
           unidad_labor_id: UNIDAD_DE_SUBTAREA[am.payload.subtarea_id] ?? 2,
           unidad_labor: (UNIDAD_DE_SUBTAREA[am.payload.subtarea_id] ?? 2) === 4 ? 'Libra' : 'Jornal',
         });
@@ -250,6 +251,15 @@ const server = http.createServer((req, res) => {
           if (r.tipo === 'pm' && suyo === 'cosecha') {
             rs.push({ guid: r.guid, status: 'rejected',
                       reason: 'esa tarea es de Cosecha y se cierra desde su propia pantalla, no desde el PM' });
+            continue;
+          }
+          // Mismo criterio que sync_sacos_modulo() de V4.php.
+          const delAm = am.payload.modulo_ids ?? [];
+          const malSaco = r.tipo !== 'cosecha' ? null : (r.payload.sacos ?? []).find((s) =>
+            s.modulo_id == null ? delAm.length > 1 : !delAm.includes(s.modulo_id));
+          if (malSaco) {
+            rs.push({ guid: r.guid, status: 'rejected',
+                      reason: `el saco ${malSaco.numero} no dice de que modulo es, o no esta en la tarea de la manana` });
             continue;
           }
           const k = `${r.payload.am_guid}|${am.payload.personal_id}`;

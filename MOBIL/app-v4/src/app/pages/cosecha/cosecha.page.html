@@ -195,6 +195,27 @@
           </strong>
         </ion-label>
       </ion-item>
+      @let opciones = opcionesModulo(c);
+      @if (opciones.length === 1) {
+        <ion-item lines="none" class="modulos-persona">
+          <ion-label>
+            <p>Módulo</p>
+            <strong>{{ opciones[0].nombre }}</strong>
+          </ion-label>
+        </ion-item>
+      } @else if (opciones.length > 1) {
+        <ion-item button="true" detail="true" class="modulos-persona" (click)="abrirModulos(i)">
+          <ion-label>
+            Módulos que trabajó
+            <p [class.falta]="c.modulos.length === 0">{{ textoModulos(c) }}</p>
+          </ion-label>
+        </ion-item>
+        @if (c.modulos.length > 1) {
+          <ion-item lines="none">
+            <ion-note>Toca el módulo de cada saco para cambiarlo.</ion-note>
+          </ion-item>
+        }
+      }
       <ion-item>
         <ion-input
           label="¿Cuántos sacos?"
@@ -219,6 +240,19 @@
             (ionInput)="setLibras(i, s.numero, $any($event.target).value ?? '')"
             [attr.aria-label]="'Libras del saco ' + s.numero"
           ></ion-input>
+          @if (c.modulos.length > 1) {
+            @let m = moduloDeSaco(c, s);
+            <ion-chip
+              slot="end"
+              class="modulo-saco"
+              [outline]="m === null"
+              [color]="m === null ? 'warning' : 'primary'"
+              (click)="rotarModuloSaco(i, s.numero)"
+              [attr.aria-label]="'Módulo del saco ' + s.numero"
+            >
+              <ion-label>Mód. {{ nombreModulo(m) }}</ion-label>
+            </ion-chip>
+          }
           <ion-button
             slot="end"
             fill="clear"
@@ -317,6 +351,13 @@
               } · {{ c.asignacion.subtarea }}
             </p>
             <p>{{ totalSacos($index) }} saco(s) · {{ totalPeso($index) }} lb</p>
+            @if (librasPorModulo($index).length > 0) {
+              <p class="por-modulo">
+                @for (x of librasPorModulo($index); track x.nombre) {
+                  <span>Mód. {{ x.nombre }}: {{ x.libras }} lb</span>
+                }
+              </p>
+            }
           </ion-label>
         </ion-item>
       </ion-list>

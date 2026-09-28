@@ -55,7 +55,7 @@ Schema **`lfp_prodapp`** sobre **MariaDB 10.4.18**. Conviven dos generaciones:
 |---|---|---|
 | `lfp_am` | **una persona en una tarea**: programación de la mañana (AM) **y** su cierre (PM) en la misma fila | `guid` único; `cierre_guid` único; abierta si `cierre_guid IS NULL` |
 | `lfp_cosecha` | el cierre de un AM de cosecha | `lfp_am_id` único; su `guid` = `lfp_am.cierre_guid` |
-| `lfp_cosecha_saco` | un saco de una cosecha (`numero`, `libras`) | `(cosecha_id, numero)` |
+| `lfp_cosecha_saco` | un saco de una cosecha (`numero`, `libras`, `modulo_id` del AM) | `(cosecha_id, numero)` |
 | `lfp_riego` | una línea de bitácora de riego (lote, módulo, minutos, volumen) | `guid`. **No cuelga de `lfp_am`** |
 | `lfp_flag` | un rechazo, duplicado o error de `/v4/sync` (`origen`, `codigo`, `payload`) | la escribe `V4.php` |
 | `mig_descarte` | una fila v3 que no se migró o se migró marcada | `motivo`, `payload` |

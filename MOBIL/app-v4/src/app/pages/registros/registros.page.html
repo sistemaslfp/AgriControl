@@ -69,33 +69,9 @@
     }
   </div>
 
-  <!--
-    Un chip por módulo CON TRABAJO SIN SUBIR, y sólo en Pendientes. El chip es
-    un pendiente, no una estadística: en cuanto el módulo llega al servidor su
-    chip desaparece. Sin chips = no falta nada por enviar.
-  -->
-  @if (vista() === 'pendientes' && chips().length > 0) {
-    <div class="chips-tipo">
-      @for (c of chips(); track c.tipo) {
-        <ion-chip
-          class="chip-modulo"
-          [outline]="filtroTipo() !== c.tipo"
-          (click)="filtrar(c.tipo)"
-          [attr.aria-pressed]="filtroTipo() === c.tipo"
-          [attr.aria-label]="c.etiqueta + ': ' + c.pendientes + ' sin enviar'"
-        >
-          <ion-label>
-            {{ c.etiqueta }}
-            <span class="cuenta pend">{{ c.pendientes }}</span>
-          </ion-label>
-        </ion-chip>
-      }
-    </div>
-  }
-
   @if (cargando()) {
     <div class="banner info"><ion-spinner name="crescent"></ion-spinner> Cargando…</div>
-  } @else if (visibles().length === 0) {
+  } @else if (tarjetas().length === 0) {
     <div class="banner info sin-registros">
       @if (vista() === 'pendientes') {
         No hay nada esperando para enviarse. Todo lo capturado llegó al servidor.
@@ -104,8 +80,33 @@
       }
     </div>
   } @else {
-    <ion-list inset="true">
-      @for (t of visibles(); track t.clave) {
+    <!-- Una categoria por modulo (Kevin, 2026-09-28), plegable. -->
+    @for (sec of secciones(); track sec.cat) {
+    <ion-list inset="true" class="seccion-registros" [attr.data-cat]="sec.cat">
+      <ion-item
+        class="categoria-registros"
+        lines="full"
+        button="true"
+        [detail]="false"
+        (click)="alternar(sec)"
+        [attr.aria-expanded]="abierta(sec)"
+      >
+        <ion-icon
+          slot="start"
+          [name]="abierta(sec) ? 'chevron-down-outline' : 'chevron-forward-outline'"
+        ></ion-icon>
+        <ion-label>
+          <strong class="nombre-categoria">{{ sec.etiqueta }}</strong>
+        </ion-label>
+        @if (sec.rechazados > 0) {
+          <ion-note slot="end" color="danger" class="rechazados-categoria">
+            {{ sec.rechazados }} rechazado(s)
+          </ion-note>
+        }
+        <ion-note slot="end" class="cuenta-categoria">{{ sec.registros }}</ion-note>
+      </ion-item>
+      @if (abierta(sec)) {
+      @for (t of sec.tarjetas; track t.clave) {
         <ion-item
           class="tarjeta-registro"
           lines="full"
@@ -182,10 +183,12 @@
           }
         </ion-item>
       }
+      }
     </ion-list>
+    }
   }
 
-  @if (vista() === 'pendientes' && visibles().length > 0) {
+  @if (vista() === 'pendientes' && tarjetas().length > 0) {
     <div class="banner info">
       Un registro pendiente se reintenta solo.
     </div>

@@ -4,6 +4,7 @@ import {
   IonBackButton,
   IonButton,
   IonButtons,
+  IonChip,
   IonContent,
   IonDatetime,
   IonDatetimeButton,
@@ -58,15 +59,30 @@ interface Ref {
   nombre: string;
 }
 
-/** Una fila de la grilla de sacos. `libras` vacio = todavia sin pesar. */
+/**
+ * Una fila de la grilla de sacos. `libras` vacio = todavia sin pesar.
+ * `moduloId` solo se usa cuando la persona trabajo varios modulos; con uno
+ * solo, todos los sacos lo heredan (ver `moduloDeSaco`).
+ */
 interface Saco {
   numero: number;
   libras: number | null;
+  moduloId: number | null;
 }
 
-/** Una asignacion elegida, con lo unico que la cosecha aporta: los sacos. */
+export interface OpcionModulo {
+  id: number;
+  nombre: string;
+}
+
+/**
+ * Una asignacion elegida, con lo que la cosecha aporta: los sacos y los
+ * modulos que trabajo esa persona (Kevin, 2026-09-28: estadistica de cosecha
+ * por modulo). `modulos` es un subconjunto de los modulos del AM.
+ */
 interface CierreCosecha {
   asignacion: AsignacionAmLocal;
+  modulos: number[];
   sacos: Saco[];
   observaciones: string;
 }
@@ -112,6 +128,7 @@ export interface GrupoTareaCosecha {
     IonBackButton,
     IonButton,
     IonButtons,
+    IonChip,
     IonContent,
     IonDatetime,
     IonDatetimeButton,
@@ -188,6 +205,9 @@ export class CosechaPage implements OnInit {
   readonly selectorBuscador = signal<boolean | null>(null);
   readonly selectorMultiple = signal(false);
   private readonly grupoActivo = signal<string | null>(null);
+  private cierreActivo = -1;
+  /** id -> nombre de los modulos de las tareas en lista. */
+  private readonly nombresModulo = signal<Map<number, string>>(new Map());
   readonly alturaSelector = computed(() => {
     const opciones = this.selectorOpciones();
     const n = Math.min(opciones.length, 12);
@@ -196,7 +216,7 @@ export class CosechaPage implements OnInit {
     return `${56 + (buscador ? 60 : 0) + (this.selectorMultiple() ? 44 : 0) +
       Math.max(n, 1) * (conDetalle ? 66 : 49) + 6}px`;
   });
-  private destino: 'finca' | 'responsable' | 'personas' | null = null;
+  private destino: 'finca' | 'responsable' | 'personas' | 'modulos' | null = null;
 
   private fincas: OpcionCatalogo[] = [];
 
@@ -257,6 +277,17 @@ export class CosechaPage implements OnInit {
     const c = this.elegidas()[i];
     if (!c) return [];
     const p: string[] = [];
+    if (this.opcionesModulo(c).length > 1 && c.modulos.length === 0) {
+      p.push('Elige el o los módulos que trabajó.');
+    }
+    if (c.modulos.length > 1) {
+      const sin = c.sacos
+        .filter((s) => (s.libras ?? 0) > 0 && this.moduloDeSaco(c, s) === null)
+        .map((s) => s.numero);
+      if (sin.length > 0) {
+        p.push(`Falta el módulo del saco ${sin.join(', ')}.`);
+      }
+    }
     if (c.sacos.filter((s) => (s.libras ?? 0) > 0).length === 0) {
       p.push('Sin sacos pesados no hay cosecha: carga al menos uno.');
     }
@@ -363,13 +394,20 @@ export class CosechaPage implements OnInit {
       const crudos = Array.isArray(r.payload['sacos'])
         ? (r.payload['sacos'] as Record<string, unknown>[])
         : [];
-      const sacos: Saco[] = crudos.map((s, k) => ({
-        numero: k + 1,
-        libras: Number(s['libras'] ?? 0) || null,
-      }));
+      const validos = new Set(a.moduloIds ?? []);
+      const sacos: Saco[] = crudos.map((s, k) => {
+        const m = Number(s['modulo_id'] ?? 0);
+        return {
+          numero: k + 1,
+          libras: Number(s['libras'] ?? 0) || null,
+          moduloId: validos.has(m) ? m : null,
+        };
+      });
+      const usados = [...new Set(sacos.map((s) => s.moduloId).filter((m): m is number => m !== null))];
       cierres.push({
         asignacion: a,
-        sacos: sacos.length > 0 ? sacos : [{ numero: 1, libras: null }],
+        modulos: this.modulosIniciales(a, usados),
+        sacos: sacos.length > 0 ? sacos : [{ numero: 1, libras: null, moduloId: null }],
         observaciones: String(r.payload['observaciones'] ?? ''),
       });
     }
@@ -443,6 +481,10 @@ export class CosechaPage implements OnInit {
           subtareaId: a.subtarea_id,
           subtarea: a.subtarea,
           modulos: a.modulos ?? '',
+          moduloIds: String(a.modulo_ids ?? '')
+            .split(',')
+            .map((x) => Number(x))
+            .filter((x) => x > 0),
           unidadLabor: a.unidad_labor,
           horaApertura: this.fechas.horaDeFechaProceso(a.fecha_proceso),
           fincaId: a.finca_id,
@@ -471,6 +513,8 @@ export class CosechaPage implements OnInit {
         a.trabajador.localeCompare(b.trabajador) ||
         a.amGuid.localeCompare(b.amGuid),
     );
+    const ids = [...new Set(lista.flatMap((a) => a.moduloIds ?? []))];
+    this.nombresModulo.set(await this.catalogo.nombresModulo(ids));
     this.disponibles.set(lista);
 
     const vivas = new Set(lista.map((a) => `${a.amGuid}|${a.personalId}`));
@@ -561,7 +605,8 @@ export class CosechaPage implements OnInit {
         (a) =>
           previas.get(a.personalId) ?? {
             asignacion: a,
-            sacos: [{ numero: 1, libras: null }],
+            modulos: this.modulosIniciales(a, []),
+            sacos: [{ numero: 1, libras: null, moduloId: null }],
             observaciones: '',
           },
       );
@@ -576,8 +621,135 @@ export class CosechaPage implements OnInit {
   agregarSaco(i: number): void {
     this.actualizar(i, (c) => ({
       ...c,
-      sacos: [...c.sacos, { numero: c.sacos.length + 1, libras: null }],
+      sacos: [
+        ...c.sacos,
+        { numero: c.sacos.length + 1, libras: null, moduloId: this.moduloSiguiente(c) },
+      ],
     }));
+  }
+
+  // ------------------------------------------------------------------
+  // Modulos por persona y por saco
+  // ------------------------------------------------------------------
+
+  /** Los modulos de la tarea AM, con nombre. Solo esos se ofrecen. */
+  opcionesModulo(c: CierreCosecha): OpcionModulo[] {
+    const nombres = this.nombresModulo();
+    return (c.asignacion.moduloIds ?? [])
+      .map((id) => ({ id, nombre: nombres.get(id) ?? String(id) }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, undefined, { numeric: true }));
+  }
+
+  nombreModulo(id: number | null): string {
+    return id === null ? '?' : (this.nombresModulo().get(id) ?? String(id));
+  }
+
+  textoModulos(c: CierreCosecha): string {
+    return c.modulos.length === 0
+      ? 'Sin elegir'
+      : this.opcionesModulo(c)
+          .filter((o) => c.modulos.includes(o.id))
+          .map((o) => o.nombre)
+          .join(', ');
+  }
+
+  /** Con un solo modulo en el AM no hay nada que elegir: se toma solo. */
+  private modulosIniciales(a: AsignacionAmLocal, usados: number[]): number[] {
+    const del = a.moduloIds ?? [];
+    if (del.length === 1) {
+      return [...del];
+    }
+    return usados.filter((m) => del.includes(m));
+  }
+
+  moduloDeSaco(c: CierreCosecha, s: Saco): number | null {
+    if (c.modulos.length === 1) {
+      return c.modulos[0];
+    }
+    return s.moduloId !== null && c.modulos.includes(s.moduloId) ? s.moduloId : null;
+  }
+
+  /** Un saco nuevo sigue en el modulo del anterior: se pesa por tandas. */
+  private moduloSiguiente(c: CierreCosecha): number | null {
+    if (c.modulos.length === 1) {
+      return c.modulos[0];
+    }
+    const ultimo = c.sacos.length > 0 ? c.sacos[c.sacos.length - 1] : null;
+    return ultimo ? this.moduloDeSaco(c, ultimo) : null;
+  }
+
+  /** Toque sobre el chip del saco: pasa al siguiente modulo elegido. */
+  rotarModuloSaco(i: number, numero: number): void {
+    this.actualizar(i, (c) => {
+      const lista = this.opcionesModulo(c)
+        .map((o) => o.id)
+        .filter((id) => c.modulos.includes(id));
+      if (lista.length < 2) {
+        return c;
+      }
+      return {
+        ...c,
+        sacos: c.sacos.map((s) => {
+          if (s.numero !== numero) return s;
+          const k = s.moduloId === null ? -1 : lista.indexOf(s.moduloId);
+          return { ...s, moduloId: lista[(k + 1) % lista.length] };
+        }),
+      };
+    });
+  }
+
+  abrirModulos(i: number): void {
+    const c = this.elegidas()[i];
+    if (!c) return;
+    this.destino = 'modulos';
+    this.cierreActivo = i;
+    this.selectorTitulo.set(`Módulos de ${c.asignacion.trabajador}`);
+    this.selectorMultiple.set(true);
+    this.selectorOpciones.set(
+      this.opcionesModulo(c).map((o) => ({ id: o.id, nombre: `Módulo ${o.nombre}` })),
+    );
+    this.selectorSeleccion.set([...c.modulos]);
+    this.selectorVacio.set('La tarea de la mañana no tiene módulos.');
+    this.selectorBuscador.set(false);
+    this.selectorAbierto.set(true);
+  }
+
+  /**
+   * Al pasar de uno a varios modulos, lo ya pesado se queda en el que tenia;
+   * un saco cuyo modulo se quito queda sin modulo hasta que se le asigne.
+   */
+  private aplicarModulos(i: number, ids: number[]): void {
+    this.actualizar(i, (c) => {
+      const antes = c.modulos.length === 1 ? c.modulos[0] : null;
+      const nuevos = this.opcionesModulo(c)
+        .map((o) => o.id)
+        .filter((id) => ids.includes(id));
+      return {
+        ...c,
+        modulos: nuevos,
+        sacos: c.sacos.map((s) => {
+          const m = s.moduloId ?? antes;
+          if (nuevos.length === 1) return { ...s, moduloId: nuevos[0] };
+          return { ...s, moduloId: m !== null && nuevos.includes(m) ? m : null };
+        }),
+      };
+    });
+  }
+
+  /** Libras por modulo de una persona, para la revision. */
+  librasPorModulo(i: number): { nombre: string; libras: number }[] {
+    const c = this.elegidas()[i];
+    if (!c || c.modulos.length === 0) return [];
+    const acc = new Map<number, number>();
+    for (const s of c.sacos) {
+      const m = this.moduloDeSaco(c, s);
+      if (m !== null && (s.libras ?? 0) > 0) {
+        acc.set(m, (acc.get(m) ?? 0) + (s.libras ?? 0));
+      }
+    }
+    return this.opcionesModulo(c)
+      .filter((o) => acc.has(o.id))
+      .map((o) => ({ nombre: o.nombre, libras: Math.round((acc.get(o.id) ?? 0) * 100) / 100 }));
   }
 
   quitarSaco(i: number, numero: number): void {
@@ -609,8 +781,9 @@ export class CosechaPage implements OnInit {
     const n = Math.max(0, Math.min(200, Math.floor(Number(valor) || 0)));
     this.actualizar(i, (c) => {
       const sacos = [...c.sacos];
+      const m = this.moduloSiguiente(c);
       while (sacos.length < n) {
-        sacos.push({ numero: sacos.length + 1, libras: null });
+        sacos.push({ numero: sacos.length + 1, libras: null, moduloId: m });
       }
       while (sacos.length > n && (sacos[sacos.length - 1].libras ?? 0) === 0) {
         sacos.pop();
@@ -678,6 +851,10 @@ export class CosechaPage implements OnInit {
   }
 
   onCambio(ids: number[]): void {
+    if (this.destino === 'modulos') {
+      this.aplicarModulos(this.cierreActivo, ids);
+      return;
+    }
     if (this.destino !== 'personas') {
       return;
     }
@@ -741,7 +918,12 @@ export class CosechaPage implements OnInit {
         const a = c.asignacion;
         const sacos = c.sacos
           .filter((s) => (s.libras ?? 0) > 0)
-          .map((s, k) => ({ numero: k + 1, libras: s.libras as number }));
+          .map((s, k) => {
+            const m = this.moduloDeSaco(c, s);
+            return m === null
+              ? { numero: k + 1, libras: s.libras as number }
+              : { numero: k + 1, libras: s.libras as number, modulo_id: m };
+          });
         const totalPeso = Math.round(sacos.reduce((x, s) => x + s.libras, 0) * 100) / 100;
         // Minimo a proposito: finca, lote, modulos, subtarea, trabajador y
         // fecha los deriva el servidor del AM. Lo unico que aporta la cosecha

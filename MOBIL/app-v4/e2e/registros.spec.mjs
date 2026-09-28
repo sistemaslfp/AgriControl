@@ -196,14 +196,13 @@ const segEnv = await p.locator(`${raiz} ion-segment-button[value="enviados"]`).i
 ok('08g el contador de la pestaña coincide con lo que hay en la lista',
   segPend.includes('(3)') && segEnv.includes('(0)'), `${segPend} | ${segEnv}`);
 
-// --- el chip: un modulo, lo que le falta subir ---
-const chips = p.locator(`${raiz} ion-chip.chip-modulo`);
-ok('08e hay un chip por módulo con pendientes, no uno por registro',
-  (await chips.count()) === 1, `chips=${await chips.count()}`);
-const textoChip = await chips.first().innerText();
-// El chip es un PENDIENTE, no una estadistica: una sola cuenta y sin "0/3".
-ok('08f el chip lleva sólo lo que falta subir, sin la cuenta de enviados',
-  /AM\s*3/.test(textoChip.replace(/\n/g, ' ')) && !textoChip.includes('/'), textoChip);
+// --- las categorias (Kevin, 2026-09-28): una por modulo, plegables ---
+const categorias = p.locator(`${raiz} ion-item.categoria-registros`);
+ok('08e hay una categoría por módulo con registros, no una por tarjeta',
+  (await categorias.count()) === 1, `categorias=${await categorias.count()}`);
+const textoCat = (await categorias.first().innerText()).replace(/\n/g, ' ');
+ok('08f la categoría dice el módulo y cuántos registros tiene',
+  /AM/i.test(textoCat) && /\b3\b/.test(textoCat), textoCat);
 
 // ------------------------------------------------------------------
 // 3. Descartar un PENDIENTE
@@ -247,8 +246,8 @@ ok('15 vaciada la cola, Pendientes lo dice en vez de quedar en blanco',
   await p.locator(`${raiz} .sin-registros`).innerText());
 // LO QUE PIDIO KEVIN (2026-09-08): subido al servidor, el chip se va. Antes
 // quedaba como "AM 0/3" y habia que leer un cero para saber que no pedia nada.
-ok('15b enviado todo, el chip del módulo desaparece',
-  (await chips.count()) === 0, `chips=${await chips.count()}`);
+ok('15b enviado todo, Pendientes no muestra categorías vacías',
+  (await categorias.count()) === 0, `categorias=${await categorias.count()}`);
 
 // ------------------------------------------------------------------
 // 5. Enviados y rechazados
@@ -259,8 +258,16 @@ ok('16 lo enviado aparece en la otra pestaña',
   (await tarjetas().count()) >= 1, `tarjetas=${await tarjetas().count()}`);
 ok('17 un ENVIADO no ofrece descartar: ya está en el servidor',
   (await p.locator(`${raiz} ion-item.tarjeta-registro ion-button.descartar`).count()) === 0);
-ok('17b la pestaña Enviados no muestra chips: ahí no falta subir nada',
-  (await chips.count()) === 0, `chips=${await chips.count()}`);
+ok('17b Enviados también agrupa por categoría',
+  (await categorias.count()) === 1, `categorias=${await categorias.count()}`);
+await categorias.first().click();
+await t(500);
+ok('17c tocar la categoría la pliega', (await tarjetas().count()) === 0,
+  `tarjetas=${await tarjetas().count()}`);
+await categorias.first().click();
+await t(500);
+ok('17d tocarla otra vez la despliega', (await tarjetas().count()) >= 1,
+  `tarjetas=${await tarjetas().count()}`);
 
 // Un rechazo real, con su motivo.
 await modo('rechaza');
@@ -329,6 +336,26 @@ ok('21 tres personas de la misma tarea son UNA tarjeta',
 ok('21b la tarjeta resume a las personas sin listarlas todas',
   (await tresPersonas.first().innerText()).includes('más'),
   await tresPersonas.first().innerText());
+
+// ------------------------------------------------------------------
+// 7. Con dos modulos en la pestaña, las categorias arrancan plegadas
+// ------------------------------------------------------------------
+await encolar('riego', { fecha_proceso: '2026-09-02T06:00:00-05:00', finca_id: 1,
+  supervisor_id: 26, lote_id: 1, modulo_id: 2, tiempo_riego_min: 45, volumen_riego: 0,
+  observaciones: '', justificacion_retro: null });
+await t(1000);
+await p.goto(`${APP}/registros?vista=pendientes`, { waitUntil: 'networkidle' });
+await t(2000);
+const nombresCat = (await categorias.allInnerTexts()).map((x) => x.split('\n')[0].trim().toUpperCase());
+ok('23 AM y Riego son dos categorías, en el orden AM, PM, COSECHA, POSCOSECHA, RIEGO',
+  nombresCat.join('|') === 'AM|RIEGO', nombresCat.join('|'));
+ok('24 con varias categorías arrancan plegadas', (await tarjetas().count()) === 0,
+  `tarjetas=${await tarjetas().count()}`);
+await p.locator(`${raiz} [data-cat="riego"] ion-item.categoria-registros`).click();
+await t(500);
+const soloRiego = await tarjetas().allInnerTexts();
+ok('25 desplegar Riego muestra solo lo de riego',
+  soloRiego.length === 1 && soloRiego[0].includes('Riego'), soloRiego.join(' || ').slice(0, 120));
 
 // ------------------------------------------------------------------
 ok('22 sin errores de JavaScript en toda la sesión', errs.length === 0, errs.join(' | '));

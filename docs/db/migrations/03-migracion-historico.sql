@@ -625,13 +625,16 @@ WHERE a.cierre_guid IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM lfp_cosecha r WHERE r.lfp_am_id = a.id)
 GROUP BY a.id, a.cierre_guid;
 
-INSERT IGNORE INTO lfp_cosecha_saco (cosecha_id, numero, libras)
+-- z_cosecha_cacao ya guardaba el modulo por fila: pasa a cada saco. Un modulo
+-- que ya no existe en z_modulo queda NULL en vez de un id colgando.
+INSERT IGNORE INTO lfp_cosecha_saco (cosecha_id, numero, libras, modulo_id)
 SELECT r.id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY c.id, n.numero),
        CASE n.numero
         WHEN 1 THEN c.saco1 WHEN 2 THEN c.saco2 WHEN 3 THEN c.saco3 WHEN 4 THEN c.saco4 WHEN 5 THEN c.saco5
         WHEN 6 THEN c.saco6 WHEN 7 THEN c.saco7 WHEN 8 THEN c.saco8 WHEN 9 THEN c.saco9 WHEN 10 THEN c.saco10
         WHEN 11 THEN c.saco11 WHEN 12 THEN c.saco12 WHEN 13 THEN c.saco13 WHEN 14 THEN c.saco14
-        WHEN 15 THEN c.saco15 END
+        WHEN 15 THEN c.saco15 END,
+       (SELECT zm.id FROM z_modulo zm WHERE zm.id = c.modulo AND c.modulo > 0)
 FROM z_cosecha_cacao c
 JOIN lfp_am a ON a.personal_id = c.trabajador AND a.subtarea_id = c.subtarea
              AND DATE(a.fecha_proceso) = CONVERT(c.fecha USING utf8mb4)

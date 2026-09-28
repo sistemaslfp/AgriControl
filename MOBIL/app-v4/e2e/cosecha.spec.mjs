@@ -271,10 +271,11 @@ ok('17 no viaja nada que el servidor derive del AM',
     c.payload.captura_guid === undefined && c.payload.fecha_proceso === undefined,
   Object.keys(c.payload).join(','));
 
-ok('18 los sacos viajan renumerados 1..N',
+// La tarea AM tiene UN modulo (02): todos los sacos lo heredan sin preguntar.
+ok('18 los sacos viajan renumerados 1..N, con el unico modulo del AM',
   JSON.stringify(c.payload.sacos) ===
-    JSON.stringify([{ numero: 1, libras: 50.5 }, { numero: 2, libras: 51 },
-                    { numero: 3, libras: 20 }]),
+    JSON.stringify([{ numero: 1, libras: 50.5, modulo_id: 2 }, { numero: 2, libras: 51, modulo_id: 2 },
+                    { numero: 3, libras: 20, modulo_id: 2 }]),
   JSON.stringify(c.payload.sacos));
 
 ok('19 los totales del telefono cuadran con sus sacos',
@@ -299,6 +300,98 @@ const textoCos2 = await p.locator(`${raiz} ion-content`).innerText();
 ok('21 la tarea ya cerrada no vuelve a la lista',
   !textoCos2.includes('COSECHA CACAO'),
   textoCos2.replace(/\n/g, ' ').slice(0, 90));
+
+// ------------------------------------------------------------------
+// 5. Una tarea con DOS modulos: se eligen por persona y cada saco dice el suyo
+// ------------------------------------------------------------------
+const amDos = 'c05ec8a1-0000-4000-8000-000000000003';
+await fetch(`${MOCK}/v4/sync`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ device_alias: 'sembrador', device_clock_offset: 0, records: [
+    { tipo: 'am', guid: amDos, created_at_device: `${F}T07:00:00-05:00`,
+      payload: { captura_guid: 'c05ec8a1-0000-4000-8000-0000000000cc',
+        fecha_proceso: `${F}T07:00:00-05:00`, finca_id: 1, responsable_id: 26,
+        cultivo_id: 1, lote_id: 1, subtarea_id: 88, modulo_ids: [2, 3], personal_id: 301 } },
+  ] }),
+});
+await p.goto(`${APP}/cosecha`, { waitUntil: 'networkidle' });
+await t(2500);
+await elegirUno('Finca', 'Bellita');
+await campo('Supervisor').click();
+await t(600);
+await enModal('ion-radio', 'HOLGUIN').click();
+await esperarModalCerrado();
+await t(250);
+await p.locator(`${raiz} ion-item.tarea-am`, { hasText: '02, 03' }).first().click();
+await t(600);
+await p.locator('ion-modal ion-checkbox', { hasText: 'BRIONES' }).first().click();
+await t(300);
+await p.locator('ion-modal ion-button', { hasText: 'Listo' }).first().click();
+await esperarModalCerrado();
+await t(400);
+await flecha('siguiente').click();
+await t(700);
+
+const itemModulos = p.locator(`${raiz} ion-item.modulos-persona`);
+ok('30 con dos modulos en el AM se pide elegir cuales trabajo',
+  (await itemModulos.innerText()).includes('Sin elegir'), await itemModulos.innerText());
+const probs = () => p.evaluate(() =>
+  window['ng'].getComponent(document.querySelector('app-cosecha')).problemas());
+ok('31 sin elegir modulo no se puede cerrar',
+  (await probs()).some((x) => x.includes('módulos')), JSON.stringify(await probs()));
+
+await itemModulos.click();
+await t(600);
+for (const m of ['Módulo 02', 'Módulo 03']) {
+  await p.locator('ion-modal ion-checkbox', { hasText: m }).first().click();
+  await t(250);
+}
+await p.locator('ion-modal ion-button', { hasText: 'Listo' }).first().click();
+await esperarModalCerrado();
+await t(400);
+
+const chipsSaco = p.locator(`${raiz} ion-chip.modulo-saco`);
+ok('32 con dos modulos elegidos cada saco muestra su modulo',
+  (await chipsSaco.count()) === 1, `chips=${await chipsSaco.count()}`);
+// Cada toque del selector aplica en vivo: con el primero marcado todos los
+// sacos toman ese modulo, y al sumar el segundo lo ya asignado se conserva.
+ok('33 al elegir, el saco toma el primer modulo marcado',
+  (await chipsSaco.first().innerText()).includes('02'), await chipsSaco.first().innerText());
+await ponerLibras(1, 40);
+await chipsSaco.first().click();
+await t(300);
+ok('34 tocar el chip pasa al siguiente modulo',
+  (await chipsSaco.first().innerText()).includes('03'), await chipsSaco.first().innerText());
+await boton('Agregar saco').click();
+await t(400);
+ok('35 el saco nuevo sigue en el modulo del anterior',
+  (await chipsSaco.nth(1).innerText()).includes('03'), await chipsSaco.nth(1).innerText());
+await chipsSaco.nth(1).click();
+await t(300);
+await ponerLibras(2, 30);
+ok('36 el chip da la vuelta entre los modulos elegidos',
+  (await chipsSaco.nth(1).innerText()).includes('02'), await chipsSaco.nth(1).innerText());
+ok('36b con todos los sacos asignados no queda nada que corregir',
+  (await probs()).length === 0, JSON.stringify(await probs()));
+
+await flecha('siguiente').click();
+await t(700);
+const revision = (await p.locator(`${raiz} .por-modulo`).first().innerText()).replace(/\s+/g, ' ');
+ok('37 la revision reparte las libras por modulo',
+  revision.includes('Mód. 02: 30 lb') && revision.includes('Mód. 03: 40 lb'), revision);
+
+const antes2 = (await lotes()).length;
+await boton('Cerrar').click();
+await t(3500);
+const cos2 = (await lotes()).slice(antes2).flatMap((l) => l.records).filter((r) => r.tipo === 'cosecha');
+ok('38 cada saco viaja con su modulo',
+  cos2.length === 1 && JSON.stringify(cos2[0].payload.sacos) ===
+    JSON.stringify([{ numero: 1, libras: 40, modulo_id: 3 }, { numero: 2, libras: 30, modulo_id: 2 }]),
+  JSON.stringify(cos2[0]?.payload?.sacos));
+ok('39 el servidor lo acepta',
+  JSON.stringify(await p.evaluate(() => window['__lagricontrol'].sync.conteo())).includes('"rechazados":0'),
+  JSON.stringify(await p.evaluate(() => window['__lagricontrol'].sync.conteo())));
 
 ok('22 sin errores de JavaScript en toda la sesion', errs.length === 0, errs.join(' | '));
 

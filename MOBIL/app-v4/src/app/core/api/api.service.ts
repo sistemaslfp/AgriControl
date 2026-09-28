@@ -69,6 +69,8 @@ export interface AsignacionAmApi {
   subtarea: string;
   /** "3, 4" — modulos del AM, o null si el lote no trabaja por modulos. */
   modulos: string | null;
+  /** "3,8" — los ids crudos de `lfp_am.modulos`, para elegir modulo por saco. */
+  modulo_ids?: string | null;
   unidad_labor_id: number | null;
   unidad_labor: string | null;
 }

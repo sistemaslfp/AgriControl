@@ -141,10 +141,11 @@ class Cosechacacao extends Public_controller
 			$crud->unset_read();
 			$crud->unset_clone();
 
-			$crud->columns('fecha', 'finca', 'lote', 'nombre_subtarea', 'nombre', 'numero', 'libras');
+			$crud->columns('fecha', 'finca', 'lote', 'modulo', 'nombre_subtarea', 'nombre', 'numero', 'libras');
 			$crud->display_as('fecha', 'Fecha')
 				->display_as('finca', 'Finca')
 				->display_as('lote', 'Lote')
+				->display_as('modulo', 'Modulo')
 				->display_as('nombre_subtarea', 'Subtarea')
 				->display_as('nombre', 'Trabajador')
 				->display_as('numero', 'Saco')

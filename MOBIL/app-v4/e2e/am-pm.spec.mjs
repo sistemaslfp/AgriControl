@@ -524,6 +524,9 @@ ok('34 la app no manda pm_year ni pm_week', !('pm_year' in pp) && !('pm_week' in
 // El detalle del PM enviado dice en qué unidad es el avance.
 await p.goto(`${APP}/registros?vista=enviados`, { waitUntil: 'networkidle' });
 await t(1500);
+// Con AM y PM en Enviados las categorias arrancan plegadas.
+await p.locator('app-registros [data-cat="pm"] ion-item.categoria-registros').click();
+await t(500);
 await p.locator('app-registros ion-item', { hasText: 'PM ·' }).first().click();
 await t(800);
 const detallePm = await p.locator('app-detalle-registro').innerText();

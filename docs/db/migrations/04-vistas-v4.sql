@@ -195,9 +195,14 @@ SELECT s.id            AS id,
        v.nombre_subtarea,
        v.unidad_labor,
        v.nombre,
-       v.cedula
+       v.cedula,
+       -- Al final a proposito: las columnas de arriba no cambian de posicion.
+       -- Base de la estadistica por modulo: GROUP BY modulo_id sobre libras.
+       s.modulo_id     AS modulo_id,
+       m.modulo        AS modulo
   FROM lfp_cosecha_saco s
-  JOIN vw_lfp_cosecha   v ON v.id = s.cosecha_id;
+  JOIN vw_lfp_cosecha   v ON v.id = s.cosecha_id
+  LEFT JOIN z_modulo    m ON m.id = s.modulo_id;
 
 -- =========================================================================
 -- LAS CINCO VISTAS QUE LA WEB SÍ USA (2026-09-14)

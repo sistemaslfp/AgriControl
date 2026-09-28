@@ -60,11 +60,14 @@
 }
 
 /* --- Pantalla Registros (Pendientes / Enviados) --- */
-.chips-tipo {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 8px 0;
+.categoria-registros .nombre-categoria {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.categoria-registros .cuenta-categoria {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .tarjeta-registro .fecha {
@@ -82,15 +85,6 @@
 /* La tarea da el contexto que la subtarea sola no tiene. */
 .tarjeta-registro .labor {
   font-size: 0.86rem;
-}
-
-/* El chip lleva UNA cuenta: lo que a ese modulo le falta subir. El cero no
-   existe -- un modulo sin pendientes no tiene chip. */
-.chip-modulo .cuenta {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  margin-left: 4px;
-  color: var(--ion-color-warning-shade, #b8860b);
 }
 
 .unidad-avance {

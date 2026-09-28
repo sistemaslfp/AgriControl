@@ -279,9 +279,18 @@ CREATE TABLE IF NOT EXISTS lfp_cosecha_saco (
   cosecha_id INT          NOT NULL,
   numero     SMALLINT     NOT NULL,
   libras     DECIMAL(9,2) NOT NULL,
+  -- Modulo donde se cosecho ESE saco (Kevin, 2026-09-28): lfp_am.modulos es la
+  -- lista de la tarea y no reparte libras. NULL si el lote no trabaja por modulos.
+  modulo_id  INT          NULL,
   UNIQUE KEY uq_saco (cosecha_id, numero),
+  KEY ix_saco_modulo (modulo_id),
   CONSTRAINT fk_saco_cosecha FOREIGN KEY (cosecha_id) REFERENCES lfp_cosecha(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci;
+
+-- Para bases donde lfp_cosecha_saco ya existia sin la columna.
+ALTER TABLE lfp_cosecha_saco
+  ADD COLUMN IF NOT EXISTS modulo_id INT NULL AFTER libras,
+  ADD KEY IF NOT EXISTS ix_saco_modulo (modulo_id);
 
 -- =========================================================================
 -- RIEGO — bitacora propia, NO cuelga de una tarea AM

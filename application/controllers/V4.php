@@ -315,6 +315,7 @@ class V4 extends RestController
                          l.lote, c.nombre AS cultivo,
                          st.nombre_subtarea AS subtarea,
                          st.unidad_labor_id, u.ulabor_nombre AS unidad_labor,
+                         am.modulos AS modulo_ids,
                          (SELECT GROUP_CONCAT(zm.modulo ORDER BY zm.modulo SEPARATOR ", ")
                             FROM z_modulo zm
                            WHERE FIND_IN_SET(zm.id, am.modulos)) AS modulos', FALSE)
@@ -1454,7 +1455,7 @@ class V4 extends RestController
                 'am_guid ausente o ilegible: la cosecha cierra una tarea AM');
         }
 
-        $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid, subtarea_id')
+        $q = $db->select('id, fecha_proceso, responsable_id, personal_id, cierre_guid, subtarea_id, modulos')
                 ->from('lfp_am')->where('guid', $am_guid)->limit(1)->get();
         if ($q === FALSE) {
             return NULL;
@@ -1484,10 +1485,14 @@ class V4 extends RestController
         $sacos = $this->sync_sacos($p);
         if ($sacos === NULL) {
             return $this->sync_rechazo($guid,
-                'sacos debe ser una lista de {numero, libras} con numeros distintos y libras positivas');
+                'sacos debe ser una lista de {numero, libras, modulo_id} con numeros distintos y libras positivas');
         }
         if (empty($sacos)) {
             return $this->sync_rechazo($guid, 'una cosecha sin sacos no es un registro de cosecha');
+        }
+        $motivo = $this->sync_sacos_modulo($db, $sacos, (string) $am->modulos);
+        if ($motivo !== NULL) {
+            return $this->sync_rechazo($guid, $motivo);
         }
 
         $responsable_id = $this->sync_int($p, 'responsable_id');
@@ -1569,6 +1574,7 @@ class V4 extends RestController
                     'cosecha_id' => $cosecha_id,
                     'numero'     => $sc['numero'],
                     'libras'     => $sc['libras'],
+                    'modulo_id'  => $sc['modulo_id'],
                 )) === FALSE) {
                 return $this->sync_error_insert($db, $guid, 'cosecha');
             }
@@ -1728,6 +1734,13 @@ class V4 extends RestController
             }
             $n = (int) $sc['numero'];
             $l = round((float) $sc['libras'], 2);
+            $m = NULL;
+            if (isset($sc['modulo_id'])) {
+                if (!is_numeric($sc['modulo_id']) || (int) $sc['modulo_id'] <= 0) {
+                    return NULL;
+                }
+                $m = (int) $sc['modulo_id'];
+            }
             // Un saco de 0 libras no se pesa: es una celda vacia de la grilla
             // vieja, no un saco. La unicidad la exige uq_saco, pero rechazarlo
             // aca da un motivo legible en vez de un 1062.
@@ -1735,9 +1748,53 @@ class V4 extends RestController
                 return NULL;
             }
             $vistos[$n] = TRUE;
-            $out[] = array('numero' => $n, 'libras' => $l);
+            $out[] = array('numero' => $n, 'libras' => $l, 'modulo_id' => $m);
         }
         return $out;
+    }
+
+    /**
+     * El modulo de cada saco contra los modulos de la tarea AM (Kevin,
+     * 2026-09-28). Con un solo modulo en el AM el saco lo hereda; con varios
+     * cada saco tiene que decir cual. Modifica $sacos. NULL = todo bien.
+     */
+    private function sync_sacos_modulo($db, &$sacos, $modulos_am)
+    {
+        $del_am = array();
+        foreach (explode(',', $modulos_am) as $x) {
+            if ((int) $x > 0) {
+                $del_am[(int) $x] = TRUE;
+            }
+        }
+        foreach ($sacos as $k => $sc) {
+            $m = $sc['modulo_id'];
+            if (empty($del_am)) {
+                if ($m !== NULL) {
+                    return 'la tarea de la manana no tiene modulos: el saco ' . $sc['numero']
+                         . ' no puede ir al modulo ' . $this->sync_nombre($db, 'z_modulo', 'modulo', $m);
+                }
+                continue;
+            }
+            if ($m === NULL) {
+                if (count($del_am) > 1) {
+                    return 'el saco ' . $sc['numero'] . ' no dice de que modulo es, y la tarea tiene '
+                         . count($del_am) . ' modulos';
+                }
+                reset($del_am);
+                $sacos[$k]['modulo_id'] = (int) key($del_am);
+                continue;
+            }
+            if (!isset($del_am[$m])) {
+                $nombres = array();
+                foreach (array_keys($del_am) as $x) {
+                    $nombres[] = $this->sync_nombre($db, 'z_modulo', 'modulo', $x);
+                }
+                return 'el saco ' . $sc['numero'] . ' es del modulo '
+                     . $this->sync_nombre($db, 'z_modulo', 'modulo', $m)
+                     . ', que no esta en la tarea de la manana (' . implode(', ', $nombres) . ')';
+            }
+        }
+        return NULL;
     }
 
     /** Los totales del telefono contra los del servidor. Gana el servidor. */

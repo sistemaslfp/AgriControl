@@ -5,7 +5,6 @@ import {
   IonBackButton,
   IonButton,
   IonButtons,
-  IonChip,
   IonContent,
   IonHeader,
   IonIcon,
@@ -13,6 +12,7 @@ import {
   IonLabel,
   IonList,
   IonModal,
+  IonNote,
   IonSegment,
   IonSegmentButton,
   IonSpinner,
@@ -23,6 +23,8 @@ import { addIcons } from 'ionicons';
 import {
   alertCircleOutline,
   checkmarkCircleOutline,
+  chevronDownOutline,
+  chevronForwardOutline,
   cloudUploadOutline,
   createOutline,
   refreshOutline,
@@ -62,11 +64,30 @@ const RUTA_CORRECCION: Partial<Record<TipoRegistro, string>> = {
 /** Las dos mitades de la pantalla. */
 export type Vista = 'pendientes' | 'enviados';
 
-/** Un chip de modulo con lo que le falta subir: `AM 3`. */
-export interface ChipTipo {
-  tipo: TipoRegistro;
+/**
+ * Las cinco categorias de la lista (Kevin, 2026-09-28), en este orden. Los
+ * cinco tipos `pc_*` son una sola: Poscosecha.
+ */
+export type Categoria = 'am' | 'pm' | 'cosecha' | 'poscosecha' | 'riego';
+const CATEGORIAS: { cat: Categoria; etiqueta: string }[] = [
+  { cat: 'am', etiqueta: 'AM' },
+  { cat: 'pm', etiqueta: 'PM' },
+  { cat: 'cosecha', etiqueta: 'Cosecha' },
+  { cat: 'poscosecha', etiqueta: 'Poscosecha' },
+  { cat: 'riego', etiqueta: 'Riego' },
+];
+
+export function categoriaDe(t: TipoRegistro): Categoria {
+  return t === 'am' || t === 'pm' || t === 'cosecha' || t === 'riego' ? t : 'poscosecha';
+}
+
+/** Una categoria desplegable con sus tarjetas de la pestana actual. */
+export interface SeccionRegistros {
+  cat: Categoria;
   etiqueta: string;
-  pendientes: number;
+  tarjetas: TarjetaRegistros[];
+  registros: number;
+  rechazados: number;
 }
 
 /**
@@ -104,7 +125,6 @@ export interface TarjetaRegistros {
     IonBackButton,
     IonButton,
     IonButtons,
-    IonChip,
     IonContent,
     IonHeader,
     IonIcon,
@@ -112,6 +132,7 @@ export interface TarjetaRegistros {
     IonLabel,
     IonList,
     IonModal,
+    IonNote,
     IonSegment,
     IonSegmentButton,
     IonSpinner,
@@ -131,15 +152,19 @@ export class RegistrosPage implements OnInit {
   /**
    * TODAS las tarjetas, de las dos mitades.
    *
-   * Se carga entero de una vez y no por pestana porque el chip de cada modulo
-   * muestra las dos cuentas (`AM 3/12`): para eso hacen falta las dos mitades
-   * a la vez. Es una consulta a una tabla local con, como mucho, unos miles de
-   * filas; partirla en dos no compra nada y obligaria a recargar al cambiar de
-   * pestana.
+   * Se carga entero de una vez y no por pestana: los contadores del segmento
+   * necesitan las dos mitades. Es una consulta a una tabla local con, como
+   * mucho, unos miles de filas; partirla no compra nada.
    */
   private readonly todas = signal<TarjetaRegistros[]>([]);
-  /** null = todos los tipos. */
-  readonly filtroTipo = signal<TipoRegistro | null>(null);
+  /**
+   * Lo que el usuario abrio o cerro a mano, por pestana. Lo que no toco sigue
+   * la regla de `abierta()`.
+   */
+  private readonly toques = signal<Record<Vista, Partial<Record<Categoria, boolean>>>>({
+    pendientes: {},
+    enviados: {},
+  });
   /**
    * La tarjeta abierta en Detalle Registro, o null si la ventana esta
    * cerrada. Guarda la tarjeta entera y no el guid: Detalle Registro pinta
@@ -198,36 +223,39 @@ export class RegistrosPage implements OnInit {
   readonly proximoReintentoMs = this.cola.proximoReintentoMs;
   readonly ultimoError = this.cola.ultimoError;
 
-  /**
-   * Un chip POR MODULO CON TRABAJO SIN SUBIR: `AM 3` = a AM le faltan 3.
-   *
-   * Kevin, 2026-09-08: el chip es un pendiente, no una estadistica. Antes
-   * llevaba las dos cuentas (`AM 3/12`) y sobrevivia al envio como `AM 0/12`,
-   * asi que la pantalla terminaba llena de chips que ya no pedian nada y habia
-   * que leer un cero para saberlo. Ahora un chip solo existe mientras haya algo
-   * que subir y desaparece con el ACK: sin chips = no falta nada.
-   *
-   * Lo enviado no se pierde de vista: sigue contado en el segmento
-   * "Enviados (N)" y listado en su pestana.
-   */
-  readonly chips = computed<ChipTipo[]>(() => {
-    const acc = new Map<TipoRegistro, number>();
-    for (const t of this.todas()) {
-      if (t.estado !== 'PENDIENTE' && t.estado !== 'ENVIANDO') {
-        continue;
-      }
-      acc.set(t.tipo, (acc.get(t.tipo) ?? 0) + t.registros.length);
-    }
-    return [...acc.entries()]
-      .filter(([, pendientes]) => pendientes > 0)
-      .map(([tipo, pendientes]) => ({ tipo, etiqueta: this.etiquetaTipo(tipo), pendientes }))
-      .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta));
-  });
+  readonly secciones = computed<SeccionRegistros[]>(() =>
+    CATEGORIAS.map(({ cat, etiqueta }) => {
+      const tarjetas = this.tarjetas().filter((t) => categoriaDe(t.tipo) === cat);
+      return {
+        cat,
+        etiqueta,
+        tarjetas,
+        registros: tarjetas.reduce((a, t) => a + t.registros.length, 0),
+        rechazados: tarjetas
+          .filter((t) => t.estado === 'RECHAZADO')
+          .reduce((a, t) => a + t.registros.length, 0),
+      };
+    }).filter((x) => x.tarjetas.length > 0),
+  );
 
-  readonly visibles = computed(() => {
-    const f = this.filtroTipo();
-    return f === null ? this.tarjetas() : this.tarjetas().filter((t) => t.tipo === f);
-  });
+  /**
+   * Plegada por defecto. Se abre sola si es la unica categoria de la pestana
+   * (plegarla no ordena nada) o si tiene rechazados: es lo unico que pide que
+   * alguien haga algo.
+   */
+  abierta(s: SeccionRegistros): boolean {
+    const tocada = this.toques()[this.vista()][s.cat];
+    if (tocada !== undefined) {
+      return tocada;
+    }
+    return this.secciones().length === 1 || s.rechazados > 0;
+  }
+
+  alternar(s: SeccionRegistros): void {
+    const v = this.vista();
+    const todas = this.toques();
+    this.toques.set({ ...todas, [v]: { ...todas[v], [s.cat]: !this.abierta(s) } });
+  }
 
   /**
    * Estado de la cola en una frase, que es lo que el supervisor mira primero.
@@ -267,6 +295,8 @@ export class RegistrosPage implements OnInit {
     addIcons({
       alertCircleOutline,
       checkmarkCircleOutline,
+      chevronDownOutline,
+      chevronForwardOutline,
       cloudUploadOutline,
       createOutline,
       refreshOutline,
@@ -286,19 +316,7 @@ export class RegistrosPage implements OnInit {
 
   cambiarVista(v: Vista): void {
     // No recarga: `tarjetas` es un computed sobre lo ya cargado.
-    //
-    // El filtro SI se limpia al pasar a Enviados. Antes se conservaba a
-    // proposito, pero con los chips viviendo solo en Pendientes el filtro
-    // quedaria activo sin nada en pantalla que lo diga ni forma de sacarlo:
-    // una lista recortada que parece incompleta.
-    if (v === 'enviados') {
-      this.filtroTipo.set(null);
-    }
     this.vista.set(v);
-  }
-
-  filtrar(t: TipoRegistro | null): void {
-    this.filtroTipo.set(this.filtroTipo() === t ? null : t);
   }
 
   /**
@@ -322,13 +340,6 @@ export class RegistrosPage implements OnInit {
     // lados por un estado que dura segundos. La tarjeta si distingue cual es.
     const filas = await this.cola.listar(['PENDIENTE', 'ENVIANDO', 'ENVIADO', 'RECHAZADO']);
     this.todas.set(await this.agrupar(filas));
-    // Si el modulo por el que se estaba filtrando ya no tiene pendientes, su
-    // chip desaparecio: dejar el filtro puesto esconderia el resto de la lista
-    // sin nada que lo explique.
-    const f = this.filtroTipo();
-    if (f !== null && !this.chips().some((c) => c.tipo === f)) {
-      this.filtroTipo.set(null);
-    }
     this.cargando.set(false);
   }
 

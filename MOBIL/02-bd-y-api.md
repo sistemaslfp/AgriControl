@@ -938,8 +938,8 @@ y lo que se probó.
 { "tipo": "cosecha",
   "payload": { "am_guid": "…", "trabajador_id": 4, "responsable_id": 26,
                "hora_cierre": "…",
-               "sacos": [ {"numero": 1, "libras": 50.5},
-                          {"numero": 2, "libras": 48.25} ],
+               "sacos": [ {"numero": 1, "libras": 50.5,  "modulo_id": 3},
+                          {"numero": 2, "libras": 48.25, "modulo_id": 8} ],
                "total_sacos": 2, "total_peso": 98.75,
                "observaciones": "" } }
 ```
@@ -951,6 +951,11 @@ registros; eso es del front, no del modelo. Las N comparten `captura_guid`.
 `trabajador_id` en el cierre es redundante —la fila ya sabe de quién es— pero si
 viene tiene que coincidir: es la red que atrapa un `am_guid` mal copiado antes
 de escribir el avance en la persona equivocada.
+
+`modulo_id` por saco (2026-09-28): tiene que estar en los módulos del AM. Si el
+AM tiene uno solo se puede omitir y el servidor lo pone; si tiene varios es
+obligatorio en cada saco; si no tiene, no se manda. Es la base de la
+estadística de cosecha por módulo (`vw_lfp_cosecha_saco.modulo_id`).
 
 Finca, cultivo, lote, subtarea, módulos, fecha de proceso y hora de inicio los
 **deriva el servidor del AM**. El teléfono ya no puede contradecir la

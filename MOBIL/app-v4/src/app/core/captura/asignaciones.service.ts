@@ -57,6 +57,8 @@ export interface AsignacionAmLocal {
   subtarea: string;
   /** "3, 4" o '' si el lote no trabaja por módulos. */
   modulos: string;
+  /** Los ids de `modulos`. Lo usa Cosecha para asignar cada saco. */
+  moduloIds?: number[];
   unidadLabor: string | null;
   /**
    * HH:MM en que se abrio el AM. Del servidor sale de `fecha_proceso`; del
@@ -270,6 +272,7 @@ export class AsignacionesService {
         subtareaId,
         subtarea: sub?.nombre ?? `Subtarea ${subtareaId}`,
         modulos: ids.map((x) => nombresMod.get(x) ?? String(x)).join(', '),
+        moduloIds: ids,
         unidadLabor: sub?.unidadLaborNombre ?? null,
         horaApertura: this.fechas.horaLocalDeIso(String(f['created_at'])),
         fincaId: null,
