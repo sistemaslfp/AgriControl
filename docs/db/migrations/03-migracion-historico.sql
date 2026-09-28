@@ -108,6 +108,11 @@ CREATE INDEX IF NOT EXISTS ix_mig_riego_dup ON z_riego
 -- sea vuelve a decidir que indice usar PARA CADA FILA. Es lo que convierte
 -- 1.1a de 0,3 segundos en minutos. Verificado el 2026-09-15 en MariaDB 10.4.18.
 -- Cuesta menos de medio segundo.
+-- Clave de mig_descarte que todo el archivo consulta con NOT EXISTS. Viene en
+-- el CREATE de 02, pero si mig_descarte ya existia de una corrida vieja, el
+-- IF NOT EXISTS de 02 no la agrega. Sin ella 1.2 pasa de 7 s a mas de 2 min.
+-- Es permanente: no se borra al final.
+CREATE INDEX IF NOT EXISTS idx_mig_origen ON mig_descarte (tabla_origen, id_origen, motivo);
 ANALYZE TABLE z_tabla_am, z_tabla_pm, z_cosecha_cacao, z_riego, mig_descarte;
 -- Sobre lfp_am, para el emparejamiento del cierre. Sin éste el optimizador
 -- entra por `fk_am_lote` --sólo `lote_id`-- y el UPDATE de 1.3 no termina.
@@ -323,6 +328,10 @@ WHERE 1 = 1
                  AND b.subtarea_id=a.subtarea_id AND b.personal_id=a.personal_id)
   AND NOT EXISTS (SELECT 1 FROM mig_descarte d WHERE d.tabla_origen='z_tabla_am'
                     AND d.id_origen=a.id AND d.motivo='duplicado_cabecera_persona');
+
+-- Las secciones 0 y 1.1 cargaron decenas de miles de filas en mig_descarte:
+-- sin estadisticas nuevas el optimizador puede ignorar idx_mig_origen.
+ANALYZE TABLE mig_descarte;
 
 -- 1.2 — Una fila por (captura, persona).
 --

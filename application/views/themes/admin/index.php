@@ -127,10 +127,16 @@
 
           <div class="clearfix"></div>
 
+          <?php
+          // Usuario sin foto propia en assets/uploads/avatars/<usuario>.png: se usa avatar.png.
+          $avatar = $data_template['username'] . '.png';
+          if (!is_file(FCPATH . 'assets/uploads/avatars/' . $avatar)) { $avatar = 'avatar.png'; }
+          $avatar_url = base_url('assets/uploads/avatars/' . rawurlencode($avatar));
+          ?>
           <!-- menu profile quick info -->
           <div class="profile clearfix">
             <div class="profile_pic">
-              <img src="<?php echo base_url(); ?>assets/uploads/avatars/<?= $data_template['username'] ?>.png" alt="..."
+              <img src="<?= $avatar_url ?>" alt="..."
                 class="img-circle profile_img">
             </div>
             <div class="profile_info">
@@ -247,7 +253,7 @@
               <li class="">
                 <a href="javascript:;" class="user-profile dropdown-toggle" data-toggle="dropdown"
                   aria-expanded="false">
-                  <img src="<?php echo base_url(); ?>/assets/uploads/avatars/<?= $data_template['username'] ?>.png"
+                  <img src="<?= $avatar_url ?>"
                     alt=""><?= $data_template['username'] ?>
                   <span class=" fa fa-angle-down"></span>
                 </a>
