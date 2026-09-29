@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, computed } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, computed, inject, signal } from '@angular/core';
 import {
   IonButton,
   IonButtons,
@@ -11,6 +11,7 @@ import {
   IonToolbar,
 } from '@ionic/angular';
 
+import { CatalogQueryService } from '../core/catalog/catalog-query.service';
 import { RegistroColaVista } from '../core/sync/sync.models';
 
 /**
@@ -165,7 +166,7 @@ interface BloqueDetalle {
             <ion-item lines="full">
               <ion-label>
                 {{ c.etiqueta }}
-                <p>{{ c.valor }}</p>
+                <p class="valor-campo">{{ c.valor }}</p>
               </ion-label>
             </ion-item>
           }
@@ -186,6 +187,9 @@ interface BloqueDetalle {
       .bloque-registro {
         margin-bottom: 14px;
       }
+      .valor-campo {
+        white-space: pre-line;
+      }
       .guid {
         font-family: monospace;
         user-select: text;
@@ -194,9 +198,27 @@ interface BloqueDetalle {
     `,
   ],
 })
-export class DetalleRegistroComponent {
+export class DetalleRegistroComponent implements OnInit {
   @Input() tarjeta: RegistroDetalleTarjeta | null = null;
   @Output() cerrar = new EventEmitter<void>();
+
+  private readonly catalogo = inject(CatalogQueryService);
+  /** id -> nombre de los modulos que aparecen en los sacos de cosecha. */
+  private readonly nombresModulo = signal<Map<number, string>>(new Map());
+
+  async ngOnInit(): Promise<void> {
+    const ids = new Set<number>();
+    for (const r of this.tarjeta?.registros ?? []) {
+      const sacos = r.tipo === 'cosecha' ? r.payload['sacos'] : null;
+      for (const s of Array.isArray(sacos) ? (sacos as Record<string, unknown>[]) : []) {
+        const m = Number(s['modulo_id'] ?? 0);
+        if (m > 0) ids.add(m);
+      }
+    }
+    if (ids.size > 0) {
+      this.nombresModulo.set(await this.catalogo.nombresModulo([...ids]));
+    }
+  }
 
   /**
    * Etiquetas legibles para los campos que SI se muestran. Lo que no está
@@ -230,6 +252,7 @@ export class DetalleRegistroComponent {
    * catálogos a propósito: esto es "qué hay adentro", no la tarjeta otra vez.
    */
   readonly bloques = computed<BloqueDetalle[]>(() => {
+    this.nombresModulo();
     const t = this.tarjeta;
     if (!t) {
       return [];
@@ -253,10 +276,35 @@ export class DetalleRegistroComponent {
       const valor = this.formatearValor(v);
       return { etiqueta: 'Avance', valor: unidad && valor !== '—' ? `${valor} ${unidad}` : valor };
     }
+    if (k === 'sacos' && registro.tipo === 'cosecha' && Array.isArray(v)) {
+      return { etiqueta: 'Sacos', valor: this.sacos(registro, v as Record<string, unknown>[]) };
+    }
     return {
       etiqueta: DetalleRegistroComponent.ETIQUETAS[k] ?? this.legible(k),
       valor: this.formatearValor(v),
     };
+  }
+
+  /**
+   * Un saco por linea, con nombres y no ids (Kevin, 2026-09-29). El lote sale
+   * de `meta` porque el payload de cosecha no lo lleva; el modulo solo aparece
+   * si el saco lo tiene (lote sin modulos = solo el lote).
+   */
+  private sacos(registro: RegistroColaVista, sacos: Record<string, unknown>[]): string {
+    if (sacos.length === 0) {
+      return '—';
+    }
+    const lote = String(registro.meta?.lote ?? '').replace(/^Lote\s+/i, '');
+    const nombres = this.nombresModulo();
+    return sacos
+      .map((s) => {
+        const partes = [`número: ${s['numero']}`, `libras: ${s['libras']}`];
+        if (lote) partes.push(`lote: ${lote}`);
+        const m = Number(s['modulo_id'] ?? 0);
+        if (m > 0) partes.push(`módulo: ${nombres.get(m) ?? m}`);
+        return partes.join(', ');
+      })
+      .join('\n');
   }
 
   private legible(clave: string): string {

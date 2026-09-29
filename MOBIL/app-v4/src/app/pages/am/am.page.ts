@@ -312,6 +312,14 @@ export class AmPage implements OnInit {
     }
   }
 
+  /** Los modulos de la tarea por nombre, en orden: "3, 4". */
+  nombresModulos(t: TareaAm): string {
+    return t.modulos
+      .map((m) => m.nombre.replace(/^M[oó]dulo\s+/i, ''))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .join(', ');
+  }
+
   // ------------------------------------------------------------------
   // Navegación
   // ------------------------------------------------------------------

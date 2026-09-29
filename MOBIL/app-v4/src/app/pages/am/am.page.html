@@ -227,7 +227,10 @@
         <ion-item button="true" detail="true" (click)="irA($index + 1)">
           <ion-label>
             <strong>Tarea {{ $index + 1 }}</strong>
-            <p>{{ t.lote?.nombre ?? 'sin lote' }} · {{ t.subtarea?.nombre ?? 'sin subtarea' }}</p>
+            <p class="lote-revision">
+              {{ t.lote?.nombre ?? 'sin lote' }}@if (t.modulos.length > 0) { · Mód. {{ nombresModulos(t) }} }
+              · {{ t.subtarea?.nombre ?? 'sin subtarea' }}
+            </p>
             <p>{{ t.cultivo?.nombre ?? '' }}{{ t.tarea ? ' · ' + t.tarea.nombre : '' }}</p>
             <p>{{ t.personal.length }} persona(s)</p>
           </ion-label>

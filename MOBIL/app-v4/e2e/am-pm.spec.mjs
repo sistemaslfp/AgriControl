@@ -309,6 +309,9 @@ ok(
   '12 corregida la repetición, el guardado se habilita',
   !(await deshabilitado(boton('Guardar 2 tarea'))),
 );
+const lotesRevision = await p.locator(`${raiz} .lote-revision`).allInnerTexts();
+ok('12b la revisión muestra el lote con sus módulos',
+  lotesRevision.some((x) => /Lote 1\s*·\s*Mód\. 02/.test(x)), lotesRevision.join(' | '));
 
 // ------------------------------------------------------------------
 // 4. AM — guardar: un guid por tarea, payload exacto

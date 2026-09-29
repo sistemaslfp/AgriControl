@@ -393,6 +393,23 @@ ok('39 el servidor lo acepta',
   JSON.stringify(await p.evaluate(() => window['__lagricontrol'].sync.conteo())).includes('"rechazados":0'),
   JSON.stringify(await p.evaluate(() => window['__lagricontrol'].sync.conteo())));
 
+// El detalle en Registros muestra cada saco con nombres, no ids.
+await p.goto(`${APP}/registros?vista=enviados`, { waitUntil: 'networkidle' });
+await t(2000);
+await p.locator('app-registros [data-cat="cosecha"] ion-item.categoria-registros').click().catch(() => {});
+await t(500);
+if ((await p.locator('app-registros ion-item.tarjeta-registro', { hasText: 'BRIONES' }).count()) === 0) {
+  await p.locator('app-registros [data-cat="cosecha"] ion-item.categoria-registros').click();
+  await t(500);
+}
+await p.locator('app-registros ion-item.tarjeta-registro', { hasText: 'BRIONES' }).first().click();
+await t(1000);
+const detSacos = await p.locator('app-detalle-registro').innerText();
+ok('40 el detalle lista cada saco con numero, libras, lote y modulo por nombre',
+  detSacos.includes('número: 1, libras: 40, lote: 1, módulo: 03') &&
+    detSacos.includes('número: 2, libras: 30, lote: 1, módulo: 02') && !detSacos.includes('modulo_id'),
+  detSacos.replace(/\n+/g, ' | ').slice(0, 300));
+
 ok('22 sin errores de JavaScript en toda la sesion', errs.length === 0, errs.join(' | '));
 
 await browser.close();
