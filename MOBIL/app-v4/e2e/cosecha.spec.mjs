@@ -410,6 +410,18 @@ ok('40 el detalle lista cada saco con numero, libras, lote y modulo por nombre',
     detSacos.includes('número: 2, libras: 30, lote: 1, módulo: 02') && !detSacos.includes('modulo_id'),
   detSacos.replace(/\n+/g, ' | ').slice(0, 300));
 
+// Kevin, 2026-09-29: una persona en dos modulos se ve como dos bloques, cada
+// uno con sus sacos y sus totales.
+const bloquesDet = await p.locator('app-detalle-registro ion-list.bloque-registro').allInnerTexts();
+const b02 = bloquesDet.find((x) => x.includes('BRIONES MERO JUAN · Mód. 02')) ?? '';
+const b03 = bloquesDet.find((x) => x.includes('BRIONES MERO JUAN · Mód. 03')) ?? '';
+ok('41 el detalle parte la cosecha en un bloque por modulo',
+  bloquesDet.length === 2 && !!b02 && !!b03, bloquesDet.map((x) => x.split('\n').slice(0, 3).join(' ')).join(' || '));
+ok('42 cada bloque trae solo sus sacos y sus totales',
+  /Total de sacos\s*1/.test(b02) && /Peso total\s*30/.test(b02) && !b02.includes('libras: 40') &&
+    /Total de sacos\s*1/.test(b03) && /Peso total\s*40/.test(b03) && !b03.includes('libras: 30'),
+  (b02 + ' || ' + b03).replace(/\n+/g, ' ').slice(0, 300));
+
 ok('22 sin errores de JavaScript en toda la sesion', errs.length === 0, errs.join(' | '));
 
 await browser.close();

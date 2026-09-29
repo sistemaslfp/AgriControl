@@ -38,7 +38,11 @@ interface CampoDetalle {
 
 /** Un registro (fila de sync_queue) con todo lo que trae, listo para pintar. */
 interface BloqueDetalle {
+  /** guid, o guid|modulo cuando una cosecha se parte por modulo. */
+  clave: string;
   registro: RegistroColaVista;
+  /** Cosecha: "PERSONA · Mód. 4". Vacio en los demas tipos. */
+  subtitulo: string;
   campos: CampoDetalle[];
 }
 
@@ -103,12 +107,17 @@ interface BloqueDetalle {
         }
       }
 
-      @for (b of bloques(); track b.registro.guid; let i = $index) {
+      @for (b of bloques(); track b.clave; let i = $index) {
         <ion-list inset="true" class="bloque-registro">
-          @if (bloques().length > 1) {
+          @if (bloques().length > 1 || b.subtitulo) {
             <ion-item lines="none">
               <ion-label>
-                <strong>Registro {{ i + 1 }} de {{ bloques().length }}</strong>
+                @if (bloques().length > 1) {
+                  <strong>Registro {{ i + 1 }} de {{ bloques().length }}</strong>
+                }
+                @if (b.subtitulo) {
+                  <p class="subtitulo-bloque">{{ b.subtitulo }}</p>
+                }
               </ion-label>
             </ion-item>
           }
@@ -187,6 +196,10 @@ interface BloqueDetalle {
       .bloque-registro {
         margin-bottom: 14px;
       }
+      .subtitulo-bloque {
+        font-weight: 600;
+        color: var(--ion-color-primary);
+      }
       .valor-campo {
         white-space: pre-line;
       }
@@ -257,13 +270,50 @@ export class DetalleRegistroComponent implements OnInit {
     if (!t) {
       return [];
     }
-    return t.registros.map((registro) => ({
-      registro,
-      campos: Object.entries(registro.payload)
-        .filter(([k]) => !DetalleRegistroComponent.CAMPO_ID.test(k))
-        .map(([k, v]) => this.campo(registro, k, v)),
-    }));
+    return t.registros.flatMap((registro) => this.bloquesDe(registro));
   });
+
+  /**
+   * Una cosecha con sacos en varios modulos se parte en un bloque por modulo
+   * (Kevin, 2026-09-29): A en 4 y 5 + B en 5 = tres bloques, cada uno con sus
+   * sacos y sus totales. Es solo lectura: en la cola sigue siendo un registro.
+   */
+  private bloquesDe(registro: RegistroColaVista): BloqueDetalle[] {
+    const entradas = Object.entries(registro.payload).filter(
+      ([k]) => !DetalleRegistroComponent.CAMPO_ID.test(k),
+    );
+    const armar = (clave: string, subtitulo: string, payload: [string, unknown][]) => ({
+      clave,
+      registro,
+      subtitulo,
+      campos: payload.map(([k, v]) => this.campo(registro, k, v)),
+    });
+    const sacos = registro.payload['sacos'];
+    if (registro.tipo !== 'cosecha' || !Array.isArray(sacos)) {
+      return [armar(registro.guid, '', entradas)];
+    }
+    const persona = String(registro.meta?.trabajador ?? '');
+    const porModulo = new Map<number, Record<string, unknown>[]>();
+    for (const s of sacos as Record<string, unknown>[]) {
+      const m = Number(s['modulo_id'] ?? 0);
+      porModulo.set(m, [...(porModulo.get(m) ?? []), s]);
+    }
+    if (porModulo.size <= 1 && porModulo.has(0)) {
+      return [armar(registro.guid, persona, entradas)];
+    }
+    const nombres = this.nombresModulo();
+    const nombre = (m: number) => (m > 0 ? (nombres.get(m) ?? String(m)) : 'sin módulo');
+    return [...porModulo.entries()]
+      .sort(([a], [b]) => nombre(a).localeCompare(nombre(b), undefined, { numeric: true }))
+      .map(([m, grupo]) => {
+        const peso = Math.round(grupo.reduce((x, s) => x + Number(s['libras'] ?? 0), 0) * 100) / 100;
+        const payload = entradas.map(([k, v]): [string, unknown] =>
+          k === 'sacos' ? [k, grupo] : k === 'total_sacos' ? [k, grupo.length] : k === 'total_peso' ? [k, peso] : [k, v],
+        );
+        const sub = [persona, `Mód. ${nombre(m)}`].filter((x) => !!x).join(' · ');
+        return armar(`${registro.guid}|${m}`, sub, payload);
+      });
+  }
 
   /**
    * En el PM la cantidad ES el avance, y sin su unidad el numero no dice nada
