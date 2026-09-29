@@ -5,10 +5,20 @@
     </ion-buttons>
     <ion-title>Cosecha de Cacao</ion-title>
     <ion-buttons slot="end">
-      <ion-button (click)="cargarLista()" aria-label="Actualizar lista">
+      <ion-button (click)="refrescar()" aria-label="Actualizar lista">
         <ion-icon slot="icon-only" name="refresh-outline"></ion-icon>
       </ion-button>
     </ion-buttons>
+  </ion-toolbar>
+  <ion-toolbar>
+    <ion-segment [value]="vista()" (ionChange)="vista.set($any($event.detail.value))">
+      <ion-segment-button value="registro">
+        <ion-label>Registro</ion-label>
+      </ion-segment-button>
+      <ion-segment-button value="resumen">
+        <ion-label>Resumen</ion-label>
+      </ion-segment-button>
+    </ion-segment>
   </ion-toolbar>
 </ion-header>
 
@@ -18,6 +28,9 @@
   (swipeSiguiente)="siguiente()"
   (swipeAnterior)="anterior()"
 >
+  @if (vista() === 'resumen') {
+    <app-cosecha-resumen></app-cosecha-resumen>
+  } @else {
   @if (sinHoraVerificada()) {
     <div class="banner aviso">
       Este equipo nunca sincronizó la hora con el servidor. Se puede capturar,
@@ -384,8 +397,10 @@
       </ion-button>
     </div>
   }
+  }
 </ion-content>
 
+@if (vista() === 'registro') {
 <ion-footer>
   <app-barra-pasos
     [indice]="paso()"
@@ -395,6 +410,7 @@
     (siguiente)="siguiente()"
   ></app-barra-pasos>
 </ion-footer>
+}
 
 <ion-modal
   class="selector-flotante"

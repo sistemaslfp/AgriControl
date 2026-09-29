@@ -422,6 +422,42 @@ ok('42 cada bloque trae solo sus sacos y sus totales',
     /Total de sacos\s*1/.test(b03) && /Peso total\s*40/.test(b03) && !b03.includes('libras: 30'),
   (b02 + ' || ' + b03).replace(/\n+/g, ' ').slice(0, 300));
 
+// ------------------------------------------------------------------
+// 6. Resumen semanal por fecha, lote y modulo (Kevin, 2026-09-29)
+// ------------------------------------------------------------------
+await p.goto(`${APP}/cosecha`, { waitUntil: 'networkidle' });
+await t(2000);
+await p.locator('app-cosecha ion-segment-button[value="resumen"]').click();
+await t(1500);
+const cards = await p.locator('app-cosecha-resumen .card-resumen').allInnerTexts();
+const plano = (x) => x.replace(/\s+/g, ' ');
+const c02 = plano(cards.find((x) => /Módulo\s*02/.test(x)) ?? '');
+const c03 = plano(cards.find((x) => /Módulo\s*03/.test(x)) ?? '');
+ok('50 el resumen arma una card por fecha, lote y modulo',
+  cards.length === 2 && !!c02 && !!c03, cards.map(plano).join(' || '));
+ok('51 la card suma personas, sacos y libras del modulo',
+  /2 Personas 4 Sacos 151.5 Total lb/.test(c02) && /1 Personas 1 Sacos 40 Total lb/.test(c03),
+  c02 + ' || ' + c03);
+ok('52 la barra de pasos no aparece en el resumen',
+  (await p.locator('app-cosecha app-barra-pasos').count()) === 0);
+const sup = p.locator('app-cosecha-resumen .supervisor').first();
+const ws = () => sup.evaluate((e) => getComputedStyle(e).whiteSpace);
+const antesWs = await ws();
+await sup.click();
+await t(200);
+ok('53 el supervisor va en una linea y al tocarlo se despliega',
+  antesWs === 'nowrap' && (await ws()) === 'normal', `${antesWs} -> ${await ws()}`);
+await p.locator('app-cosecha-resumen ion-button.semana-anterior').click();
+await t(400);
+ok('54 la semana anterior sale vacia',
+  (await p.locator('app-cosecha-resumen .card-resumen').count()) === 0);
+const botonSig = p.locator('app-cosecha-resumen ion-button.semana-siguiente');
+await botonSig.click();
+await t(400);
+ok('55 al volver a la semana actual reaparecen las cards y no se avanza mas',
+  (await p.locator('app-cosecha-resumen .card-resumen').count()) === 2 &&
+    (await botonSig.getAttribute('aria-disabled')) === 'true');
+
 ok('22 sin errores de JavaScript en toda la sesion', errs.length === 0, errs.join(' | '));
 
 await browser.close();

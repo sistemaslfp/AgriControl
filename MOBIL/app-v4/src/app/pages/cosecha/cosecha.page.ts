@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   IonBackButton,
@@ -17,6 +17,8 @@ import {
   IonList,
   IonModal,
   IonNote,
+  IonSegment,
+  IonSegmentButton,
   IonSpinner,
   IonTitle,
   IonToolbar,
@@ -53,6 +55,7 @@ import {
   justificacionParaEnviar,
   problemasRetroactivo,
 } from '../../shared/retroactivo.component';
+import { CosechaResumenComponent } from './cosecha-resumen.component';
 
 interface Ref {
   id: number;
@@ -122,6 +125,7 @@ export interface GrupoTareaCosecha {
   styleUrls: ['./cosecha.page.scss'],
   imports: [
     BarraPasosComponent,
+    CosechaResumenComponent,
     SelectorComponent,
     RetroactivoComponent,
     SwipePasosDirective,
@@ -141,6 +145,8 @@ export interface GrupoTareaCosecha {
     IonList,
     IonModal,
     IonNote,
+    IonSegment,
+    IonSegmentButton,
     IonSpinner,
     IonTitle,
     IonToolbar,
@@ -158,6 +164,9 @@ export class CosechaPage implements OnInit {
   private readonly toast = inject(ToastController);
   private readonly router = inject(Router);
   private readonly ruta = inject(ActivatedRoute);
+
+  readonly vista = signal<'registro' | 'resumen'>('registro');
+  private readonly resumen = viewChild(CosechaResumenComponent);
 
   // --- Encabezado ---
   readonly fecha = signal('');
@@ -807,10 +816,19 @@ export class CosechaPage implements OnInit {
   irA(i: number): void {
     this.paso.set(Math.max(0, Math.min(i, this.totalPasos() - 1)));
   }
+  async refrescar(): Promise<void> {
+    if (this.vista() === 'resumen') {
+      await this.resumen()?.cargar();
+    } else {
+      await this.cargarLista();
+    }
+  }
   siguiente(): void {
+    if (this.vista() !== 'registro') return;
     this.irA(this.paso() + 1);
   }
   anterior(): void {
+    if (this.vista() !== 'registro') return;
     this.irA(this.paso() - 1);
   }
 

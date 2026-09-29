@@ -11,6 +11,15 @@ npx cap sync Android
 ./gradlew assembleDebug     //Aquí se crea la apk
 
 **Produccion** (Mobil/app-v4)
+//Correr linea por linea:
+$sdk = $env:ANDROID_HOME
+if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+if (-not $sdk) { $sdk = "$env:LOCALAPPDATA\Android\Sdk" }
+$bt = Get-ChildItem "$sdk\build-tools" | Sort-Object { [version]($_.Name -replace '[^\d.]','') } -Descending | Select-Object -First 1
+$env:PATH = "$($bt.FullName);$env:PATH"
+apksigner --version
+//Si apksigner --version da una versio seguir con el resto de comandos
+
 npx ng build -c production   
 npx cap sync Android
 //Crear la clave para la firma de la app

@@ -1,0 +1,51 @@
+<div class="selector-semana">
+  <ion-button class="semana-anterior" fill="clear" (click)="moverSemana(-1)" aria-label="Semana anterior">
+    <ion-icon slot="icon-only" name="chevron-back-outline"></ion-icon>
+  </ion-button>
+  <div class="semana">
+    <strong>{{ etiquetaSemana() }}</strong>
+    <span>{{ rangoSemana() }}</span>
+  </div>
+  <ion-button
+    class="semana-siguiente"
+    fill="clear"
+    [disabled]="esSemanaActual()"
+    (click)="moverSemana(1)"
+    aria-label="Semana siguiente"
+  >
+    <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
+  </ion-button>
+</div>
+
+<div class="banner info">
+  Solo lo cosechado en este equipo.
+</div>
+
+@if (cargando()) {
+  <div class="cargando"><ion-spinner name="crescent"></ion-spinner></div>
+} @else if (cards().length === 0) {
+  <div class="banner info">No hay cosechas registradas en esta semana.</div>
+} @else {
+  @for (c of cards(); track c.clave) {
+    <div class="card-resumen">
+      <div class="fila"><span class="etq">Fecha</span><span class="val">{{ fechaLarga(c.fecha) }}</span></div>
+      <div class="fila">
+        <span class="etq">Supervisor</span>
+        <span
+          class="val supervisor"
+          [class.abierto]="abiertas().has(c.clave)"
+          (click)="alternarSupervisor(c.clave)"
+          [attr.title]="c.supervisor"
+        >{{ c.supervisor }}</span>
+      </div>
+      <div class="fila"><span class="etq">Lote</span><span class="val">{{ c.lote }}</span></div>
+      <div class="fila"><span class="etq">Módulo</span><span class="val">{{ c.modulo }}</span></div>
+      <div class="fila"><span class="etq">Subtarea</span><span class="val">{{ c.subtarea }}</span></div>
+      <div class="cifras">
+        <div><span class="num">{{ c.personas }}</span><span class="etq">Personas</span></div>
+        <div><span class="num">{{ c.sacos }}</span><span class="etq">Sacos</span></div>
+        <div><span class="num">{{ c.peso }}</span><span class="etq">Total lb</span></div>
+      </div>
+    </div>
+  }
+}

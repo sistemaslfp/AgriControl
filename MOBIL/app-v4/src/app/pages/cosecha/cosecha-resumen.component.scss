@@ -1,0 +1,106 @@
+:host {
+  display: block;
+}
+
+.selector-semana {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 4px;
+
+  .semana {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.25;
+
+    span {
+      font-size: 0.85rem;
+      color: var(--ion-color-medium-shade);
+    }
+  }
+}
+
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 4px;
+  font-size: 0.88rem;
+  line-height: 1.35;
+
+  &.info {
+    background: var(--ion-color-step-100, #f2f2f2);
+    color: var(--ion-color-medium-shade);
+  }
+}
+
+.cargando {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.card-resumen {
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 4px;
+  background: var(--ion-item-background, var(--ion-background-color, #fff));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+
+  .fila {
+    display: flex;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: 0.92rem;
+  }
+
+  .etq {
+    flex: 0 0 84px;
+    color: var(--ion-color-medium-shade);
+  }
+
+  .val {
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+  }
+
+  /* El nombre del supervisor ocupa una linea; tocarlo lo muestra completo. */
+  .supervisor {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+
+    &.abierto {
+      white-space: normal;
+      overflow: visible;
+    }
+  }
+
+  .cifras {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--ion-color-step-150, #e0e0e0);
+
+    > div {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+    }
+
+    .num {
+      font-size: 1.25rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .etq {
+      flex: none;
+      font-size: 0.78rem;
+    }
+  }
+}
