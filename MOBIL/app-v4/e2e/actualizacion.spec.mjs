@@ -39,9 +39,9 @@ await t(1800);
 await p.goto(`${APP}/menu`, { waitUntil: 'networkidle' });
 await t(2000);
 const aviso = p.locator('app-menu .aviso-actualizacion');
-ok('01 con la misma version publicada no hay aviso', (await aviso.count()) === 0);
-ok('02 el pie muestra la version del build',
-  (await p.locator('app-menu .pie-version').innerText()).includes('v0.1.2'));
+ok('01 con una version publicada menor no hay aviso', (await aviso.count()) === 0);
+const pie = await p.locator('app-menu .pie-version').innerText();
+ok('02 el pie muestra la version del build', /v\d+\.\d+/.test(pie), pie);
 
 await modo('version_nueva');
 await p.goto(`${APP}/menu`, { waitUntil: 'networkidle' });
@@ -49,7 +49,7 @@ await t(2000);
 ok('03 con una version mayor aparece el aviso', (await aviso.count()) === 1);
 const texto = (await aviso.innerText()).replace(/\s+/g, ' ');
 ok('04 el aviso dice la version nueva y la instalada',
-  texto.includes('0.1.3') && texto.includes('0.1.2'), texto);
+  texto.includes('9.9.9') && /Tienes la \d/.test(texto), texto);
 
 // El APK llega como descarga y el popup queda en blanco: se registra la URL.
 await p.evaluate(() => { window['__abierta'] = null; window.open = (u) => { window['__abierta'] = u; return null; }; });

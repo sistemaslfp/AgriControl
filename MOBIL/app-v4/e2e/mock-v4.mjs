@@ -111,10 +111,11 @@ const server = http.createServer((req, res) => {
     return json(200, { server_time: new Date().toISOString(), fecha, modulo, asignaciones });
   }
 
-  // modo 'version_nueva' publica una version mayor que la del build (2).
+  // Versiones fuera del rango real para no depender del build: 'ok' publica
+  // una menor que cualquiera, 'version_nueva' una mayor que cualquiera.
   if (req.url === '/v4/version') return json(200, {
-    version_code: modo === 'version_nueva' ? 3 : 2,
-    version_name: modo === 'version_nueva' ? '0.1.3' : '0.1.2',
+    version_code: modo === 'version_nueva' ? 999 : 1,
+    version_name: modo === 'version_nueva' ? '9.9.9' : '0.0.1',
     disponible: true, bytes: 4 });
 
   if (req.url === '/v4/apk') {

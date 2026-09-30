@@ -51,7 +51,7 @@ $config['cosecha_unidad_ids'] = array(4);
 // public/apk/ y NO se versiona. version_code tiene que ser el versionCode del
 // build.gradle con que se generó ese APK: la app compara contra el suyo.
 $config['app_movil'] = array(
-    'version_code' => 2,
-    'version_name' => '0.1.2',
-    'apk'          => 'lagricontrol-0.1.2.apk',
+    'version_code' => 4,
+    'version_name' => '0.1.35',
+    'apk'          => 'lagricontrol-0.1.35.apk',
 );

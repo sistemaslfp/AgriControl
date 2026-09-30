@@ -3,5 +3,5 @@
  * y con versionCode/versionName de android/app/build.gradle: en el telefono
  * manda el build.gradle, esto es lo que ve el navegador.
  */
-export const APP_VERSION = '0.1.2';
-export const APP_VERSION_CODE = 2;
+export const APP_VERSION = '0.1.35';
+export const APP_VERSION_CODE = 4;
