@@ -70,14 +70,18 @@
 /* El numero de saco a la izquierda, fijo, para que la columna de pesos quede
    alineada y se pueda bajar tecleando. */
 .numero-saco {
-  min-width: 62px;
+  /* ion-label trae flex: 1 y se comia media fila, dejando el peso sin espacio. */
+  flex: 0 0 64px;
+  margin-inline-end: 8px;
   font-size: 0.85rem;
   color: var(--ion-color-medium-shade);
   font-variant-numeric: tabular-nums;
 }
 
 .peso-saco {
-  text-align: right;
+  flex: 1 1 auto;
+  min-width: 80px;
+  text-align: left;
   font-variant-numeric: tabular-nums;
 }
 
