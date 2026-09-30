@@ -18,3 +18,5 @@ _to_delete
 .env.production.local
 .env.*.local
 server/.env
+# APK publicado para la actualizacion de la app: artefacto, no codigo
+public/apk/*.apk

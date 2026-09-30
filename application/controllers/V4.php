@@ -103,6 +103,52 @@ class V4 extends RestController
     }
 
     // -----------------------------------------------------------------
+    // GET /v4/version — la version publicada de la app y si el APK esta
+    // -----------------------------------------------------------------
+    public function version_get()
+    {
+        $app  = $this->v4cfg['app_movil'];
+        $ruta = $this->ruta_apk();
+
+        $this->response(array(
+            'version_code' => (int) $app['version_code'],
+            'version_name' => (string) $app['version_name'],
+            'disponible'   => $ruta !== null,
+            'bytes'        => $ruta !== null ? filesize($ruta) : 0,
+        ), 200);
+    }
+
+    // -----------------------------------------------------------------
+    // GET /v4/apk — el APK publicado. Sale por la API y no por base_url
+    // porque la app ya sabe llegar aca y base_url cambia por maquina.
+    // -----------------------------------------------------------------
+    public function apk_get()
+    {
+        $ruta = $this->ruta_apk();
+        if ($ruta === null) {
+            $this->response(array('error' => 'No hay APK publicado en public/apk/.'), 404);
+            return;
+        }
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/vnd.android.package-archive');
+        header('Content-Length: ' . filesize($ruta));
+        header('Content-Disposition: attachment; filename="' . basename($ruta) . '"');
+        header('Cache-Control: no-store');
+        readfile($ruta);
+        exit;
+    }
+
+    /** basename() para que la config no pueda apuntar fuera de public/apk/. */
+    private function ruta_apk()
+    {
+        $archivo = basename((string) $this->v4cfg['app_movil']['apk']);
+        $ruta    = FCPATH . 'apk' . DIRECTORY_SEPARATOR . $archivo;
+        return ($archivo !== '' && is_file($ruta)) ? $ruta : null;
+    }
+
+    // -----------------------------------------------------------------
     // GET /v4/bootstrap — parámetros de operación para la app
     // -----------------------------------------------------------------
     public function bootstrap_get()

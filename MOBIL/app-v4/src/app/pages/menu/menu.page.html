@@ -56,6 +56,27 @@
     </div>
   }
 
+  @if (actualizacion.disponible(); as v) {
+    <div class="aviso-actualizacion">
+      <ion-icon name="arrow-up-circle-outline"></ion-icon>
+      <div class="texto">
+        <strong>Versión {{ v.version_name }} disponible</strong>
+        @if (actualizacion.progreso(); as pct) {
+          <span>Descargando… {{ pct }} %</span>
+        } @else if (actualizacion.progreso() === 0) {
+          <span>Descargando…</span>
+        } @else {
+          <span>Tienes la {{ actualizacion.instalada().versionName }}. Tus registros se conservan.</span>
+        }
+      </div>
+      <ion-button
+        size="small"
+        [disabled]="actualizacion.progreso() !== null"
+        (click)="actualizarApp()"
+      >Actualizar</ion-button>
+    </div>
+  }
+
   <div class="grilla-menu">
     @for (celda of celdas; track celda.titulo) {
       <button
@@ -94,7 +115,7 @@
 <ion-footer>
   <ion-toolbar>
     <div class="pie-version">
-      LAgricontrol v{{ version }}
+      LAgricontrol v{{ actualizacion.instalada().versionName }}
       @if (config.deviceAlias(); as alias) {
         · {{ alias }}
       }

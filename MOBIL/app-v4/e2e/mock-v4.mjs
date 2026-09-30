@@ -111,6 +111,17 @@ const server = http.createServer((req, res) => {
     return json(200, { server_time: new Date().toISOString(), fecha, modulo, asignaciones });
   }
 
+  // modo 'version_nueva' publica una version mayor que la del build (2).
+  if (req.url === '/v4/version') return json(200, {
+    version_code: modo === 'version_nueva' ? 3 : 2,
+    version_name: modo === 'version_nueva' ? '0.1.3' : '0.1.2',
+    disponible: true, bytes: 4 });
+
+  if (req.url === '/v4/apk') {
+    res.writeHead(200, { ...cors, 'Content-Type': 'application/vnd.android.package-archive' });
+    return res.end('APK!');
+  }
+
   if (req.url === '/v4/hora') return json(200, {
     server_time: new Date().toISOString(),
     server_epoch: Math.floor(Date.now() / 1000) + 7,   // desfase artificial

@@ -17,6 +17,7 @@ import {
 } from '@ionic/angular';
 import { addIcons } from 'ionicons';
 import {
+  arrowUpCircleOutline,
   swapVerticalOutline,
   cloudDownloadOutline,
   cloudOfflineOutline,
@@ -29,7 +30,7 @@ import {
   timeOutline,
 } from 'ionicons/icons';
 
-import { APP_VERSION } from '../../core/version';
+import { ActualizacionService } from '../../core/actualizacion/actualizacion.service';
 import { AppConfigService } from '../../core/config/app-config.service';
 import { BootstrapService } from '../../core/bootstrap/bootstrap.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -71,7 +72,7 @@ interface CeldaMenu {
   ],
 })
 export class MenuPage implements OnInit {
-  readonly version = APP_VERSION;
+  readonly actualizacion = inject(ActualizacionService);
 
   readonly sync = inject(SyncQueueService);
   readonly catalogos = inject(CatalogService);
@@ -111,6 +112,7 @@ export class MenuPage implements OnInit {
 
   constructor() {
     addIcons({
+      arrowUpCircleOutline,
       swapVerticalOutline,
       cloudDownloadOutline,
       cloudOfflineOutline,
@@ -129,6 +131,7 @@ export class MenuPage implements OnInit {
     await this.bootstrap.cargar();
     await this.catalogos.verificarDisponibles();
     await this.sync.refrescarConteo();
+    void this.actualizacion.verificar();
   }
 
   async onCelda(celda: CeldaMenu): Promise<void> {
@@ -209,6 +212,13 @@ export class MenuPage implements OnInit {
       await this.router.navigateByUrl('/configuracion');
     } else {
       await this.aviso('PIN incorrecto.');
+    }
+  }
+
+  async actualizarApp(): Promise<void> {
+    const texto = await this.actualizacion.actualizar();
+    if (texto) {
+      await this.aviso(texto);
     }
   }
 

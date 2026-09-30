@@ -11,6 +11,14 @@ export interface HoraResponse {
   timezone: string;
 }
 
+export interface VersionResponse {
+  version_code: number;
+  version_name: string;
+  /** false si la config apunta a un APK que no esta en public/apk/. */
+  disponible: boolean;
+  bytes: number;
+}
+
 export interface BootstrapResponse {
   server_time: string;
   ventanas_horarias: {
@@ -173,6 +181,15 @@ export class ApiService {
 
   hora(baseUrl?: string): Promise<HoraResponse> {
     return this.get<HoraResponse>('hora', baseUrl);
+  }
+
+  version(): Promise<VersionResponse> {
+    return this.get<VersionResponse>('version');
+  }
+
+  /** URL del APK publicado; la descarga la hace el plugin nativo, no HttpClient. */
+  urlApk(): string {
+    return `${this.requerirBase()}/apk`;
   }
 
   bootstrap(): Promise<BootstrapResponse> {

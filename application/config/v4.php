@@ -46,3 +46,12 @@ $config['cosecha_subtarea_ids'] = array();
 
 // Unidades que mandan a la pantalla de Cosecha. 4 = Libra en z_ulabor.
 $config['cosecha_unidad_ids'] = array(4);
+
+// Versión publicada de la app (GET /v4/version y GET /v4/apk). El APK va en
+// public/apk/ y NO se versiona. version_code tiene que ser el versionCode del
+// build.gradle con que se generó ese APK: la app compara contra el suyo.
+$config['app_movil'] = array(
+    'version_code' => 2,
+    'version_name' => '0.1.2',
+    'apk'          => 'lagricontrol-0.1.2.apk',
+);

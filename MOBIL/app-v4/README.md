@@ -27,16 +27,29 @@ En el navegador la base SQLite persiste en IndexedDB vía `jeep-sqlite`.
 npm run build      # produce www/
 ```
 
-## Android (cuando toque)
+## Android — generar y publicar una version
+
+1. Subir la version en los cuatro lugares, siempre juntos:
+   `android/app/build.gradle` (`versionCode` +1 y `versionName`),
+   `src/app/core/version.ts` (`APP_VERSION` y `APP_VERSION_CODE`) y
+   `package.json`.
+2. Compilar y empaquetar, **en minusculas** (`cap sync Android` no copia nada
+   y no avisa):
 
 ```bash
-npm run build
-npx cap add android
-npx cap sync android
+npx ng build -c production
+npx cap sync android          # debe mostrar "Copying web assets from www..."
+npx cap build android --androidreleasetype APK --keystorepath C:\claves\lagricontrol.jks --keystorealias lagricontrol --keystorepass <clave> --keystorealiaspass <clave>
 ```
 
-Sin excepciones de cleartext en release: TLS obligatorio. Para probar contra
-el Docker local usar el navegador (`npm start`) o un flavor de desarrollo.
+3. Publicar: copiar `app-release-signed.apk` a `public/apk/` del servidor con
+   el nombre que dice `application/config/v4.php` (`app_movil.apk`) y poner ahi
+   el mismo `version_code` y `version_name`. Los telefonos lo ven en el menu
+   (`GET /v4/version`) y lo bajan con el boton Actualizar (`GET /v4/apk`).
+   Android pide confirmar la instalacion; los registros locales se conservan.
+
+La primera version con el boton (0.1.2) hay que instalarla a mano en cada
+equipo: las anteriores no saben preguntar.
 
 ## Decisiones del stack — leer antes de tocar versiones
 
